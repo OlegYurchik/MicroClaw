@@ -1,0 +1,12 @@
+# Python cache files
+__pycache__/
+*.pyc
+
+# Environment
+.venv/
+
+# Configuration
+config.yaml
+
+# Local databases
+.sessions_storages/

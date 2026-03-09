@@ -1,0 +1,27 @@
+providers:
+  default:
+    base_url: https://chat.openai.com/v1
+    api_type: openai
+    api_key: !env OPENAI_API_KEY
+models:
+  default:
+    id: gpt-5
+channels:
+  default:
+    type: telegram
+    token: !env TELEGRAM_BOT_TOKEN
+sessions_storages:
+  default:
+    type: filesystem
+toolkits:
+  - name: email
+    path: microclaw.toolkits.email.EmailToolKit
+    args:
+      smtp_host: smtp.gmail.com
+      smtp_port: 465
+      smtp_tls_mode: ssl
+      imap_host: imap.gmail.com
+      imap_port: 993
+      imap_tls_mode: ssl
+      username: !env EMAIL_USERNAME
+      password: !env EMAIL_PASSWORD
