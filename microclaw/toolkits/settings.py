@@ -7,5 +7,5 @@ class ToolKitSettings(BaseModel):
     path: str
     name: str | None = None
     prefix: str = ""
-    extra_info: str | None = None
+    prompt: str | None = None
     args: dict[str, Any] = Field(default_factory=dict)

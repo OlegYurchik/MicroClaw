@@ -5,11 +5,16 @@ from pydantic import AnyHttpUrl, BaseModel, Field, confloat
 from microclaw.toolkits import ToolKitSettings
 
 
-Temperature = confloat(lt=0, ge=2)
+Temperature = confloat(gt=0, le=2)
 
 
 class APITypeEnum(str, enum.Enum):
     OPENAI = "openai"
+
+
+class InputTypeEnum(str, enum.Enum):
+    TEXT = "text"
+    AUDIO = "audio"
 
 
 class ProviderSettings(BaseModel):
@@ -24,11 +29,17 @@ class ModelCosts(BaseModel):
     output: float = 0
     cache_read: float = 0
     cache_write: float = 0
+    audio_input: float = 0
+    audio_output: float = 0
     currency: str = "$"
 
     @property
     def per_tokens(self) -> int:
         return 1_000_000
+
+    @property
+    def per_audio_seconds(self) -> int:
+        return 1
 
 
 class ModelSettings(BaseModel):
@@ -40,7 +51,24 @@ class ModelSettings(BaseModel):
     headers: dict[str, str] = Field(default_factory=dict)
     temperature: Temperature | None = None
     context_window_size: int | None = Field(default=None, gt=0)
-    context_threshold_size: float | None = Field(default=0.8, gt=0, lt=1, description="Threshold for triggering summarization (percentage of max context). None means no summarization")
+    context_threshold_size: float | None = Field(
+        default=0.8,
+        gt=0,
+        lt=1,
+        description=(
+            "Threshold for triggering summarization (percentage of max context). None means no "
+            "summarization"
+        ),
+    )
+    audio_max_size: int | None = Field(
+        default=None,
+        gt=0,
+        description="Maximum audio file size in bytes. None means no limit",
+    )
+    input_types: list[InputTypeEnum] = Field(
+        default_factory=lambda: [InputTypeEnum.TEXT],
+        description="List of supported input types",
+    )
 
 
 class AgentIdentity(BaseModel):

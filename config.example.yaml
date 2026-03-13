@@ -6,10 +6,13 @@ providers:
 models:
   default:
     id: gpt-5
+  whisper:
+    id: whisper-1
 channels:
   default:
     type: telegram
     token: !env TELEGRAM_BOT_TOKEN
+    stt: default
 sessions_storages:
   default:
     type: filesystem
@@ -25,3 +28,7 @@ toolkits:
       imap_tls_mode: ssl
       username: !env EMAIL_USERNAME
       password: !env EMAIL_PASSWORD
+stt:
+  default:
+    model: whisper
+    language: ru

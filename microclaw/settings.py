@@ -9,11 +9,12 @@ from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings
 from yaml_env_tag import construct_env_tag
 
-from .agents import APITypeEnum, AgentSettings, ModelSettings, ProviderSettings
+from .agents import APITypeEnum, AgentSettings, InputTypeEnum, ModelSettings, ProviderSettings
 from .toolkits import ToolKitSettings
 from .channels import ChannelSettingsType
 from .sessions_storages import SessionsStorageSettingsType
 from .sessions_storages.filesystem import FilesystemSessionsStorageSettings
+from .stt import STTSettings
 from .utils import get_by_key_or_first
 
 
@@ -36,6 +37,7 @@ class MicroclawSettings(BaseSettings):
     }
     toolkits: list[ToolKitSettings | str] = Field(default_factory=list)
     channels: dict[str, ChannelSettingsType] = Field(default_factory=dict)
+    stt: dict[str, STTSettings] = Field(default_factory=dict)
 
     @model_validator(mode="after")
     @classmethod
@@ -54,6 +56,11 @@ class MicroclawSettings(BaseSettings):
                 model_value = get_by_key_or_first(storage=settings.models, key=model_value)
             if model_value is None:
                 raise ValueError(f"Model for agent '{name}' not exists")
+            if InputTypeEnum.TEXT not in model_value.input_types:
+                raise ValueError(
+                    f"Model '{model_value.id}' for agent '{name}' does not support text input. "
+                    f"Supported input types: {[t.value for t in model_value.input_types]}"
+                )
             agent_settings.model = model_value
 
         for name, channel_settings in settings.channels.items():
@@ -69,6 +76,19 @@ class MicroclawSettings(BaseSettings):
             )
             if sessions_storage is None:
                 raise ValueError(f"Sessions storage for channel '{name}' not set or not exists")
+
+        for name, stt_settings in settings.stt.items():
+            model_value = stt_settings.model
+            if isinstance(model_value, (str, NoneType)):
+                model_value = get_by_key_or_first(storage=settings.models, key=model_value)
+            if model_value is None:
+                raise ValueError(f"Model for stt '{name}' not exists")
+            if InputTypeEnum.AUDIO not in model_value.input_types:
+                raise ValueError(
+                    f"Model '{model_value.id}' for stt '{name}' does not support audio input. "
+                    f"Supported input types: {[t.value for t in model_value.input_types]}"
+                )
+            stt_settings.model = model_value
 
         toolkit_names = set()
         for toolkit_settings in settings.toolkits:

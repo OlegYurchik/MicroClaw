@@ -18,3 +18,4 @@ class SystemPromptValues:
     system: SystemValues
     toolkits: list[BaseToolKit] = field(default_factory=list)
     tools: list[BaseTool] = field(default_factory=list)
+    channel: "ChannelInterface" = None

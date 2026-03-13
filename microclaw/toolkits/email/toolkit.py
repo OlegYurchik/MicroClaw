@@ -17,7 +17,7 @@ from email.mime.base import MIMEBase
 from email.encoders import encode_base64
 
 from microclaw.toolkits.base import BaseToolKit, tool
-from .dto import EmailFolder, EmailMessage, EmailAttachment
+from .dto import EmailFolder, EmailMessage, EmailAttachment, FullEmailMessage
 from .settings import EmailSettings, TLSModeEnum
 
 
@@ -63,6 +63,8 @@ aioimaplib.IMAP4.starttls = _imap_starttls
 
 
 class EmailToolKit(BaseToolKit[EmailSettings]):
+    """Tools for managing emails via IMAP and SMTP protocols."""
+
     @asynccontextmanager
     async def _create_imap_client(self) -> AsyncGenerator:
         if self.settings.imap_tls_mode == TLSModeEnum.STARTTLS:
@@ -141,7 +143,7 @@ class EmailToolKit(BaseToolKit[EmailSettings]):
     async def get_messages(
             self,
             folder: str = "",
-            limit: int = 20,
+            limit: int = 5,
             unread_only: bool = False,
             since_date: str | None = None,
     ) -> list[EmailMessage]:
@@ -150,7 +152,7 @@ class EmailToolKit(BaseToolKit[EmailSettings]):
 
         Args:
             folder: Folder name (default: default_folder from settings)
-            limit: Maximum number of messages to return (default: 20)
+            limit: Maximum number of messages to return (default: 5)
             unread_only: If True, return only unread messages (default: False)
             since_date: Filter messages since this date (ISO format, optional)
 
@@ -196,7 +198,7 @@ class EmailToolKit(BaseToolKit[EmailSettings]):
             return messages
 
     @tool
-    async def get_message_by_id(self, uid: str, folder: str = "") -> EmailMessage | None:
+    async def get_message_by_id(self, uid: str, folder: str = "") -> FullEmailMessage | None:
         """
         Get a specific email message by its UID.
 
@@ -214,18 +216,12 @@ class EmailToolKit(BaseToolKit[EmailSettings]):
             if status != "OK":
                 return None
 
-            status, msg_data = await client.fetch(uid, "(RFC822)")
-            if status != "OK" or not msg_data:
+            status, message_parts = await client.fetch(uid, "(RFC822)")
+            if status != "OK" or not message_parts:
                 return None
-
-            for part in msg_data:
-                if not isinstance(part, tuple):
-                    continue
-                raw_message = part[1]
-                msg = email.message_from_bytes(raw_message)
-                return self._parse_email_message(msg, uid, folder)
-
-            return None
+            raw_message = b"".join(message_parts)
+            message = email.message_from_bytes(raw_message)
+            return self._parse_full_email_message(message=message, uid=uid, folder=folder)
 
     @tool
     async def search_messages(
@@ -314,12 +310,10 @@ class EmailToolKit(BaseToolKit[EmailSettings]):
             if status != "OK":
                 return False
 
-            # Mark message as deleted
             status, _ = await client.store(uid, "+FLAGS", r"(\Deleted)")
             if status != "OK":
                 return False
 
-            # Expunge deleted messages
             status, _ = await client.expunge()
             return status == "OK"
 
@@ -344,22 +338,18 @@ class EmailToolKit(BaseToolKit[EmailSettings]):
         source_folder = source_folder or self.settings.default_folder
 
         async with self._create_imap_client() as client:
-            # Select source folder
             status, _ = await client.select(source_folder)
             if status != "OK":
                 return False
 
-            # Copy message to destination
             status, _ = await client.copy(uid, destination_folder)
             if status != "OK":
                 return False
 
-            # Mark as deleted in source
             status, _ = await client.store(uid, "+FLAGS", r"(\Deleted)")
             if status != "OK":
                 return False
 
-            # Expunge
             status, _ = await client.expunge()
             return status == "OK"
 
@@ -503,33 +493,14 @@ class EmailToolKit(BaseToolKit[EmailSettings]):
             uid_data = data[0].split()
             return len(uid_data) if uid_data else 0
 
-    def _decode_header(self, header_value: str) -> str:
-        if not header_value:
-            return ""
-
-        decoded = make_header(decode_header(header_value))
-        return str(decoded)
-
-    def _parse_email_message(self, msg: Message, uid: str, folder: str) -> EmailMessage:
-        message_id = msg.get("Message-ID", "")
-        subject = self._decode_header(msg.get("Subject", ""))
-        from_addr = self._decode_header(msg.get("From", ""))
-
-        to_list = self._extract_addresses(msg.get("To", ""))
-        cc_list = self._extract_addresses(msg.get("Cc", ""))
-        bcc_list = self._extract_addresses(msg.get("Bcc", ""))
-
-        date_str = msg.get("Date", "")
-        try:
-            date = parsedate_to_datetime(date_str) if date_str else datetime.now()
-        except (ValueError, TypeError):
-            date = datetime.now()
+    def _parse_full_email_message(self, message: Message, uid: str, folder: str) -> FullEmailMessage:
+        email_message = self._parse_email_message(message=message, uid=uid, folder=folder)
 
         body_text = ""
         body_html = ""
 
-        if msg.is_multipart():
-            for part in msg.walk():
+        if message.is_multipart():
+            for part in message.walk():
                 content_type = part.get_content_type()
                 content_disposition = str(part.get("Content-Disposition", ""))
 
@@ -542,17 +513,17 @@ class EmailToolKit(BaseToolKit[EmailSettings]):
                         part.get_content_charset() or "utf-8", errors="replace"
                     ) or ""
         else:
-            content_type = msg.get_content_type()
-            payload = msg.get_payload(decode=True)
+            content_type = message.get_content_type()
+            payload = message.get_payload(decode=True)
             if payload:
-                decoded_payload = payload.decode(msg.get_content_charset() or "utf-8", errors="replace")
+                decoded_payload = payload.decode(message.get_content_charset() or "utf-8", errors="replace")
                 if content_type == "text/html":
                     body_html = decoded_payload
                 else:
                     body_text = decoded_payload
 
         attachments = []
-        for part in msg.walk():
+        for part in message.walk():
             filename = part.get_filename()
             if filename or "attachment" in str(part.get("Content-Disposition", "")):
                 if filename:
@@ -564,7 +535,27 @@ class EmailToolKit(BaseToolKit[EmailSettings]):
                     content_id=part.get("Content-ID", "").strip("<>"),
                 ))
 
-        flags = []
+        return FullEmailMessage(
+            **email_message.model_dump(),
+            body_text=body_text,
+            body_html=body_html,
+            attachments=attachments,
+        )
+
+    def _parse_email_message(self, message: Message, uid: str, folder: str) -> EmailMessage:
+        message_id = message.get("Message-ID", "")
+        subject = self._decode_header(message.get("Subject", ""))
+        from_addr = self._decode_header(message.get("From", ""))
+
+        to_list = self._extract_addresses(message.get("To", ""))
+        cc_list = self._extract_addresses(message.get("Cc", ""))
+        bcc_list = self._extract_addresses(message.get("Bcc", ""))
+
+        date_str = message.get("Date", "")
+        try:
+            date = parsedate_to_datetime(date_str) if date_str else datetime.now()
+        except (ValueError, TypeError):
+            date = datetime.now()
 
         return EmailMessage(
             uid=uid,
@@ -575,16 +566,19 @@ class EmailToolKit(BaseToolKit[EmailSettings]):
             cc=cc_list,
             bcc=bcc_list,
             date=date,
-            body_text=body_text,
-            body_html=body_html,
             folder=folder,
-            flags=flags,
-            attachments=attachments,
-            raw_size=len(msg.as_string()),
+            flags=[],
+            raw_size=len(message.as_string()),
         )
 
+    def _decode_header(self, header_value: str) -> str:
+        if not header_value:
+            return ""
+
+        decoded = make_header(decode_header(header_value))
+        return str(decoded)
+
     def _extract_addresses(self, address_str: str) -> list[str]:
-        """Extract email addresses from header string."""
         if not address_str:
             return []
         return [email for name, email in getaddresses([address_str])]

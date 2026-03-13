@@ -25,7 +25,7 @@ class LoadingIndicator:
     def stop(self):
         self._stop_loading.set()
         if self._loading_thread and self._loading_thread.is_alive():
-            self._loading_thread.join(timeout=0.5)
+            self._loading_thread.join(timeout=1)
 
     def toggle(self):
         if self._stop_loading.is_set():

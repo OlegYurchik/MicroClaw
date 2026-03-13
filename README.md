@@ -302,6 +302,13 @@ microclaw/
 | Primary Metric | Features | Performance | **Code clarity** |
 | Installation | npm | Binary | **uv / Docker** |
 
+## TODO
+
+- [ ] Cron tasks service
+- [ ] Toolkit for cron tasks service
+- [ ] STT
+- [ ] Multiple users system — optional
+
 ## License
 
 MIT License — see [LICENSE](LICENSE) for details.

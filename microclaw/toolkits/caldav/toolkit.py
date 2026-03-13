@@ -10,6 +10,8 @@ from .settings import CalDAVSettings
 
 
 class CalDAVToolKit(BaseToolKit[CalDAVSettings]):
+    """Tools for managing calendars and events via CalDAV protocol."""
+
     DATETIME_FORMAT = "%Y%m%dT%H%M%S"
     DATE_FORMAT = "%Y%m%d"
 

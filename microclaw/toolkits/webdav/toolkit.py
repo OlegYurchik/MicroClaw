@@ -10,6 +10,8 @@ from .settings import WebDAVSettings
 
 
 class WebDAVToolKit(BaseToolKit[WebDAVSettings]):
+    """Tools for managing files and directories via WebDAV protocol."""
+
     @asynccontextmanager
     async def _create_client(self):
         """Создает новый клиент WebDAV."""

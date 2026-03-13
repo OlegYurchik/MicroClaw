@@ -12,3 +12,4 @@ class ChannelSettings(BaseModel):
     type: ChannelTypeEnum
     sessions_storage: str | None = None
     agent: str | None = None
+    stt: str | None = None

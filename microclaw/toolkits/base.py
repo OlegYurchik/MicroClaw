@@ -18,12 +18,10 @@ class EmptySettings(BaseModel):
 
 
 class BaseToolKit(Generic[SettingsType]):
-    DESCRIPTION: str | None = None
-
     def __init__(self, settings: ToolKitSettings):
         self._name = settings.name or settings.path
         self._prefix = (settings.name or _get_random_string()) + "_"
-        self._extra_info = settings.extra_info
+        self._prompt = settings.prompt
         self._settings = self.get_settings_class()(**settings.args)
 
     @property
@@ -36,11 +34,11 @@ class BaseToolKit(Generic[SettingsType]):
 
     @property
     def description(self) -> str | None:
-        return self.DESCRIPTION
+        return self.__doc__
 
     @property
-    def extra_info(self) -> str | None:
-        return self._extra_info
+    def prompt(self) -> str | None:
+        return self._prompt
 
     @property
     def settings(self) -> SettingsType:

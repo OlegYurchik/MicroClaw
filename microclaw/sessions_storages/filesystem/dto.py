@@ -5,4 +5,5 @@ from microclaw.dto import AgentMessage, Spending
 
 class SessionData(BaseModel):
     messages: list[AgentMessage] = Field(default_factory=list)
-    spending: Spending = Field(default_factory=Spending)
+    spending: Spending | None = None
+    context: int = 0

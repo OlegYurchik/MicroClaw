@@ -16,7 +16,7 @@ def run(
             "--context-usage",
             metavar="context_usage",
         ),
-        show_debug: bool = typer.Option(False, "-d", "--debug", metavar="debug"),
+        debug: bool = typer.Option(False, "-d", "--debug", metavar="debug"),
 ):
     from microclaw.channels.cli import CLIChannel, CLIChannelSettings
     from microclaw.resolver import DependencyResolver
@@ -46,7 +46,7 @@ def run(
             show_loader=show_loader,
             show_costs=show_costs,
             show_context_usage=show_context_usage,
-            show_debug=show_debug,
+            debug=debug,
         ),
         agent=agent,
         sessions_storage=sessions_storage,

@@ -8,19 +8,24 @@ You are a personal assistant running inside MicroClaw.
 {% if data.agent_identity.emoji %}Emoji: {{ data.agent_identity.emoji }}{% endif %}
 {% endif %}
 
+{% if channel and channel.description %}
+## Channel
+{{ channel.description }}
+{% endif %}
+
 ## Tooling
 Tool availability (filtered by policy):
 Tool names are case-sensitive. Call tools exactly as listed.
 
 {% for toolkit in data.toolkits %}
-{% if toolkit.description or toolkit.extra_info %}
+{% if toolkit.description or toolkit.prompt %}
 ### Toolkit: {{ toolkit.name }}
-{% if toolkit.description %}Description: {{ toolkit.description }}{% endif %}
-{% if toolkit.extra_info %}Extra: {{ toolkit.extra_info }}{% endif %}
+{% if toolkit.description %}{{ toolkit.description }}{% endif %}
+{% if toolkit.prompt %}{{ toolkit.prompt }}{% endif %}
 {% endif %}
 {% endfor %}
 
-All tools listed below with a specific prefix belong to a toolkit. The toolkit's description and extra (if available) is described above.
+All tools listed below with a specific prefix belong to a toolkit. The toolkit's description (if available) is described above.
 {% for toolkit in data.toolkits %}
 Note: Tools with prefix "{{ toolkit.prefix }}" are part of the "{{ toolkit.name }}" toolkit.
 {% endfor %}
