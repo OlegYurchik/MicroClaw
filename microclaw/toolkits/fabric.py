@@ -5,6 +5,7 @@ from .settings import ToolKitSettings
 
 
 def get_toolkit(
+        key: str,
         toolkit_settings_or_path: ToolKitSettings | str,
 ) -> BaseToolKit:
     if isinstance(toolkit_settings_or_path, str):
@@ -23,4 +24,4 @@ def get_toolkit(
     if not issubclass(toolkit_class, BaseToolKit):
         raise TypeError(f"Class '{toolkit_class_name}' is not a tool kit")
 
-    return toolkit_class(settings=toolkit_settings)
+    return toolkit_class(key=key, settings=toolkit_settings)

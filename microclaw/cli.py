@@ -4,6 +4,7 @@ import pathlib
 import typer
 
 from .agents import get_cli as get_agents_cli
+from .cron import get_cli as get_cron_cli
 from .service import MicroclawService
 from .settings import MicroclawSettings
 
@@ -44,5 +45,6 @@ def get_cli() -> typer.Typer:
     cli.callback()(callback)
     cli.command(name="run")(run)
     cli.add_typer(get_agents_cli(), name="agents")
+    cli.add_typer(get_cron_cli(), name="cron")
 
     return cli

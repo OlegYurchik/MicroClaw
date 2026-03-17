@@ -10,6 +10,13 @@ class AgentMessageHandler:
         self._last_chunked_message_id: str | None = None
         self._is_new_message_chunk: bool = True
 
+    async def __aenter__(self):
+        pass
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        self._last_chunked_message_id = None
+        self._is_new_message_chunk = False
+
     @property
     def is_new_message_chunk(self) -> bool:
         return self._is_new_message_chunk
@@ -40,15 +47,17 @@ class AgentMessageSaver(AgentMessageHandler):
         self._session_id = session_id
 
     async def __aenter__(self) -> Self:
+        await super().__aenter__()
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         await self._flush_messages()
+        await super().__aexit__(exc_type, exc_val, exc_tb)
 
     async def handle_new_message(self, new_message: AgentMessage):
         if self.is_new_message_chunk:
             await self._flush_messages()
-            self._messages.append(new_message)
+            self._messages.append(new_message.model_copy())
         elif new_message.text:
             self._messages[-1].text += new_message.text
 

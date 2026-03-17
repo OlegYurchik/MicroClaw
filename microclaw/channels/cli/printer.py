@@ -35,11 +35,13 @@ class AgentMessagePrinter(AgentMessageHandler):
         self._is_finished = False
 
     async def __aenter__(self):
+        await super().__aenter__()
         self._start_loader()
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         self._stop_loader()
         await self.print_spent()
+        await super().__aexit__(exc_type, exc_val, exc_tb)
 
     async def handle_new_message(self, new_message: AgentMessage):
         if new_message.role != "assistant" or not new_message.text:

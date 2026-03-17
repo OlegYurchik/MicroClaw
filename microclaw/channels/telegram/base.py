@@ -22,7 +22,7 @@ class BaseTelegramChannel(facet.AsyncioServiceMixin, ChannelInterface):
     """Telegram messenger channel.
 
     Communication happens in a messenger environment. Keep responses concise and brief.
-    Use markdown formatting for text. Do not use tables or diagrams in your responses.
+    Use markdown formatting for text. Do not use tables, schemes or diagrams in your responses.
     """
 
     END_PHRASE = "NO_REPLY"
@@ -49,7 +49,8 @@ class BaseTelegramChannel(facet.AsyncioServiceMixin, ChannelInterface):
         self._dispatcher = aiogram.Dispatcher()
         self._dispatcher.message.middleware(AuthMiddleware(allow_from=self._settings.allow_from))
         self._dispatcher.message.middleware(TypingMiddleware(delay=self.TYPING_ACTION_DELAY))
-        self._dispatcher.message(aiogram.filters.Command("reset"))(self.handle_reset_command)
+        self._dispatcher.message(aiogram.filters.Command("reset"))(self.handle_new_session)
+        self._dispatcher.message(aiogram.filters.Command("start"))(self.handle_new_session)
         self._dispatcher.message(aiogram.F.voice)(self.handle_voice_message)
         self._dispatcher.message()(self.handle_text_message)
 
@@ -60,7 +61,7 @@ class BaseTelegramChannel(facet.AsyncioServiceMixin, ChannelInterface):
             path="microclaw.channels.telegram.toolkit.TelegramToolKit",
             args={"bot_token": self._settings.token},
         )
-        return TelegramToolKit(settings=toolkit_settings)
+        return TelegramToolKit(key="telegram_channel", settings=toolkit_settings)
 
     async def start(self):
         try:
@@ -81,22 +82,59 @@ class BaseTelegramChannel(facet.AsyncioServiceMixin, ChannelInterface):
 
         self.add_task(self.listen_events())
 
-    async def listen_events(self):
-        raise NotImplementedError
+    async def start_conversation(
+            self,
+            session_id: uuid.UUID,
+            messages: list[AgentMessage],
+            chat_id: int,
+    ):
+        for agent_message in messages:
+            await self._sessions_storage.add_message(
+                session_id=session_id,
+                message=agent_message,
+            )
 
-    async def handle_reset_command(self, message: aiogram.types.Message):
-        user_session_key = self.generate_user_session_key(message=message)
-        session_id = uuid.uuid4()
-        self._user_sessions[user_session_key] = session_id
-
+        saver = AgentMessageSaver(
+            sessions_storage=self._sessions_storage,
+            session_id=session_id,
+        )
         printer = AgentMessagePrinter(
-            user_message=message,
+            bot=self._bot,
+            chat_id=chat_id,
             session_id=session_id,
             sessions_storage=self._sessions_storage,
             agent=self._agent,
             show_context_usage=self._settings.show_context_usage,
             show_costs=self._settings.show_costs,
-            debug=self._debug,
+            debug=self._settings.debug,
+        )
+
+        user_session_key = None
+        async with (printer.catch_exception(), printer, saver):
+            async for new_message in self._agent.ask(messages=messages, channel=self):
+                if user_session_key is None:
+                    user_session_key = self.generate_user_session_key(chat_id=chat_id)
+                    self._user_sessions[user_session_key] = session_id
+                await saver.register_new_message(new_message)
+                await printer.register_new_message(new_message) 
+        
+    async def listen_events(self):
+        raise NotImplementedError
+
+    async def handle_new_session(self, message: aiogram.types.Message):
+        user_session_key = self.generate_user_session_key(message=message)
+        session_id = uuid.uuid4()
+        self._user_sessions[user_session_key] = session_id
+
+        printer = AgentMessagePrinter(
+            bot=self._bot,
+            chat_id=message.chat.id,
+            session_id=session_id,
+            sessions_storage=self._sessions_storage,
+            agent=self._agent,
+            show_context_usage=self._settings.show_context_usage,
+            show_costs=self._settings.show_costs,
+            debug=self._settings.debug,
         )
         await printer.print(text="Dialog context reset")
 
@@ -104,14 +142,19 @@ class BaseTelegramChannel(facet.AsyncioServiceMixin, ChannelInterface):
         user_session_key = self.generate_user_session_key(message=message)
         session_id = self._user_sessions[user_session_key]
 
+        saver = AgentMessageSaver(
+            sessions_storage=self._sessions_storage,
+            session_id=session_id,
+        )
         printer = AgentMessagePrinter(
-            user_message=message,
+            bot=self._bot,
+            chat_id=message.chat.id,
             session_id=session_id,
             sessions_storage=self._sessions_storage,
             agent=self._agent,
             show_context_usage=self._settings.show_context_usage,
             show_costs=self._settings.show_costs,
-            debug=self._debug,
+            debug=self._settings.debug,
         )
 
         if self._stt is None:
@@ -132,6 +175,10 @@ class BaseTelegramChannel(facet.AsyncioServiceMixin, ChannelInterface):
 
         async with printer.catch_exception():
             stt_message = await self._stt.transcribe_bytes(audio_bytes, format=audio_format)
+        await self._sessions_storage.add_message(
+            session_id=session_id,
+            message=stt_message,
+        )
 
         context_info = self.get_message_context(message=message)
         text_with_context = f"""
@@ -172,23 +219,24 @@ class BaseTelegramChannel(facet.AsyncioServiceMixin, ChannelInterface):
             text: str,
     ):
         message_generator = self._sessions_storage.get_messages(session_id=session_id)
-        messages = [message async for message in message_generator]
+        messages = [_message async for _message in message_generator]
 
         saver = AgentMessageSaver(
             sessions_storage=self._sessions_storage,
             session_id=session_id,
         )
         printer = AgentMessagePrinter(
-            user_message=message,
+            bot=self._bot,
+            chat_id=message.chat.id,
             session_id=session_id,
             sessions_storage=self._sessions_storage,
             agent=self._agent,
             show_context_usage=self._settings.show_context_usage,
             show_costs=self._settings.show_costs,
-            debug=self._debug,
+            debug=self._settings.debug,
         )
 
-        async with (self.catch_exception(), saver, printer):
+        async with (printer.catch_exception(), saver, printer):
             async for new_message in self._agent.ask(messages=messages, channel=self):
                 await saver.register_new_message(new_message)
                 await printer.register_new_message(new_message)
@@ -197,7 +245,7 @@ class BaseTelegramChannel(facet.AsyncioServiceMixin, ChannelInterface):
                 await self.summarize_dialog_if_needed(session_id=session_id) and
                 self._settings.debug
         ):
-            await printer.print(message=message, text="Dialog summarized")
+            await printer.print(text="Dialog summarized")
 
     def get_message_context(self, message: aiogram.types.Message) -> str:
         chat_title = getattr(message.chat, "title", None)
@@ -222,5 +270,13 @@ class BaseTelegramChannel(facet.AsyncioServiceMixin, ChannelInterface):
         Date: {message.date.isoformat() if message.date else None}
         """
 
-    def generate_user_session_key(self, message: aiogram.types.Message) -> str:
-        return f"{message.chat.id}-{message.from_user.id}"
+    def generate_user_session_key(
+            self,
+            message: aiogram.types.Message | None = None,
+            chat_id: int | None = None,
+    ) -> str:
+        if chat_id is not None:
+            return str(chat_id)
+        if message is not None:
+            return str(message.chat.id)
+        raise ValueError("One of args (message or chat_id) must be defined")

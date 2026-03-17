@@ -149,6 +149,7 @@ class EmailToolKit(BaseToolKit[EmailSettings]):
     ) -> list[EmailMessage]:
         """
         Get list of email messages from a folder.
+        Returns messages with their UIDs (real UIDs, not sequence numbers).
 
         Args:
             folder: Folder name (default: default_folder from settings)
@@ -166,39 +167,36 @@ class EmailToolKit(BaseToolKit[EmailSettings]):
             if status != "OK":
                 return []
 
-            criteria = "ALL"
-            if unread_only:
-                criteria = "UNSEEN"
+            criteria = ["UNSEEN"] if unread_only else ["ALL"]
 
-            status, data = await client.search(criteria)
-            if status != "OK":
+            uids = await self._get_uids_by_search(client, *criteria)
+            if not uids:
                 return []
 
-            uid_data = data[0].split()
-            if not uid_data:
-                return []
-
-            uid_list = uid_data[-limit:]
+            uid_list = uids[-limit:]
 
             messages = []
             for uid in reversed(uid_list):
                 uid_str = uid.decode() if isinstance(uid, bytes) else uid
-                status, msg_data = await client.fetch(uid_str, "(RFC822)")
+                status, msg_data = await client.uid("FETCH", uid_str, "(RFC822.HEADER)")
                 if status != "OK" or not msg_data:
                     continue
+                raw_message = b""
                 for part in msg_data:
-                    if not isinstance(part, bytearray):
-                        continue
-                    raw_message = bytes(part)
-                    msg = email.message_from_bytes(raw_message)
-                    email_msg = self._parse_email_message(msg, uid_str, folder)
-                    messages.append(email_msg)
-                    break
+                    if isinstance(part, tuple) and len(part) == 2:
+                        raw_message += part[1]
+                    elif isinstance(part, (bytes, bytearray)):
+                        raw_message += bytes(part)
+                if not raw_message:
+                    continue
+                msg = email.message_from_bytes(raw_message)
+                email_msg = self._parse_email_message(msg, uid_str, folder)
+                messages.append(email_msg)
 
             return messages
 
     @tool
-    async def get_message_by_id(self, uid: str, folder: str = "") -> FullEmailMessage | None:
+    async def get_message_by_uid(self, uid: str, folder: str = "") -> FullEmailMessage | None:
         """
         Get a specific email message by its UID.
 
@@ -216,10 +214,19 @@ class EmailToolKit(BaseToolKit[EmailSettings]):
             if status != "OK":
                 return None
 
-            status, message_parts = await client.fetch(uid, "(RFC822)")
+            status, message_parts = await client.uid("FETCH", uid, "(RFC822.HEADER)")
             if status != "OK" or not message_parts:
                 return None
-            raw_message = b"".join(message_parts)
+
+            raw_message = b""
+            for part in message_parts:
+                if isinstance(part, tuple) and len(part) == 2:
+                    raw_message += part[1]
+                elif isinstance(part, (bytes, bytearray)):
+                    raw_message += bytes(part)
+            if not raw_message:
+                return None
+
             message = email.message_from_bytes(raw_message)
             return self._parse_full_email_message(message=message, uid=uid, folder=folder)
 
@@ -254,47 +261,49 @@ class EmailToolKit(BaseToolKit[EmailSettings]):
             if status != "OK":
                 return []
 
-            criteria_parts = []
+            criteria = []
             if subject:
-                criteria_parts.append(f'SUBJECT "{subject}"')
+                criteria.extend(["SUBJECT", f'"{subject}"'])
             if from_addr:
-                criteria_parts.append(f'FROM "{from_addr}"')
+                criteria.extend(["FROM", f'"{from_addr}"'])
             if to_addr:
-                criteria_parts.append(f'TO "{to_addr}"')
+                criteria.extend(["TO", f'"{to_addr}"'])
             if body_text:
-                criteria_parts.append(f'BODY "{body_text}"')
+                criteria.extend(["BODY", f'"{body_text}"'])
 
-            criteria = " ".join(criteria_parts) if criteria_parts else "ALL"
+            if not criteria:
+                criteria = ["ALL"]
 
-            status, data = await client.search(criteria)
-            if status != "OK":
+            uids = await self._get_uids_by_search(client, *criteria)
+            if not uids:
                 return []
 
-            uid_data = data[0].split()
-            if not uid_data:
-                return []
-
-            uid_list = uid_data[-limit:]
+            uid_list = uids[-limit:]
 
             messages = []
             for uid in uid_list:
-                status, msg_data = await client.fetch(uid, "(RFC822)")
+                uid_str = uid.decode() if isinstance(uid, bytes) else uid
+                status, msg_data = await client.uid("FETCH", uid_str, "(RFC822.HEADER)")
                 if status != "OK" or not msg_data:
                     continue
+                raw_message = b""
                 for part in msg_data:
-                    if not isinstance(part, tuple):
-                        continue
-                    raw_message = part[1]
-                    msg = email.message_from_bytes(raw_message)
-                    email_msg = self._parse_email_message(msg, uid.decode(), folder)
-                    messages.append(email_msg)
+                    if isinstance(part, tuple) and len(part) == 2:
+                        raw_message += part[1]
+                    elif isinstance(part, (bytes, bytearray)):
+                        raw_message += bytes(part)
+                if not raw_message:
+                    continue
+                msg = email.message_from_bytes(raw_message)
+                email_msg = self._parse_email_message(msg, uid_str, folder)
+                messages.append(email_msg)
 
             return messages
 
     @tool
     async def delete_message(self, uid: str, folder: str = "") -> bool:
         """
-        Delete an email message.
+        Delete an email message by UID.
 
         Args:
             uid: Message UID to delete
@@ -310,7 +319,7 @@ class EmailToolKit(BaseToolKit[EmailSettings]):
             if status != "OK":
                 return False
 
-            status, _ = await client.store(uid, "+FLAGS", r"(\Deleted)")
+            status, _ = await client.uid("STORE", uid, "+FLAGS", r"(\Deleted)")
             if status != "OK":
                 return False
 
@@ -342,11 +351,11 @@ class EmailToolKit(BaseToolKit[EmailSettings]):
             if status != "OK":
                 return False
 
-            status, _ = await client.copy(uid, destination_folder)
+            status, _ = await client.uid("COPY", uid, destination_folder)
             if status != "OK":
                 return False
 
-            status, _ = await client.store(uid, "+FLAGS", r"(\Deleted)")
+            status, _ = await client.uid("STORE", uid, "+FLAGS", r"(\Deleted)")
             if status != "OK":
                 return False
 
@@ -372,7 +381,7 @@ class EmailToolKit(BaseToolKit[EmailSettings]):
             if status != "OK":
                 return False
 
-            status, _ = await client.store(uid, "+FLAGS", r"(\Seen)")
+            status, _ = await client.uid("STORE", uid, "+FLAGS", r"(\Seen)")
             return status == "OK"
 
     @tool
@@ -394,7 +403,7 @@ class EmailToolKit(BaseToolKit[EmailSettings]):
             if status != "OK":
                 return False
 
-            status, _ = await client.store(uid, "-FLAGS", r"(\Seen)")
+            status, _ = await client.uid("STORE", uid, "-FLAGS", r"(\Seen)")
             return status == "OK"
 
     @tool
@@ -486,12 +495,55 @@ class EmailToolKit(BaseToolKit[EmailSettings]):
             if status != "OK":
                 return 0
 
-            status, data = await client.search("UNSEEN")
-            if status != "OK":
-                return 0
+            uids = await self._get_uids_by_search(client, "UNSEEN")
+            return len(uids)
 
-            uid_data = data[0].split()
-            return len(uid_data) if uid_data else 0
+    async def _get_uids_by_search(
+            self,
+            client: aioimaplib.IMAP4,
+            *criteria: str
+    ) -> list[str]:
+        try:
+            status, data = await client.uid("SEARCH", *criteria)
+            if status == "OK" and data and data[0]:
+                uid_line = data[0]
+                if isinstance(uid_line, bytes):
+                    uid_line = uid_line.decode()
+                return uid_line.split()
+            return []
+        except (aioimaplib.Error, Exception):
+            pass
+
+        status, data = await client.search(*criteria)
+        if status != "OK" or not data or not data[0]:
+            return []
+
+        seq_line = data[0]
+        if isinstance(seq_line, bytes):
+            seq_line = seq_line.decode()
+        seq_numbers = seq_line.split()
+        if not seq_numbers:
+            return []
+
+        uids = []
+        for seq in seq_numbers:
+            status, fetch_data = await client.fetch(seq, "(UID)")
+            if status != "OK" or not fetch_data:
+                continue
+            uid = None
+            for part in fetch_data:
+                if isinstance(part, tuple) and len(part) == 2:
+                    if part[0].upper() == b"UID":
+                        uid = part[1].decode()
+                        break
+                elif isinstance(part, bytes):
+                    match = re.search(rb"UID (\d+)", part)
+                    if match:
+                        uid = match.group(1).decode()
+                        break
+            if uid:
+                uids.append(uid)
+        return uids
 
     def _parse_full_email_message(self, message: Message, uid: str, folder: str) -> FullEmailMessage:
         email_message = self._parse_email_message(message=message, uid=uid, folder=folder)

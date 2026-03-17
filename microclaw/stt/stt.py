@@ -49,8 +49,11 @@ class STT:
                 language=self._settings.language,
             )
 
+        audio_input_seconds = 0
+        if response.usage and response.usage.type == "duration":
+            audio_input_seconds = int(response.usage.seconds)
         spending = Spending(
-            audio_input_seconds=int(response.duration) if hasattr(response, "duration") else 0,
+            audio_input_seconds=audio_input_seconds,
             currency=self._model_settings.costs.currency if self._model_settings.costs else "$",
         )
         if self._model_settings.costs:
@@ -72,8 +75,11 @@ class STT:
             language=self._settings.language,
         )
 
+        audio_input_seconds = 0
+        if response.usage and response.usage.type == "duration":
+            audio_input_seconds = int(response.usage.seconds)
         spending = Spending(
-            audio_input_seconds=int(response.duration) if hasattr(response, "duration") else 0,
+            audio_input_seconds=audio_input_seconds,
             currency=self._model_settings.costs.currency if self._model_settings.costs else "$",
         )
         if self._model_settings.costs:

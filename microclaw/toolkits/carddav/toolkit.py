@@ -66,8 +66,8 @@ class XMLBuilder:
 class CardDAVToolKit(BaseToolKit[CardDAVSettings]):
     """Tools for managing address books and contacts via CardDAV protocol."""
 
-    def __init__(self, settings: ToolKitSettings):
-        super().__init__(settings=settings)
+    def __init__(self, key: str, settings: ToolKitSettings):
+        super().__init__(key=key, settings=settings)
 
         self._principal_url: str | None = None
         self._xml = XMLBuilder()

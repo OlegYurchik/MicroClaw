@@ -25,8 +25,8 @@ class HomeAssistantToolKit(BaseToolKit[HomeAssistantSettings]):
     devices.
     """
 
-    def __init__(self, settings: ToolKitSettings):
-        super().__init__(settings=settings)
+    def __init__(self, key: str, settings: ToolKitSettings):
+        super().__init__(key=key, settings=settings)
         self._client = None
 
     async def _get_client(self) -> Client:

@@ -7,6 +7,7 @@ requires-python = ">=3.13"
 # include = ["microclaw"]  # Removed - deprecated in pyproject.toml
 dependencies = [
     "aiofiles>=24.1.0",
+    "apscheduler>=3.10.4",
     "facet>=0.10.1",
     "jinja2>=3.1.6",
     "pydantic>=2.12.5",
@@ -18,6 +19,7 @@ dependencies = [
     "typer>=0.21.1",
     "langchain>=1.2.10",
     "langchain-core>=1.2.16",
+    "langchain-mcp-adapters>=0.1.0",
 ]
 
 [dependency-groups]
@@ -33,6 +35,9 @@ telegram = [
 ]
 openai = [
     "langchain-openai>=1.1.10",
+]
+cloudru = [
+    "evolution-langchain>=1.0.0",
 ]
 caldav = [
     "caldav@git+https://github.com/python-caldav/caldav@fd02726542c8fa426931f6f9faaed1f76774c1a3",

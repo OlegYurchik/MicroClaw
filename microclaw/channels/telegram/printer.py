@@ -1,7 +1,9 @@
+import re
 import uuid
 from contextlib import asynccontextmanager
 
 import aiogram
+from aiogram.enums import ParseMode
 
 from microclaw.agents import Agent
 from microclaw.channels.utils import AgentMessageHandler
@@ -10,9 +12,14 @@ from microclaw.sessions_storages import SessionsStorageInterface
 
 
 class AgentMessagePrinter(AgentMessageHandler):
+    MAX_MESSAGE_LENGTH = 4096
+    FINISH_MESSAGE = "NO_REPLY"
+    RESERVED_CHARS = r"_*\[\]()~`>#+-=|{}.!\\"
+
     def __init__(
             self,
-            user_message: aiogram.types.Message,
+            bot: aiogram.Bot,
+            chat_id: int,
             session_id: uuid.UUID,
             sessions_storage: SessionsStorageInterface,
             agent: Agent,
@@ -21,7 +28,8 @@ class AgentMessagePrinter(AgentMessageHandler):
             debug: bool = False,
     ):
         super().__init__()
-        self._user_message = user_message
+        self._bot = bot
+        self._chat_id = chat_id
         self._session_id = session_id
         self._sessions_storage = sessions_storage
         self._agent = agent
@@ -32,18 +40,22 @@ class AgentMessagePrinter(AgentMessageHandler):
         self._messages: list[AgentMessage] = []
 
     async def __aenter__(self):
-        pass
+        await super().__aenter__()
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         await self._flush_messages()
+        await super().__aexit__(exc_type, exc_val, exc_tb)
 
     async def handle_new_message(self, new_message: AgentMessage):
+        if new_message.role != "assistant":
+            return
+
         if self.is_new_message_chunk:
             await self._flush_messages()
-            self._messages.append(new_message)
+            self._messages.append(new_message.model_copy())
         elif new_message.text:
             self._messages[-1].text += new_message.text
-            
+
     async def _flush_messages(self):
         for message in self._messages:
             if not message.text:
@@ -96,9 +108,15 @@ class AgentMessagePrinter(AgentMessageHandler):
             for i in range(0, len(text), self.MAX_MESSAGE_LENGTH)
         ]
         
-        for i, text_chunk in enumerate(text_list[:-1]):
-            await self._user_message.answer(text=text_chunk)
-        await self._user_message.answer(
+        for text_chunk in text_list[:-1]:
+            await self._bot.send_message(
+                chat_id=self._chat_id,
+                text=text_chunk,
+                # parse=ParseMode.MARKDOWN_V2,
+            )
+        await self._bot.send_message(
+            chat_id=self._chat_id,
             text=text_list[-1],
             reply_markup=reply_markup,
+            # parse=ParseMode.MARKDOWN_V2,
         )

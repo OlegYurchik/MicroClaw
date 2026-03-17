@@ -1,12 +1,17 @@
 from types import NoneType
 
-from .agents import Agent, AgentSettings, InputTypeEnum
+from langchain_core.tools import BaseTool
+from langchain_mcp_adapters.client import MultiServerMCPClient
+
+from .agents import Agent, AgentSettings, InputTypeEnum, MCPLocalSettings, MCPRemoteSettings, MCPSettings
 from .channels import ChannelInterface, get_channel
 from .sessions_storages import SessionsStorageInterface, get_sessions_storage
-from .toolkits import BaseToolKit, get_toolkit
+from .toolkits import BaseToolKit, ToolKitSettings, get_toolkit
+from .toolkits.memory import MemoryToolKit
 from .stt import STT, STTSettings
 from .settings import MicroclawSettings
 from .utils import get_by_key_or_first
+from .cron import Cron, CronSettings
 
 
 class DependencyResolver:
@@ -17,6 +22,7 @@ class DependencyResolver:
         self._agents: dict[str, Agent] | None = None
         self._stt: dict[str, STT] | None = None
         self._channels: dict[str, ChannelInterface] | None = None
+        self._crons: dict[str, Cron] | None = None
 
     async def resolve_channels(self) -> dict[str, ChannelInterface]:
         if self._channels is None:
@@ -90,22 +96,37 @@ class DependencyResolver:
 
         toolkits = await self.resolve_toolkits()
         if agent_settings.toolkits is None:
-            toolkits_settings = toolkits.keys()
+            agent_toolkits = toolkits
         else:
-            toolkits_settings = agent_settings.toolkits
-        agent_toolkits = []
-        for toolkit_settings_or_path in toolkits_settings:
-            if isinstance(toolkit_settings_or_path, str) and toolkit_settings_or_path in toolkits:
-                toolkit = toolkits[toolkit_settings_or_path]
+            agent_toolkits = {
+                toolkit_key: get_toolkit(
+                    key=toolkit_key,
+                    toolkit_settings_or_path=toolkit_settings,
+                )
+                for toolkit_key, toolkit_settings in agent_settings.toolkits.items()
+            }
+
+        mcps = self._settings.mcp
+        if agent_settings.mcp is None:
+            mcps_settings = mcps.keys()
+        else:
+            mcps_settings = agent_settings.mcp
+        agent_mcps_settings = []
+        for mcp_settings_or_name in mcps_settings:
+            if isinstance(mcp_settings_or_name, str) and mcp_settings_or_name in mcps:
+                agent_mcps_settings.append(mcps[mcp_settings_or_name])
+            elif isinstance(mcp_settings_or_name, MCPSettings):
+                agent_mcps_settings.append(mcp_settings_or_name)
             else:
-                toolkit = get_toolkit(toolkit_settings_or_path=toolkit_settings_or_path)
-            agent_toolkits.append(toolkit)
+                raise ValueError(f"MCP with name '{mcp_settings_or_name}' not exists")
+        mcp = await self.resolve_mcp(agent_mcps_settings)
 
         return Agent(
             settings=agent_settings,
             model_settings=model_settings,
             provider_settings=provider_settings,
             toolkits=agent_toolkits,
+            mcp=mcp,
         )
 
     async def resolve_sessions_storages(self) -> dict[str, SessionsStorageInterface]:
@@ -119,15 +140,38 @@ class DependencyResolver:
     async def resolve_toolkits(self) -> dict[str, BaseToolKit]:
         if self._toolkits is None:
             self._toolkits = {}
-            for toolkit_settings_or_path in self._settings.toolkits:
-                if isinstance(toolkit_settings_or_path, str):
-                    toolkit_key = toolkit_settings_or_path
-                else:
-                    toolkit_key = toolkit_settings_or_path.name or toolkit_settings_or_path.path
+            for toolkit_key, toolkit_settings_or_path in self._settings.toolkits.items():
                 self._toolkits[toolkit_key] = get_toolkit(
                     toolkit_settings_or_path=toolkit_settings_or_path,
+                    key=toolkit_key,
                 )
         return self._toolkits
+
+    async def resolve_mcp(self, mcp_settings: list[MCPSettings]) -> MultiServerMCPClient:
+        servers = {}
+        for settings in mcp_settings:
+            if isinstance(settings, MCPRemoteSettings):
+                server_name = settings.name or settings.url
+                mcp_data = {}
+                if settings.url.startswith("http"):
+                    mcp_data["transport"] = "http"
+                elif settings.url.startswith("ws"):
+                    mcp_data["transport"] = "ws"
+                else:
+                    raise ValueError(f"Incorrect MCP URL: {settings.url}")
+                mcp_data["url"] = settings.url
+            elif isinstance(settings, MCPLocalSettings):
+                server_name = settings.name or " ".join((settings.command, *settings.args))
+                mcp_data = {
+                    "transport": "stdio",
+                    "command": settings.command,
+                    "args": settings.args,
+                }
+            else:
+                raise ValueError(f"Unsupport MCP settings type: {type(settings)}")
+            servers[server_name] = mcp_data
+
+        return MultiServerMCPClient(servers)
 
     async def resolve_stts(self) -> dict[str, STT]:
         if self._stt is None:
@@ -163,4 +207,23 @@ class DependencyResolver:
             settings=stt_settings,
             model_settings=model_settings,
             provider_settings=provider_settings,
+        )
+
+    async def resolve_crons(self) -> dict[str, Cron]:
+        if self._crons is None:
+            self._crons = {
+                key: await self.resolve_cron(cron_settings=cron_settings)
+                for key, cron_settings in self._settings.cron.items()
+            }
+        return self._crons
+
+    async def resolve_cron(self, cron_settings: CronSettings) -> Cron:
+        channel_key = cron_settings.channel
+        channel = get_by_key_or_first(storage=await self.resolve_channels(), key=channel_key)
+        if channel is None:
+            raise RuntimeError(f"Have no channel with name '{channel_key}'")
+
+        return Cron(
+            settings=cron_settings,
+            channel=channel,
         )

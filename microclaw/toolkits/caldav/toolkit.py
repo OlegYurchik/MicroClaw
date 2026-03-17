@@ -15,8 +15,8 @@ class CalDAVToolKit(BaseToolKit[CalDAVSettings]):
     DATETIME_FORMAT = "%Y%m%dT%H%M%S"
     DATE_FORMAT = "%Y%m%d"
 
-    def __init__(self, settings: ToolKitSettings):
-        super().__init__(settings=settings)
+    def __init__(self, key: str, settings: ToolKitSettings):
+        super().__init__(key=key, settings=settings)
         self._client = AsyncDAVClient(
             url=self.settings.url,
             username=self.settings.username,

@@ -9,12 +9,13 @@ from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings
 from yaml_env_tag import construct_env_tag
 
-from .agents import APITypeEnum, AgentSettings, InputTypeEnum, ModelSettings, ProviderSettings
+from .agents import APITypeEnum, AgentSettings, InputTypeEnum, MCPSettings, ModelSettings, ProviderSettings
 from .toolkits import ToolKitSettings
 from .channels import ChannelSettingsType
 from .sessions_storages import SessionsStorageSettingsType
 from .sessions_storages.filesystem import FilesystemSessionsStorageSettings
 from .stt import STTSettings
+from .cron import CronSettings
 from .utils import get_by_key_or_first
 
 
@@ -32,12 +33,14 @@ class MicroclawSettings(BaseSettings):
     models: dict[str, ModelSettings] = {
         "default": ModelSettings(id="gpt-4o"),
     }
+    toolkits: dict[str, ToolKitSettings] = Field(default_factory=dict)
+    mcp: dict[str, MCPSettings] = Field(default_factory=dict)
     agents: dict[str, AgentSettings] = {
         "default": AgentSettings(),
     }
-    toolkits: list[ToolKitSettings | str] = Field(default_factory=list)
-    channels: dict[str, ChannelSettingsType] = Field(default_factory=dict)
     stt: dict[str, STTSettings] = Field(default_factory=dict)
+    channels: dict[str, ChannelSettingsType] = Field(default_factory=dict)
+    cron: dict[str, CronSettings] = Field(default_factory=dict)
 
     @model_validator(mode="after")
     @classmethod
@@ -99,6 +102,17 @@ class MicroclawSettings(BaseSettings):
                     f"Toolkits must be have unique names. Name '{toolkit_settings.name}' "
                     "already defined"
                 )
+
+        mcp_names = set()
+        for name, mcp_settings in settings.mcp.items():
+            if mcp_settings.name is None:
+                continue
+            if mcp_settings.name in mcp_names:
+                raise ValueError(
+                    f"MCP servers must have unique names. Name '{mcp_settings.name}' "
+                    "already defined"
+                )
+            mcp_names.add(mcp_settings.name)
 
         return settings
 

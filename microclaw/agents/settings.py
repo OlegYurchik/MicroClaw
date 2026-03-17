@@ -1,4 +1,5 @@
 import enum
+from typing import Any
 
 from pydantic import AnyHttpUrl, BaseModel, Field, confloat
 
@@ -10,6 +11,7 @@ Temperature = confloat(gt=0, le=2)
 
 class APITypeEnum(str, enum.Enum):
     OPENAI = "openai"
+    CLOUDRU = "cloudru"
 
 
 class InputTypeEnum(str, enum.Enum):
@@ -78,10 +80,28 @@ class AgentIdentity(BaseModel):
     vibe: str = "*(how do you come across? sharp? warm? chaotic? calm?)*"
 
 
+class MCPBaseSettings(BaseModel):
+    name: str | None = None
+    description: str | None = None
+
+
+class MCPRemoteSettings(MCPBaseSettings):
+    url: str
+
+
+class MCPLocalSettings(MCPBaseSettings):
+    command: str
+    args: list[str] = Field(default_factory=list)
+
+
+MCPSettings = MCPRemoteSettings | MCPLocalSettings
+
+
 class AgentSettings(BaseModel):
     identity: AgentIdentity = AgentIdentity()
     model: ModelSettings | str | None = None
     toolkits: list[ToolKitSettings | str] | None = None
+    mcp: list[MCPSettings | str] | None = None
     temperature: Temperature | None = None
     max_tool_calls: int | None = Field(default=25, ge=1, le=1000, description="Maximum number of tool calls per conversation. None means no limit")
     enable_summarization: bool = Field(default=True, description="Enable automatic summarization when context exceeds threshold")

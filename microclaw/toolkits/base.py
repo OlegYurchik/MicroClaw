@@ -18,15 +18,10 @@ class EmptySettings(BaseModel):
 
 
 class BaseToolKit(Generic[SettingsType]):
-    def __init__(self, settings: ToolKitSettings):
-        self._name = settings.name or settings.path
-        self._prefix = (settings.name or _get_random_string()) + "_"
+    def __init__(self, key: str, settings: ToolKitSettings):
+        self._prefix = key + "_"
         self._prompt = settings.prompt
         self._settings = self.get_settings_class()(**settings.args)
-
-    @property
-    def name(self) -> str:
-        return self._name
 
     @property
     def prefix(self) -> str:
@@ -91,6 +86,7 @@ def _return_dict(function: Callable) -> Callable:
 
     @functools.wraps(function)
     async def wrapper(*args, **kwargs):
+        return convert(await function(*args, **kwargs))
         try:
             result = await function(*args, **kwargs)
         except BaseException as exception:

@@ -3,6 +3,7 @@ import pathlib
 from typing import AsyncGenerator
 
 import tiktoken
+from evolution_langchain import EvolutionInference
 from jinja2 import Template
 from langchain_core.messages import (
     AIMessage,
@@ -10,10 +11,17 @@ from langchain_core.messages import (
     HumanMessage,
     SystemMessage,
 )
+from langchain_mcp_adapters.client import MultiServerMCPClient
 from langchain_openai import ChatOpenAI
 from langchain.agents import create_agent
 
-from microclaw.agents.settings import AgentSettings, ModelSettings, ProviderSettings, APITypeEnum
+from microclaw.agents.settings import (
+    AgentSettings,
+    ModelSettings,
+    ProviderSettings,
+    APITypeEnum,
+    MCPSettings,
+)
 from microclaw.dto import AgentMessage, Spending
 from microclaw.toolkits import BaseToolKit
 from .dto import SystemPromptValues, SystemValues
@@ -25,15 +33,17 @@ class Agent:
             settings: AgentSettings,
             model_settings: ModelSettings,
             provider_settings: ProviderSettings,
-            toolkits: list[BaseToolKit],
+            toolkits: dict[str, BaseToolKit],
+            mcp: MultiServerMCPClient,
     ):
         self._settings = settings
         self._model_settings = model_settings
         self._provider_settings = provider_settings
         self._toolkits = toolkits
+        self._mcp = mcp
         self._tools = [
             tool
-            for toolkit in self._toolkits
+            for toolkit in self._toolkits.values()
             for tool in toolkit.get_tools()
         ]
         self._client = self.get_client()
@@ -56,6 +66,19 @@ class Agent:
                     default_headers=default_headers,
                     temperature=temperature,
                 )
+            case APITypeEnum.CLOUDRU:
+                key_id, key_secret = api_key.split(":")
+                return EvolutionInference(
+                    model=self._model_settings.id,
+                    key_id=key_id,
+                    secret=key_secret,
+                    base_url=(
+                        base_url
+                        if base_url != "https://foundation-models.api.cloud.ru/v1"
+                        else None
+                    ),
+                    temperature=temperature,
+                )
             case _:
                 raise ValueError(f"Unsupported API type: '{api_type.value}'")
 
@@ -66,7 +89,7 @@ class Agent:
     ) -> AsyncGenerator[AgentMessage]:
         langchain_messages: list[BaseMessage] = self._convert_to_langchain_messages(messages)
 
-        tools = list(self._tools)
+        tools = list(self._tools) + list(await self._mcp.get_tools())
         channel_toolkit = channel.get_toolkit()
         if channel_toolkit is not None:
             tools.extend(channel_toolkit.get_tools())
@@ -78,7 +101,7 @@ class Agent:
         agent = create_agent(
             model=self._client,
             tools=tools,
-            system_prompt=self._get_system_prompt(channel=channel),
+            system_prompt=await self._get_system_prompt(channel=channel),
         )
         
         events_generator = agent.astream_events(
@@ -93,22 +116,26 @@ class Agent:
             match event_type:
                 case "on_chat_model_start":
                     spending.input_tokens += sum(
-                        self._get_tokens_count(text=message.content)
+                        self._get_tokens_count(
+                            text=self._convert_content_to_text(message.content) or "",
+                        )
                         for messages_list in event["data"]["input"]["messages"]
                         for message in messages_list
                     )
                 case "on_chat_model_stream":
                     chunk = event["data"]["chunk"]
-                    if not chunk.content:
+                    text = self._convert_content_to_text(chunk.content)
+                    if text is None:
                         continue
                     yield AgentMessage(
                         role="assistant",
-                        text=chunk.content,
+                        text=text,
                         chunked_message_id=chunk.id,
                     )
                 case "on_chat_model_end":
                     output = event["data"]["output"]
-                    if output.content:
+                    text = self._convert_content_to_text(output.content)
+                    if text is not None:
                         spending.output_tokens = self._get_tokens_count(text=output.content)
                     if self._model_settings.costs is not None:
                         spending.calculate_cost(model_costs=self._model_settings.costs)
@@ -206,6 +233,16 @@ class Agent:
     def is_summarization_enabled(self) -> bool:
         return self._settings.enable_summarization
 
+    def _convert_content_to_text(self, content) -> str | None:
+        if isinstance(content, str):
+            return content
+        elif isinstance(content, list):
+            return "\n\n".join(
+                content_part.get("text", "")
+                for content_part in content
+                if content_part.get("type") == "text"
+            )
+
     def _get_tokens_count(self, text: str) -> int:
         if len(text) == 0:
             return 0
@@ -217,7 +254,7 @@ class Agent:
 
         return len(tokenizer.encode(text))
 
-    def _get_system_prompt(self, channel: "ChannelInterface") -> str:
+    async def _get_system_prompt(self, channel: "ChannelInterface") -> str:
         template_path = (
             pathlib.Path(__file__).parent / "templates" / "system_prompt.j2"
         )
@@ -225,7 +262,7 @@ class Agent:
         template = Template(template_content)
 
         toolkits = list(self._toolkits)
-        tools = list(self._tools)
+        tools = list(self._tools) + list(await self._mcp.get_tools())
         channel_toolkit = channel.get_toolkit()
         if channel_toolkit is not None:
             toolkits.append(channel_toolkit)

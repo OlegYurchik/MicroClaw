@@ -4,6 +4,7 @@ import facet
 from typing import Protocol
 
 from microclaw.agents import Agent
+from microclaw.dto import AgentMessage
 from microclaw.sessions_storages.interfaces import SessionsStorageInterface
 from microclaw.stt import STT
 from microclaw.toolkits import BaseToolKit
@@ -45,7 +46,15 @@ class ChannelInterface(Protocol):
     async def run(self):
         raise NotImplementedError
 
-    async def summarize_dialog_if_needed(self, session_id: str) -> bool:
+    async def start_conversation(
+            self,
+            session_id: uuid.UUID,
+            messages: list[AgentMessage] | None = None,
+            **args,
+    ):
+        raise NotImplementedError
+
+    async def summarize_dialog_if_needed(self, session_id: uuid.UUID) -> bool:
         if (
                 not self._agent.is_summarization_enabled() or
                 not await self.is_context_went_across_threshold(session_id=session_id)

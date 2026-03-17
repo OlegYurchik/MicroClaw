@@ -8,16 +8,19 @@ models:
     id: gpt-5
   whisper:
     id: whisper-1
-channels:
+stt:
   default:
-    type: telegram
-    token: !env TELEGRAM_BOT_TOKEN
-    stt: default
+    model: whisper
+    language: ru
 sessions_storages:
   default:
     type: filesystem
+memory:
+  driver:
+    type: filesystem
+    workspace: !env [MICROCLAW_WORKSPACE, /data/workspace]
 toolkits:
-  - name: email
+  email:
     path: microclaw.toolkits.email.EmailToolKit
     args:
       smtp_host: smtp.gmail.com
@@ -28,7 +31,16 @@ toolkits:
       imap_tls_mode: ssl
       username: !env EMAIL_USERNAME
       password: !env EMAIL_PASSWORD
-stt:
+  tasks:
+    path: microclaw.toolkits.tasks.TasksToolKit
+    args:
+      url: https://cloud.example.com/remote.php/dav/calendars/username/
+      username: !env NEXTCLOUD_USERNAME
+      password: !env NEXTCLOUD_PASSWORD
+      verify_ssl: true
+      default_calendar_path: null
+channels:
   default:
-    model: whisper
-    language: ru
+    type: telegram
+    token: !env TELEGRAM_BOT_TOKEN
+    stt: default
