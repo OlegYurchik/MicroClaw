@@ -74,6 +74,7 @@ class AgentMessagePrinter(AgentMessageHandler):
                 await self.print(
                     text="Internal error, please contact agent administrator",
                 )
+            raise exception
 
     async def print(self, text: str):
         buttons = []

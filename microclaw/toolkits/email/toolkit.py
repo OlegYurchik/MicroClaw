@@ -90,6 +90,16 @@ class EmailToolKit(BaseToolKit[EmailSettings]):
         )
         yield client
 
+    async def _ensure_imap_authenticated(self, client: aioimaplib.IMAP4) -> None:
+        status, _ = await client.noop()
+        if status == "OK":
+            return
+        if client.state == "NONAUTH":
+            await client.login(
+                self.settings.username,
+                self.settings.password,
+            )
+
     @asynccontextmanager
     async def _create_smtp_client(self):
         client = SMTP(
@@ -178,21 +188,18 @@ class EmailToolKit(BaseToolKit[EmailSettings]):
             messages = []
             for uid in reversed(uid_list):
                 uid_str = uid.decode() if isinstance(uid, bytes) else uid
-                status, msg_data = await client.uid("FETCH", uid_str, "(RFC822.HEADER)")
-                if status != "OK" or not msg_data:
+                status, message_parts = await client.uid("FETCH", uid_str, "(RFC822)")
+                if status != "OK" or not message_parts:
                     continue
                 raw_message = b""
-                for part in msg_data:
-                    if isinstance(part, tuple) and len(part) == 2:
-                        raw_message += part[1]
-                    elif isinstance(part, (bytes, bytearray)):
-                        raw_message += bytes(part)
-                if not raw_message:
-                    continue
-                msg = email.message_from_bytes(raw_message)
-                email_msg = self._parse_email_message(msg, uid_str, folder)
-                messages.append(email_msg)
-
+                for part in message_parts:
+                    if not isinstance(part, bytearray):
+                        continue
+                    raw_message = bytes(part)
+                    msg = email.message_from_bytes(raw_message)
+                    email_msg = self._parse_email_message(msg, uid_str, folder)
+                    messages.append(email_msg)
+                    break
             return messages
 
     @tool
@@ -214,16 +221,19 @@ class EmailToolKit(BaseToolKit[EmailSettings]):
             if status != "OK":
                 return None
 
-            status, message_parts = await client.uid("FETCH", uid, "(RFC822.HEADER)")
+            status, message_parts = await client.uid("FETCH", uid, "(RFC822)")
             if status != "OK" or not message_parts:
                 return None
 
             raw_message = b""
             for part in message_parts:
-                if isinstance(part, tuple) and len(part) == 2:
-                    raw_message += part[1]
-                elif isinstance(part, (bytes, bytearray)):
-                    raw_message += bytes(part)
+                if not isinstance(part, bytearray):
+                    continue
+                raw_message = bytes(part)
+                msg = email.message_from_bytes(raw_message)
+                email_msg = self._parse_email_message(msg, uid_str, folder)
+                messages.append(email_msg)
+                break
             if not raw_message:
                 return None
 
@@ -283,15 +293,18 @@ class EmailToolKit(BaseToolKit[EmailSettings]):
             messages = []
             for uid in uid_list:
                 uid_str = uid.decode() if isinstance(uid, bytes) else uid
-                status, msg_data = await client.uid("FETCH", uid_str, "(RFC822.HEADER)")
-                if status != "OK" or not msg_data:
+                status, message_parts = await client.uid("FETCH", uid_str, "(RFC822)")
+                if status != "OK" or not message_parts:
                     continue
                 raw_message = b""
-                for part in msg_data:
-                    if isinstance(part, tuple) and len(part) == 2:
-                        raw_message += part[1]
-                    elif isinstance(part, (bytes, bytearray)):
-                        raw_message += bytes(part)
+                for part in message_parts:
+                    if not isinstance(part, bytearray):
+                        continue
+                    raw_message = bytes(part)
+                    msg = email.message_from_bytes(raw_message)
+                    email_msg = self._parse_email_message(msg, uid_str, folder)
+                    messages.append(email_msg)
+                    break
                 if not raw_message:
                     continue
                 msg = email.message_from_bytes(raw_message)
@@ -596,12 +609,12 @@ class EmailToolKit(BaseToolKit[EmailSettings]):
 
     def _parse_email_message(self, message: Message, uid: str, folder: str) -> EmailMessage:
         message_id = message.get("Message-ID", "")
-        subject = self._decode_header(message.get("Subject", ""))
-        from_addr = self._decode_header(message.get("From", ""))
+        subject = self._decode_header(message.get("Subject"))
+        from_addr = self._decode_header(message.get("From"))
 
-        to_list = self._extract_addresses(message.get("To", ""))
-        cc_list = self._extract_addresses(message.get("Cc", ""))
-        bcc_list = self._extract_addresses(message.get("Bcc", ""))
+        to_list = self._extract_addresses(message.get("To"))
+        cc_list = self._extract_addresses(message.get("Cc"))
+        bcc_list = self._extract_addresses(message.get("Bcc"))
 
         date_str = message.get("Date", "")
         try:
@@ -633,4 +646,5 @@ class EmailToolKit(BaseToolKit[EmailSettings]):
     def _extract_addresses(self, address_str: str) -> list[str]:
         if not address_str:
             return []
-        return [email for name, email in getaddresses([address_str])]
+
+        return [email for name, email in getaddresses([address_str]) if email]

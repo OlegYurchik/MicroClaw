@@ -1,5 +1,7 @@
 import asyncio
 
+import aiogram
+
 
 class TypingManager:
     def __init__(self, bot: aiogram.Bot, chat_id: int, delay: int = 3):

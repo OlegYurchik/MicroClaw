@@ -1,7 +1,7 @@
 from datetime import datetime, date
 
 from caldav.aio import AsyncDAVClient, AsyncPrincipal, AsyncCalendar, AsyncTodo
-from caldav.elements import dav
+from caldav.elements import cdav, dav
 
 from microclaw.toolkits.base import BaseToolKit, tool
 from microclaw.toolkits.settings import ToolKitSettings
@@ -258,7 +258,7 @@ class TasksToolKit(BaseToolKit[TasksSettings]):
 
     async def _convert_calendar_to_dto(self, calendar: AsyncCalendar) -> TaskList:
         name = await calendar.get_property(dav.DisplayName())
-        return TaskList(url=calendar.url, name=name or "")
+        return TaskList(url=str(calendar.url), name=name or "")
 
     async def _convert_todo_to_dto(self, todo: AsyncTodo) -> Task:
         vtodo = todo.vobject_instance.vtodo
@@ -298,7 +298,7 @@ class TasksToolKit(BaseToolKit[TasksSettings]):
 
         return Task(
             uid=todo.id,
-            url=todo.url,
+            url=str(todo.url),
             summary=summary_value,
             description=description_value,
             status=status_value,

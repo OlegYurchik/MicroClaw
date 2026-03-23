@@ -4,7 +4,6 @@ version = "0.1.0"
 description = "AI agent micro framework"
 readme = "README.md"
 requires-python = ">=3.13"
-# include = ["microclaw"]  # Removed - deprecated in pyproject.toml
 dependencies = [
     "aiofiles>=24.1.0",
     "apscheduler>=3.10.4",
@@ -39,8 +38,14 @@ openai = [
 cloudru = [
     "evolution-langchain>=1.0.0",
 ]
+ollama = [
+    "langchain-ollama>=0.1.0",
+]
 caldav = [
-    "caldav@git+https://github.com/python-caldav/caldav@fd02726542c8fa426931f6f9faaed1f76774c1a3",
+    "caldav@git+https://github.com/python-caldav/caldav@issue642-clean",
+]
+tasks = [
+    "caldav@git+https://github.com/python-caldav/caldav@issue642-clean",
 ]
 carddav = [
     "aiohttp>=3.13.3",

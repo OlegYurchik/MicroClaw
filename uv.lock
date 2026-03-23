@@ -235,8 +235,8 @@ wheels = [
 
 [[package]]
 name = "caldav"
-version = "3.0.0"
-source = { git = "https://github.com/python-caldav/caldav?rev=fd02726542c8fa426931f6f9faaed1f76774c1a3#fd02726542c8fa426931f6f9faaed1f76774c1a3" }
+version = "3.0.2.dev12+g6863ed156"
+source = { git = "https://github.com/python-caldav/caldav?rev=issue642-clean#6863ed1567a87187c562860024f1c15e8f339249" }
 dependencies = [
     { name = "dnspython" },
     { name = "icalendar" },
@@ -898,6 +898,19 @@ wheels = [
 ]
 
 [[package]]
+name = "langchain-ollama"
+version = "1.0.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "langchain-core" },
+    { name = "ollama" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/73/51/72cd04d74278f3575f921084f34280e2f837211dc008c9671c268c578afe/langchain_ollama-1.0.1.tar.gz", hash = "sha256:e37880c2f41cdb0895e863b1cfd0c2c840a117868b3f32e44fef42569e367443", size = 153850, upload-time = "2025-12-12T21:48:28.68Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/e3/46/f2907da16dc5a5a6c679f83b7de21176178afad8d2ca635a581429580ef6/langchain_ollama-1.0.1-py3-none-any.whl", hash = "sha256:37eb939a4718a0255fe31e19fbb0def044746c717b01b97d397606ebc3e9b440", size = 29207, upload-time = "2025-12-12T21:48:27.832Z" },
+]
+
+[[package]]
 name = "langchain-openai"
 version = "1.1.10"
 source = { registry = "https://pypi.org/simple" }
@@ -1201,8 +1214,14 @@ homeassistant = [
 nextcloud-tasks = [
     { name = "nextcloud-tasks-api" },
 ]
+ollama = [
+    { name = "langchain-ollama" },
+]
 openai = [
     { name = "langchain-openai" },
+]
+tasks = [
+    { name = "caldav" },
 ]
 telegram = [
     { name = "aiogram" },
@@ -1234,7 +1253,7 @@ requires-dist = [
 ]
 
 [package.metadata.requires-dev]
-caldav = [{ name = "caldav", git = "https://github.com/python-caldav/caldav?rev=fd02726542c8fa426931f6f9faaed1f76774c1a3" }]
+caldav = [{ name = "caldav", git = "https://github.com/python-caldav/caldav?rev=issue642-clean" }]
 carddav = [
     { name = "aiohttp", specifier = ">=3.13.3" },
     { name = "vobject", specifier = ">=0.9.9" },
@@ -1247,7 +1266,9 @@ email = [
 ]
 homeassistant = [{ name = "homeassistant-api", specifier = ">=4.3.0" }]
 nextcloud-tasks = [{ name = "nextcloud-tasks-api", specifier = ">=0.0.5" }]
+ollama = [{ name = "langchain-ollama", specifier = ">=0.1.0" }]
 openai = [{ name = "langchain-openai", specifier = ">=1.1.10" }]
+tasks = [{ name = "caldav", git = "https://github.com/python-caldav/caldav?rev=issue642-clean" }]
 telegram = [
     { name = "aiogram", specifier = ">=3.25.0" },
     { name = "aiohttp", specifier = ">=3.13.3" },
@@ -1363,6 +1384,19 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/53/57/91fce2b91712cfce0fd6816d063f48770358d04b213eb947392ea371cbb6/niquests-3.17.0.tar.gz", hash = "sha256:1f4f337a973215c76f6f6471504fedab9dc6187203284146081e1bd3d2a311fc", size = 996883, upload-time = "2026-01-16T14:16:52.87Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/85/63/e13cff780ef2edbfcb81e3a714417822f4b967dac0bb0388ad3146f30a95/niquests-3.17.0-py3-none-any.whl", hash = "sha256:3930d94fce367385950dd545f913e7cfc6457feda76aecafeb324aae45da9fe1", size = 183429, upload-time = "2026-01-16T14:16:51.058Z" },
+]
+
+[[package]]
+name = "ollama"
+version = "0.6.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "httpx" },
+    { name = "pydantic" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/9d/5a/652dac4b7affc2b37b95386f8ae78f22808af09d720689e3d7a86b6ed98e/ollama-0.6.1.tar.gz", hash = "sha256:478c67546836430034b415ed64fa890fd3d1ff91781a9d548b3325274e69d7c6", size = 51620, upload-time = "2025-11-13T23:02:17.416Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/47/4f/4a617ee93d8208d2bcf26b2d8b9402ceaed03e3853c754940e2290fed063/ollama-0.6.1-py3-none-any.whl", hash = "sha256:fc4c984b345735c5486faeee67d8a265214a31cbb828167782dc642ce0a2bf8c", size = 14354, upload-time = "2025-11-13T23:02:16.292Z" },
 ]
 
 [[package]]

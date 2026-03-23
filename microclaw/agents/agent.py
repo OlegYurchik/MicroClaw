@@ -13,6 +13,7 @@ from langchain_core.messages import (
 )
 from langchain_mcp_adapters.client import MultiServerMCPClient
 from langchain_openai import ChatOpenAI
+from langchain_ollama import ChatOllama
 from langchain.agents import create_agent
 
 from microclaw.agents.settings import (
@@ -51,14 +52,14 @@ class Agent:
     def get_client(self):
         api_type = self._model_settings.api_type or self._provider_settings.api_type
         api_key = self._model_settings.api_key or self._provider_settings.api_key
-        if not api_key:
-            raise ValueError("API key for agent not provided")
         base_url = str(self._provider_settings.base_url)
         default_headers = self._provider_settings.headers | self._model_settings.headers
         temperature = self._settings.temperature or self._model_settings.temperature or 1
 
         match api_type:
             case APITypeEnum.OPENAI:
+                if not api_key:
+                    raise ValueError("API key for OpenAI not provided")
                 return ChatOpenAI(
                     model=self._model_settings.id,
                     api_key=api_key,
@@ -67,6 +68,8 @@ class Agent:
                     temperature=temperature,
                 )
             case APITypeEnum.CLOUDRU:
+                if not api_key:
+                    raise ValueError("API key for Cloud.ru not provided")
                 key_id, key_secret = api_key.split(":")
                 return EvolutionInference(
                     model=self._model_settings.id,
@@ -77,6 +80,12 @@ class Agent:
                         if base_url != "https://foundation-models.api.cloud.ru/v1"
                         else None
                     ),
+                    temperature=temperature,
+                )
+            case APITypeEnum.OLLAMA:
+                return ChatOllama(
+                    model=self._model_settings.id,
+                    base_url=base_url if base_url != "http://localhost:11434" else None,
                     temperature=temperature,
                 )
             case _:

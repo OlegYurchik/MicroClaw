@@ -5,7 +5,7 @@ import string
 from typing import Any, Callable, Generic, TypeVar
 
 from langchain_core.tools import StructuredTool as LangChainStructuredTool
-from pydantic import BaseModel
+from pydantic import BaseModel, create_model
 
 from .settings import ToolKitSettings
 
@@ -82,15 +82,17 @@ def _return_dict(function: Callable) -> Callable:
         if isinstance(item, list):
             return [convert(element) for element in item]
         if isinstance(item, str):
-            return json.loads(item)
+            try:
+                return json.loads(item)
+            except json.JSONDecodeError:
+                return item
 
     @functools.wraps(function)
     async def wrapper(*args, **kwargs):
-        return convert(await function(*args, **kwargs))
         try:
             result = await function(*args, **kwargs)
         except BaseException as exception:
             return {"success": False, "exception": str(exception)}
-        return convert(item=result)
+        return convert(result)
 
     return wrapper

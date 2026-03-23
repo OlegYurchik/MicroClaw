@@ -1,3 +1,5 @@
+import datetime
+
 from pydantic import BaseModel, Field
 
 
@@ -17,3 +19,4 @@ class Contact(BaseModel):
     organization: str | None = Field(default=None, description="Organization of the contact")
     title: str | None = Field(default=None, description="Title/position of the contact")
     note: str | None = Field(default=None, description="Note about the contact")
+    birthday: datetime.date | None = Field(default=None, description="Birthday of the contact")

@@ -12,6 +12,7 @@ Temperature = confloat(gt=0, le=2)
 class APITypeEnum(str, enum.Enum):
     OPENAI = "openai"
     CLOUDRU = "cloudru"
+    OLLAMA = "ollama"
 
 
 class InputTypeEnum(str, enum.Enum):

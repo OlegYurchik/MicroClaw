@@ -1,4 +1,5 @@
 from typing import Any
+import datetime
 import xml.etree.ElementTree as ET
 
 import aiohttp
@@ -253,6 +254,7 @@ class CardDAVToolKit(BaseToolKit[CardDAVSettings]):
             organization: str | None = None,
             title: str | None = None,
             note: str | None = None,
+            birthday: str | None = None,
     ) -> Contact:
         """
         Create a new contact. Use this tool only when user explicitly requests contact creation.
@@ -267,6 +269,7 @@ class CardDAVToolKit(BaseToolKit[CardDAVSettings]):
             organization: Organization (optional)
             title: Title/position (optional)
             note: Note about the contact (optional)
+            birthday: Birthday of the contact (format: YYYY-MM-DD) (optional)
 
         Returns:
             Created Contact object
@@ -280,6 +283,7 @@ class CardDAVToolKit(BaseToolKit[CardDAVSettings]):
             organization=organization,
             title=title,
             note=note,
+            birthday=birthday,
         )
 
         async with self._create_session() as session:
@@ -308,6 +312,7 @@ class CardDAVToolKit(BaseToolKit[CardDAVSettings]):
             organization: str | None = None,
             title: str | None = None,
             note: str | None = None,
+            birthday: str | None = None,
     ) -> Contact | None:
         """
         Update a contact. Use this tool only when user explicitly requests contact update.
@@ -322,6 +327,7 @@ class CardDAVToolKit(BaseToolKit[CardDAVSettings]):
             organization: New organization (optional)
             title: New title/position (optional)
             note: New note (optional)
+            birthday: New birthday of the contact (format: YYYY-MM-DD) (optional)
 
         Returns:
             Updated Contact object if successful, None otherwise
@@ -349,6 +355,7 @@ class CardDAVToolKit(BaseToolKit[CardDAVSettings]):
             organization=organization,
             title=title,
             note=note,
+            birthday=birthday,
         )
 
         vcard_data = vcard.serialize()
@@ -398,6 +405,7 @@ class CardDAVToolKit(BaseToolKit[CardDAVSettings]):
             organization: str | None = None,
             title: str | None = None,
             note: str | None = None,
+            birthday: str | None = None,
     ) -> str:
         """Create vCard data string from contact details."""
         vcard = vobject.vCard()
@@ -420,6 +428,8 @@ class CardDAVToolKit(BaseToolKit[CardDAVSettings]):
             vcard.add("title").value = title
         if note:
             vcard.add("note").value = note
+        if birthday:
+            vcard.add("bday").value = birthday
 
         return vcard.serialize()
 
@@ -434,6 +444,7 @@ class CardDAVToolKit(BaseToolKit[CardDAVSettings]):
             organization: str | None = None,
             title: str | None = None,
             note: str | None = None,
+            birthday: str | None = None,
     ) -> None:
         """Update vCard fields with provided values."""
         if display_name:
@@ -450,6 +461,8 @@ class CardDAVToolKit(BaseToolKit[CardDAVSettings]):
             self._update_vcard_field(vcard, "title", title)
         if note:
             self._update_vcard_field(vcard, "note", note)
+        if birthday:
+            self._update_vcard_field(vcard, "bday", birthday)
 
     def _update_vcard_name_field(self, vcard: Any, first_name: str | None, last_name: str | None) -> None:
         if hasattr(vcard, "n") and vcard.n:
@@ -558,6 +571,14 @@ class CardDAVToolKit(BaseToolKit[CardDAVSettings]):
         return self._create_contact_from_vcard(vcard)
 
     def _create_contact_from_vcard(self, vcard: Any) -> Contact:
+        birthday_str = self._get_vcard_value(vcard, "bday")
+        birthday = None
+        if birthday_str:
+            try:
+                birthday = datetime.datetime.strptime(birthday_str, "%Y-%m-%d").date()
+            except (ValueError, TypeError):
+                pass
+
         return Contact(
             uid=self._get_vcard_value(vcard, "uid", ""),
             display_name=self._get_vcard_value(vcard, "fn", ""),
@@ -568,6 +589,7 @@ class CardDAVToolKit(BaseToolKit[CardDAVSettings]):
             organization=self._get_vcard_value(vcard, "org", list_value=True),
             title=self._get_vcard_value(vcard, "title"),
             note=self._get_vcard_value(vcard, "note"),
+            birthday=birthday,
         )
 
     def _get_name_part(self, vcard: Any, first: bool = True) -> str | None:
