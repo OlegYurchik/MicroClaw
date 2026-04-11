@@ -304,9 +304,7 @@ microclaw/
 
 ## TODO
 
-- [ ] Cron tasks service
 - [ ] Toolkit for cron tasks service
-- [ ] STT
 - [ ] Multiple users system — optional
 
 ## License

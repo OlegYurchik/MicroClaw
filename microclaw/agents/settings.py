@@ -4,6 +4,7 @@ from typing import Any
 from pydantic import AnyHttpUrl, BaseModel, Field, confloat
 
 from microclaw.toolkits import ToolKitSettings
+from .subagents import SubAgentSettings
 
 
 Temperature = confloat(gt=0, le=2)
@@ -12,7 +13,7 @@ Temperature = confloat(gt=0, le=2)
 class APITypeEnum(str, enum.Enum):
     OPENAI = "openai"
     CLOUDRU = "cloudru"
-    OLLAMA = "ollama"
+    # OLLAMA = "ollama"
 
 
 class InputTypeEnum(str, enum.Enum):
@@ -103,6 +104,9 @@ class AgentSettings(BaseModel):
     model: ModelSettings | str | None = None
     toolkits: list[ToolKitSettings | str] | None = None
     mcp: list[MCPSettings | str] | None = None
+    subagents: list[SubAgentSettings | str] | None = Field(default_factory=list)
     temperature: Temperature | None = None
-    max_tool_calls: int | None = Field(default=25, ge=1, le=1000, description="Maximum number of tool calls per conversation. None means no limit")
-    enable_summarization: bool = Field(default=True, description="Enable automatic summarization when context exceeds threshold")
+    max_tool_calls: int | None = Field(default=25, ge=1, le=1000)
+    enable_summarization: bool = Field(default=True)
+    enable_memory_flush: bool = Field(default=True)
+    max_memory_flush_tokens: int = Field(default=10000, ge=50)

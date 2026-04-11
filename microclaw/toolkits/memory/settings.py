@@ -15,3 +15,9 @@ class MemoryToolKitSettings(BaseModel):
     driver: MemoryDriverSettingsType = Field(
         default_factory=FilesystemMemoryDriverSettings,
     )
+    max_memory_tokens: int = Field(
+        default=2000,
+        ge=500,
+        le=10000,
+        description="Maximum tokens for memory file (applies to both general and daily)"
+    )

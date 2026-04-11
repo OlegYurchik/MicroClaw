@@ -2,7 +2,7 @@ from .fabric import get_channel
 from .interfaces import ChannelInterface
 from .telegram.polling import TelegramPollingSettings
 from .telegram.webhook import TelegramWebhookSettings
-from .settings import ChannelSettings
+from .settings import ChannelSettings, ChannelTypeEnum
 
 
 ChannelSettingsType = (
@@ -19,4 +19,5 @@ __all__ = (
     "ChannelInterface",
     # settings
     "ChannelSettings",
+    "ChannelTypeEnum",
 )

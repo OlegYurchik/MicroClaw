@@ -1,3 +1,4 @@
+import datetime
 import uuid
 
 import facet
@@ -8,6 +9,7 @@ from microclaw.dto import AgentMessage
 from microclaw.sessions_storages.interfaces import SessionsStorageInterface
 from microclaw.stt import STT
 from microclaw.toolkits import BaseToolKit
+from microclaw.toolkits.memory.toolkit import MemorySizeExceeded
 from .settings import ChannelSettings
 
 
@@ -68,12 +70,50 @@ class ChannelInterface(Protocol):
         if not messages:
             return False
 
-        summary_message = await self._agent.summarize_dialog(messages=messages)
+        if self._agent.is_memory_flush_enabled():
+            memory_toolkit = self._agent.get_memory_toolkit()
+            if memory_toolkit is not None:
+                max_memory_flush_tokens = self._agent.get_max_memory_flush_tokens()
+                general_info = await self._agent.extract_important_info(
+                    messages=messages,
+                    max_tokens=max_memory_flush_tokens,
+                    is_daily=False,
+                )
+                if general_info:
+                    await self._append_to_memory(content=general_info)
+
+                daily_info = await self._agent.extract_important_info(
+                    messages=messages,
+                    max_tokens=max_memory_flush_tokens,
+                    is_daily=True,
+                )
+                if daily_info:
+                    await self._append_to_memory(content=daily_info, date=datetime.date.today())
+
+        summary_message = await self._agent.summarize_dialogue(messages=messages)
         await self._sessions_storage.add_message(
             session_id=session_id,
             message=summary_message,
         )
         return True
+
+    async def _append_to_memory(self, new_content: str, date: datetime.date | None = None):
+        try:
+            await memory_toolkit.append_to_memory(
+                content=new_content,
+                date=date,
+            )
+        except MemorySizeExceeded:
+            old_content = await memory_toolkit.get_memory(date=date) or ""
+            response = await self._agent.summarize_memory(
+                old_context=old_content,
+                new_context=new_content,
+                is_daily=date is not None,
+            )
+            await memory_toolkit.rewrite_memory(
+                content=response.content.strip(),
+                date=date,
+            )
 
     async def is_context_went_across_threshold(self, session_id: uuid.UUID) -> bool:
         context_window_size = self._agent.get_model_context_window_size()

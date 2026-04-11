@@ -96,12 +96,12 @@ class AgentMessagePrinter(AgentMessageHandler):
         if self._show_costs:
             spending = await self._sessions_storage.get_spending(session_id=self._session_id)
             spent_texts.append(f"{spending.cost:.4f} {spending.currency}")
-        self.print(role="Spents", text=" · ".join(spent_texts))
+
+        if spent_texts:
+            self.print(role="Spents", text=" · ".join(spent_texts))
 
     @classmethod
     def print(cls, text: str, role: str | None = None):
-        """External method for printing messages."""
-
         if role is not None:
             prompt = cls.get_prompt(role=role)
             text = prompt + text

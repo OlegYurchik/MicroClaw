@@ -9,7 +9,14 @@ from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings
 from yaml_env_tag import construct_env_tag
 
-from .agents import APITypeEnum, AgentSettings, InputTypeEnum, MCPSettings, ModelSettings, ProviderSettings
+from .agents import (
+    APITypeEnum,
+    AgentSettings,
+    InputTypeEnum,
+    MCPSettings,
+    ModelSettings,
+    ProviderSettings,
+)
 from .toolkits import ToolKitSettings
 from .channels import ChannelSettingsType
 from .sessions_storages import SessionsStorageSettingsType

@@ -76,23 +76,20 @@ def _get_random_string(
 
 
 def _return_dict(function: Callable) -> Callable:
-    def convert(item) -> dict[str, Any] | None:
-        if isinstance(item, BaseModel):
-            return item.model_dump(mode="json")
-        if isinstance(item, list):
-            return [convert(element) for element in item]
-        if isinstance(item, str):
+    def convert(response) -> Any | None:
+        if isinstance(response, BaseModel):
+            return response.model_dump(mode="json")
+        if isinstance(response, list):
+            return [convert(response=element) for element in response]
+        if isinstance(response, str):
             try:
-                return json.loads(item)
+                return json.loads(response)
             except json.JSONDecodeError:
-                return item
+                return response
+        return response
 
     @functools.wraps(function)
     async def wrapper(*args, **kwargs):
-        try:
-            result = await function(*args, **kwargs)
-        except BaseException as exception:
-            return {"success": False, "exception": str(exception)}
-        return convert(result)
+        return convert(response=await function(*args, **kwargs))
 
     return wrapper

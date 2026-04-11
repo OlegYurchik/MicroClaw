@@ -1,6 +1,6 @@
 import datetime
 import pathlib
-from typing import AsyncGenerator
+from typing import Any, AsyncGenerator
 
 import tiktoken
 from evolution_langchain import EvolutionInference
@@ -15,6 +15,8 @@ from langchain_mcp_adapters.client import MultiServerMCPClient
 from langchain_openai import ChatOpenAI
 from langchain_ollama import ChatOllama
 from langchain.agents import create_agent
+from langchain.agents.middleware import wrap_tool_call
+from langchain.messages import ToolMessage
 
 from microclaw.agents.settings import (
     AgentSettings,
@@ -25,10 +27,13 @@ from microclaw.agents.settings import (
 )
 from microclaw.dto import AgentMessage, Spending
 from microclaw.toolkits import BaseToolKit
-from .dto import SystemPromptValues, SystemValues
+from .dto import SummaryValues, SummaryMemoryValues, SystemPromptValues, SystemValues
+from .subagents import SubAgentToolKit
 
 
 class Agent:
+    TEMPLATES_DIR = pathlib.Path(__file__).parent / "templates"
+
     def __init__(
             self,
             settings: AgentSettings,
@@ -36,18 +41,23 @@ class Agent:
             provider_settings: ProviderSettings,
             toolkits: dict[str, BaseToolKit],
             mcp: MultiServerMCPClient,
+            subagents_toolkits: list[SubAgentToolKit] | None = None,
     ):
         self._settings = settings
         self._model_settings = model_settings
         self._provider_settings = provider_settings
         self._toolkits = toolkits
         self._mcp = mcp
+        self._subagents_toolkits = subagents_toolkits.copy() if subagents_toolkits else []
         self._tools = [
             tool
             for toolkit in self._toolkits.values()
             for tool in toolkit.get_tools()
         ]
         self._client = self.get_client()
+
+    def set_subagents_toolkits(self, subagents_toolkits: list[SubAgentToolKit]):
+        self._subagents_toolkits = subagents_toolkits.copy()
 
     def get_client(self):
         api_type = self._model_settings.api_type or self._provider_settings.api_type
@@ -95,6 +105,7 @@ class Agent:
             self,
             messages: list[AgentMessage],
             channel: "ChannelInterface" = None,
+            stream: bool = False,
     ) -> AsyncGenerator[AgentMessage]:
         langchain_messages: list[BaseMessage] = self._convert_to_langchain_messages(messages)
 
@@ -102,6 +113,8 @@ class Agent:
         channel_toolkit = channel.get_toolkit()
         if channel_toolkit is not None:
             tools.extend(channel_toolkit.get_tools())
+        for subagent_toolkit in self._subagents_toolkits:
+            tools.extend(subagent_toolkit.get_tools())
 
         config = {
             "recursion_limit": self._settings.max_tool_calls,
@@ -110,9 +123,10 @@ class Agent:
         agent = create_agent(
             model=self._client,
             tools=tools,
-            system_prompt=await self._get_system_prompt(channel=channel),
+            system_prompt=await self._get_agent_prompt(channel=channel),
+            middleware=[_handle_tool_errors],
         )
-        
+
         events_generator = agent.astream_events(
             {"messages": langchain_messages},
             config=config,
@@ -120,6 +134,8 @@ class Agent:
         )
 
         spending = self._get_empty_spending()
+        accumulated_messages: dict[str, str] = {}
+ 
         async for event in events_generator:
             event_type = event["event"]
             match event_type:
@@ -136,11 +152,17 @@ class Agent:
                     text = self._convert_content_to_text(chunk.content)
                     if text is None:
                         continue
-                    yield AgentMessage(
+                    message = AgentMessage(
                         role="assistant",
                         text=text,
                         chunked_message_id=chunk.id,
                     )
+                    if stream:
+                        yield message
+                    else:
+                        if chunk.id not in accumulated_messages:
+                            accumulated_messages[chunk.id] = message
+                        accumulated_messages[chunk.id].text += text
                 case "on_chat_model_end":
                     output = event["data"]["output"]
                     text = self._convert_content_to_text(output.content)
@@ -148,6 +170,11 @@ class Agent:
                         spending.output_tokens = self._get_tokens_count(text=output.content)
                     if self._model_settings.costs is not None:
                         spending.calculate_cost(model_costs=self._model_settings.costs)
+                    if not stream and accumulated_messages:
+                        for accumulated_message in accumulated_messages.values():
+                            yield accumulated_message
+                        accumulated_messages.clear()
+                    
                     yield AgentMessage(
                         role="assistant",
                         spending=spending,
@@ -161,42 +188,77 @@ class Agent:
                         spending=None,
                     )
                 case "on_tool_end":
+                    tool_output = event["data"].get("output")
+                    subagent_spending = self._extract_subagent_spending(tool_output)
                     yield AgentMessage(
                         role="tool",
-                        text=f"Tool name: {event["name"]}; tool output: {event["data"].get("output")}",
+                        text=f"Tool name: {event["name"]}; tool output: {tool_output}",
+                        chunked_message_id=event["run_id"],
+                        spending=subagent_spending,
+                    )
+                case "on_tool_error":
+                    error_data = event["data"]
+                    error_message = error_data.get("error", "Unknown error")
+                    tool_name = event["name"]
+                    yield AgentMessage(
+                        role="tool",
+                        text=f"Tool name: {tool_name}; error: {error_message}",
                         chunked_message_id=event["run_id"],
                         spending=None,
                     )
 
-    async def summarize_dialog(
-            self, 
-            messages: list[AgentMessage], 
-            max_summary_tokens: int = 200,
+    async def summarize_memory(
+            self,
+            content: str,
+            max_tokens: int = 300,
+            is_daily: bool = False,
     ) -> AgentMessage:
-        dialog_text = "\n".join(
-            f"{message.role}: {message.text}"
-            for message in messages
+        if not content.strip():
+            return content 
+
+        summary_prompt = self._get_summary_memory_prompt(
+            content=content,
+            max_tokens=max_tokens,
+            is_daily=is_daily,
+        )
+        summary_messages = [
+            SystemMessage(content="You are an expert at summarizing memory content."),
+            HumanMessage(content=summary_prompt),
+        ]
+        response = await self._client.ainvoke(summary_messages)
+
+        spending = self._get_empty_spending()
+        spending.input_tokens = sum(
+            self._get_tokens_count(text=message.content)
+            for message in summary_messages
+        )
+        spending.output_tokens = self._get_tokens_count(text=response.content)
+        if self._model_settings.costs is not None:
+            spending.calculate_cost(model_costs=self._model_settings.costs)
+        
+        return AgentMessage(
+            role="system",
+            text=response.content,
+            is_summary=True,
+            spending=spending,
         )
 
-        if not dialog_text.strip():
+    async def summarize_dialogue(
+            self, 
+            messages: list[AgentMessage], 
+            max_tokens: int = 300,
+    ) -> AgentMessage:
+        if not messages:
             return AgentMessage(
                 role="system",
                 text="Dialog is empty",
                 is_summary=True,
             )
-        
-        summary_prompt = f"""
-        Summarize the following dialogue. 
-        Preserve all key information, including facts, questions, and answers.
-        The summary must be concise (maximum {max_summary_tokens} tokens) 
-        and written in the SAME LANGUAGE as the dialogue itself.
 
-        Dialogue:
-        {dialog_text}
-
-        Summary:
-        """
-        
+        summary_prompt = self._get_summary_dialogue_prompt(
+            messages=message,
+            max_tokens=max_tokens,
+        )
         summary_messages = [
             SystemMessage(content="You are an expert in dialogue summarization."),
             HumanMessage(content=summary_prompt),
@@ -223,6 +285,31 @@ class Agent:
             spending=spending,
         )
 
+    async def extract_important_info(
+            self,
+            messages: list[AgentMessage],
+            max_tokens: int = 300,
+            is_daily: bool = False,
+    ) -> str:
+        system_prompt = (
+            "You are an expert at extracting current context information from dialogues."
+            if is_daily else
+            "You are an expert at extracting long-term important information from dialogues."
+        )
+        user_prompt = self._get_extract_dialog_info_prompt(
+            messages=messages,
+            max_tokens=max_tokens,
+            is_daily=is_daily,
+        )
+
+        extract_messages = [
+            SystemMessage(content=system_prompt),
+            HumanMessage(content=prompt),
+        ]
+
+        response = await self._client.ainvoke(extract_messages)
+        return response.content.strip()
+
     def get_model_context_window_size(self) -> int | None:
         if self._model_settings.context_window_size is not None:
             return self._model_settings.context_window_size
@@ -241,6 +328,15 @@ class Agent:
 
     def is_summarization_enabled(self) -> bool:
         return self._settings.enable_summarization
+
+    def is_memory_flush_enabled(self) -> bool:
+        return self._settings.enable_memory_flush
+
+    def get_max_memory_flush_tokens(self) -> int:
+        return self._settings.max_memory_flush_tokens
+
+    def get_memory_toolkit(self) -> BaseToolKit | None:
+        return self._toolkits.get("memory")
 
     def _convert_content_to_text(self, content) -> str | None:
         if isinstance(content, str):
@@ -263,10 +359,8 @@ class Agent:
 
         return len(tokenizer.encode(text))
 
-    async def _get_system_prompt(self, channel: "ChannelInterface") -> str:
-        template_path = (
-            pathlib.Path(__file__).parent / "templates" / "system_prompt.j2"
-        )
+    async def _get_agent_prompt(self, channel: "ChannelInterface") -> str:
+        template_path = self.TEMPLATES_DIR / "agent_prompt.j2"
         template_content = template_path.read_text()
         template = Template(template_content)
 
@@ -277,15 +371,112 @@ class Agent:
             toolkits.append(channel_toolkit)
             tools.extend(channel_toolkit.get_tools())
 
+        memories = await self._get_memory_context()
         system_prompt_values = SystemPromptValues(
             agent_identity=self._settings.identity,
             system=SystemValues(time=datetime.datetime.now(datetime.timezone.utc)),
             toolkits=toolkits,
             tools=tools,
             channel=channel,
+            memories=memories,
         )
 
         prompt = template.render(data=system_prompt_values)
+        return prompt
+
+    async def _get_memory_context(self) -> dict[str, str]:
+        memory_toolkit = self._toolkits.get("memory")
+        if not memory_toolkit or not hasattr(memory_toolkit, "get_memory"):
+            return None
+
+        memories = {}
+        general_memory = await memory_toolkit.get_memory(date=None)
+        if general_memory and general_memory.strip():
+            memories["General Memory"] = general_memory.strip()
+
+        today = datetime.date.today()
+        today_memory = await memory_toolkit.get_memory(date=today)
+        if today_memory and today_memory.strip():
+            memories[f"Today's Memory ({today})"] = today_memory.strip()
+
+        yesterday = today - datetime.timedelta(days=1)
+        yesterday_memory = await memory_toolkit.get_memory(date=yesterday)
+        if yesterday_memory and yesterday_memory.strip():
+            memories[f"Yesterday's Memory ({yesterday})"] = yesterday_memory
+
+        return memories
+
+    def _get_summary_memory_prompt(
+            self,
+            old_context: str,
+            new_context: str, 
+            max_tokens: int = 300,
+            is_daily: bool = False,
+    ) -> str:
+        template_path = (
+            self.TEMPLATES_DIR / "summarize_memory_daily_prompt.j2"
+            if is_daily else
+            self.TEMPLATES_DIR / "summarize_memory_prompt.j2"
+        )
+        template_content = template_path.read_text()
+        template = Template(template_content)
+
+        data = SummaryMemoryValues(
+            old_context=old_context,
+            new_context=new_context,
+            max_tokens=max_tokens,
+        )
+
+        prompt = template.render(data=data)
+        return prompt
+
+    def _get_summary_dialogue_prompt(
+            self,
+            messages: list[AgentMessage],
+            max_tokens: int = 300,
+    ) -> str:
+        template_path = self.TEMPLATES_DIR / "summarize_dialogue_prompt.j2"
+        template_content = template_path.read_text()
+        template = Template(template_content)
+
+        context = "\n".join(
+            f"{message.role}: {message.text}"
+            for message in messages
+            if message.text and message.text.strip()
+        )
+        data = SummaryValues(
+            context=context,
+            max_tokens=max_tokens,
+        )
+
+        prompt = template.render(data=data)
+        return prompt
+
+    def _get_extract_dialogue_info_prompt(
+            self,
+            messages: list[AgentMessage],
+            max_tokens: int = 300,
+            is_daily: bool = False,
+    ) -> str:
+        template_path = (
+            self.TEMPLATES_DIR / "extract_dialogue_info_daily_prompt.j2"
+            if is_daily else
+            self.TEMPLATES_DIR / "extract_dialogue_info_prompt.j2"
+        )
+        template_content = template_path.read_text()
+        template = Template(template_content)
+
+        context = "\n".join(
+            f"{message.role}: {message.text}"
+            for message in messages
+            if message.text and message.text.strip()
+        )
+        data = SummaryValues(
+            context=context,
+            max_tokens=max_tokens,
+        ) 
+
+        prompt = template.render(data=data)
         return prompt
 
     def _get_empty_spending(self) -> Spending:
@@ -296,6 +487,30 @@ class Agent:
                 else "$"
             ),
         )
+
+    def _extract_subagent_spending(self, tool_output: Any) -> Spending | None:
+        if not isinstance(tool_output, list):
+            return None
+
+        total_spending = None
+        for message in tool_output:
+            if not isinstance(message, dict):
+                continue
+            
+            spending_data = message.get("spending")
+            if not spending_data:
+                continue
+            
+            try:
+                message_spending = Spending(**spending_data)
+                if total_spending is None:
+                    total_spending = message_spending
+                else:
+                    total_spending += message_spending
+            except (TypeError, ValueError):
+                continue
+
+        return total_spending
 
     def _convert_to_langchain_messages(self, messages: list[AgentMessage]) -> list[BaseMessage]:
         langchain_messages = []
@@ -314,3 +529,14 @@ class Agent:
                     langchain_message = HumanMessage(content=agent_message.text)
             langchain_messages.append(langchain_message)
         return langchain_messages
+
+
+@wrap_tool_call
+async def _handle_tool_errors(request, handler) -> Any:
+    try:
+        return await handler(request)
+    except BaseException as exception:
+        return ToolMessage(
+            content=f"Tool error: {exception}",
+            tool_call_id=request.tool_call["id"],
+        )

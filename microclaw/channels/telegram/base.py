@@ -111,7 +111,7 @@ class BaseTelegramChannel(facet.AsyncioServiceMixin, ChannelInterface):
 
         user_session_key = None
         async with (printer.catch_exception(), printer, saver):
-            async for new_message in self._agent.ask(messages=messages, channel=self):
+            async for new_message in self._agent.ask(messages=messages, channel=self, stream=True):
                 if user_session_key is None:
                     user_session_key = self.generate_user_session_key(chat_id=chat_id)
                     self._user_sessions[user_session_key] = session_id

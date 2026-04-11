@@ -94,7 +94,7 @@ class CLIChannel(facet.AsyncioServiceMixin, ChannelInterface):
         async with (self._saver, self._printer):
             await self._saver.register_new_message(user_message)
 
-            async for new_message in self._agent.ask(messages=messages, channel=self):
+            async for new_message in self._agent.ask(messages=messages, channel=self, stream=True):
                 await self._saver.register_new_message(new_message)
                 await self._printer.register_new_message(new_message)
                 if self._printer.is_finished:

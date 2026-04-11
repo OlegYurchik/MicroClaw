@@ -58,6 +58,9 @@ email = [
     "aioimaplib>=0.9.11",
     "aiosmtplib>=3.0.1",
 ]
+a2a = [
+    "a2a>=0.1.0",
+]
 nextcloud_tasks = [
     "nextcloud-tasks-api>=0.0.5",
 ]

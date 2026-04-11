@@ -1,7 +1,9 @@
 import base64
 from typing import Self
 
-from pydantic import BaseModel, field_serializer, field_validator
+from pydantic import BaseModel, Field, field_serializer, field_validator
+
+from microclaw.toolkits import ToolKitSettings
 
 
 class Spending(BaseModel):
@@ -87,22 +89,6 @@ class AgentMessage(BaseModel):
         return base64.b64encode(value).decode("utf-8")
 
 
-class ChannelMessage(BaseModel):
-    text: str | None = None
-    audio: bytes | None = None
-    audio_format: str | None = None
-
-    @field_validator("audio", mode="before")
-    @classmethod
-    def validate_audio(cls, value: str | bytes | None) -> bytes | None:
-        if value is None:
-            return None
-        if isinstance(value, bytes):
-            return value
-        return base64.b64decode(value)
-
-    @field_serializer("audio")
-    def serialize_audio(self, value: bytes | None) -> str | None:
-        if value is None:
-            return None
-        return base64.b64encode(value).decode("utf-8")
+class User(BaseModel):
+    id: uuid.UUID
+    toolkits: dict[str, ToolKitSettings] = Field(default_factory=dict)

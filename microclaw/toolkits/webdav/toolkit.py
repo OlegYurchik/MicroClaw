@@ -1,5 +1,7 @@
+import tempfile
 from contextlib import asynccontextmanager
 from email.utils import parsedate_to_datetime
+from pathlib import Path
 from typing import Any
 
 from aiodav import Client
@@ -89,6 +91,27 @@ class WebDAVToolKit(BaseToolKit[WebDAVSettings]):
         """
         async with self._create_client() as client:
             await client.upload_file(path, local_path)
+
+    @tool
+    async def create_file_with_content(self, path: str, content: bytes) -> None:
+        """
+        Create a file on WebDAV server with binary content from memory.
+
+        Args:
+            path: Path where the file will be created on WebDAV server
+            content: Binary content to write to the file
+        """
+        path = path.lstrip("/")
+        
+        with tempfile.NamedTemporaryFile(delete=False) as temp_file:
+            temp_file.write(content)
+            temp_path = temp_file.name
+        
+        try:
+            async with self._create_client() as client:
+                await client.upload_file(path, temp_path)
+        finally:
+            Path(temp_path).unlink(missing_ok=True)
 
     @tool
     async def delete_file(self, path: str) -> None:
