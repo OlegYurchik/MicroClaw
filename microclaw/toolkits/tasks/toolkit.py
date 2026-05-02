@@ -4,6 +4,8 @@ from caldav.aio import AsyncDAVClient, AsyncPrincipal, AsyncCalendar, AsyncTodo
 from caldav.elements import cdav, dav
 
 from microclaw.toolkits.base import BaseToolKit, tool
+from microclaw.toolkits.enums import PermissionModeEnum
+from microclaw.toolkits.exceptions import UserDeniedAction
 from microclaw.toolkits.settings import ToolKitSettings
 from .dto import TaskList, Task
 from .settings import TasksSettings
@@ -37,10 +39,12 @@ class TasksToolKit(BaseToolKit[TasksSettings]):
         """
         principal = await self.get_principal()
         calendars = await principal.get_calendars()
-        return [
-            await self._convert_calendar_to_dto(calendar=calendar)
-            for calendar in calendars
-        ]
+        task_lists = []
+        for calendar in calendars:
+            task_list = await self._convert_calendar_to_dto(calendar=calendar)
+            if self.settings.allowed_task_lists is None or task_list.name in self.settings.allowed_task_lists:
+                task_lists.append(task_list)
+        return task_lists
 
     @tool
     async def create_task_list(self, name: str) -> TaskList:
@@ -53,13 +57,22 @@ class TasksToolKit(BaseToolKit[TasksSettings]):
         Returns:
             TaskList object with url and name
         """
+
+        if self.settings.write_mode is PermissionModeEnum.DENY:
+            raise PermissionError("Write operations denied")
+        if self.settings.write_mode is PermissionModeEnum.REQUEST:
+            confirmation_request_text = f"Create task list '{name}'?"
+            if not await self.request_confirmation(confirmation_request_text):
+                raise UserDeniedAction()
+
         principal = await self.get_principal()
         calendar = await principal.make_calendar(
             name=name,
             cal_id=None,
             supported_calendar_component_set=None,
         )
-        return await self._convert_calendar_to_dto(calendar=calendar)
+        task_list = await self._convert_calendar_to_dto(calendar=calendar)
+        return task_list
 
     @tool
     async def get_task_list(self, url: str) -> TaskList:
@@ -87,7 +100,14 @@ class TasksToolKit(BaseToolKit[TasksSettings]):
         Returns:
             None
         """
-        calendar = AsyncCalendar(client=self._client, url=url)
+        calendar = await self._get_task_list(url)
+        if self.settings.write_mode is PermissionModeEnum.DENY:
+            raise PermissionError("Write operations denied")
+        if self.settings.write_mode is PermissionModeEnum.REQUEST:
+            confirmation_request_text = f"Delete task list '{url}'?"
+            if not await self.request_confirmation(confirmation_request_text):
+                raise UserDeniedAction()
+
         await calendar.delete()
 
     @tool
@@ -95,6 +115,7 @@ class TasksToolKit(BaseToolKit[TasksSettings]):
         self,
         task_list_url: str,
         completed: bool | None = None,
+        overdue: bool = False,
     ) -> list[Task]:
         """
         Get all tasks from a task list.
@@ -102,16 +123,33 @@ class TasksToolKit(BaseToolKit[TasksSettings]):
         Args:
             task_list_url: URL of the task list.
             completed: Optional filter by completion status. None returns all tasks.
+            overdue: If True, returns only overdue tasks (due date is in the past).
+                     Only applies when completed=False or None.
 
         Returns:
             List of Task objects
         """
-        calendar = AsyncCalendar(client=self._client, url=task_list_url)
+        calendar = await self._get_task_list(task_list_url)
         todos = await calendar.todos(include_completed=completed is None or completed)
-        return [
-            await self._convert_todo_to_dto(todo=todo)
-            for todo in todos
-        ]
+        todos = [await self._convert_todo_to_dto(todo=todo) for todo in todos]
+
+        if completed is not None:
+            todos = [
+                todo
+                for todo in todos
+                if todo.completed == completed
+            ]
+        if overdue:
+            today = date.today()
+            todos = [
+                todo
+                for todo in todos
+                if todo.due is not None
+                and (todo.due.date() if isinstance(todo.due, datetime) else todo.due) < today
+                and not todo.completed
+            ]
+
+        return todos
 
     @tool
     async def get_task(self, task_uid: str, task_list_url: str) -> Task:
@@ -125,7 +163,7 @@ class TasksToolKit(BaseToolKit[TasksSettings]):
         Returns:
             Task object
         """
-        calendar = AsyncCalendar(client=self._client, url=task_list_url)
+        calendar = await self._get_task_list(task_list_url)
         todo = await calendar.todo_by_uid(task_uid)
         if not todo:
             raise ValueError(f"Task with UID {task_uid} not found")
@@ -154,7 +192,16 @@ class TasksToolKit(BaseToolKit[TasksSettings]):
         Returns:
             Created Task object
         """
-        calendar = AsyncCalendar(client=self._client, url=task_list_url)
+        calendar = await self._get_task_list(task_list_url)
+        if self.settings.write_mode is PermissionModeEnum.DENY:
+            raise PermissionError("Write operations denied")
+        if self.settings.write_mode is PermissionModeEnum.REQUEST:
+            confirmation_request_text = (
+                f"Create task '{summary}' in task list '{task_list_url}'?"
+            )
+            if not await self.request_confirmation(confirmation_request_text):
+                raise UserDeniedAction()
+
         todo_data = {"summary": summary}
         if description:
             todo_data["description"] = description
@@ -192,7 +239,29 @@ class TasksToolKit(BaseToolKit[TasksSettings]):
         Returns:
             Updated Task object
         """
-        calendar = AsyncCalendar(client=self._client, url=task_list_url)
+        calendar = await self._get_task_list(task_list_url)
+        if self.settings.write_mode is PermissionModeEnum.DENY:
+            raise PermissionError("Write operations denied")
+        if self.settings.write_mode is PermissionModeEnum.REQUEST:
+            changes = []
+            if summary is not None:
+                changes.append(f"summary: {summary}")
+            if description is not None:
+                changes.append(f"description: {description}")
+            if due is not None:
+                changes.append(f"due: {due}")
+            if priority is not None:
+                changes.append(f"priority: {priority}")
+            if completed is not None:
+                changes.append(f"completed: {completed}")
+
+            changes_text = "\n".join(changes)
+            confirmation_request_text = (
+                f"Update task '{task_uid}'?\n"
+                f"{changes_text}"
+            )
+            if not await self.request_confirmation(confirmation_request_text):
+                raise UserDeniedAction()
 
         todo = await calendar.todo_by_uid(task_uid)
         if not todo:
@@ -231,7 +300,13 @@ class TasksToolKit(BaseToolKit[TasksSettings]):
         Returns:
             None
         """
-        calendar = AsyncCalendar(client=self._client, url=task_list_url)
+        calendar = await self._get_task_list(task_list_url)
+        if self.settings.write_mode is PermissionModeEnum.DENY:
+            raise PermissionError("Write operations denied")
+        if self.settings.write_mode is PermissionModeEnum.REQUEST:
+            confirmation_request_text = f"Delete task '{task_uid}'?"
+            if not await self.request_confirmation(confirmation_request_text):
+                raise UserDeniedAction()
 
         todo = await calendar.todo_by_uid(task_uid)
         if not todo:
@@ -255,6 +330,16 @@ class TasksToolKit(BaseToolKit[TasksSettings]):
             completed=True,
             task_list_url=task_list_url,
         )
+
+    async def _get_task_list(self, task_list_url: str) -> AsyncCalendar:
+        calendar = AsyncCalendar(client=self._client, url=task_list_url)
+        if self.settings.allowed_task_lists is not None:
+            calendar_name = await calendar.get_property(dav.DisplayName())
+            if calendar_name not in self.settings.allowed_task_lists:
+                raise PermissionError(
+                    f"Task list '{calendar_name}' is not in allowed task lists list"
+                )
+        return calendar
 
     async def _convert_calendar_to_dto(self, calendar: AsyncCalendar) -> TaskList:
         name = await calendar.get_property(dav.DisplayName())

@@ -17,6 +17,8 @@ from email.mime.base import MIMEBase
 from email.encoders import encode_base64
 
 from microclaw.toolkits.base import BaseToolKit, tool
+from microclaw.toolkits.enums import PermissionModeEnum
+from microclaw.toolkits.exceptions import UserDeniedAction
 from .dto import EmailFolder, EmailMessage, EmailAttachment, FullEmailMessage
 from .settings import EmailSettings, TLSModeEnum
 
@@ -314,17 +316,27 @@ class EmailToolKit(BaseToolKit[EmailSettings]):
             return messages
 
     @tool
-    async def delete_message(self, uid: str, folder: str = "") -> bool:
+    async def delete_messages(self, uids: list[str], folder: str = "") -> bool:
         """
-        Delete an email message by UID.
+        Delete an email messages by UIDs.
 
         Args:
-            uid: Message UID to delete
+            uids: Messages UIDs to delete
             folder: Folder name (default: default_folder)
 
         Returns:
             True if deletion was successful
         """
+        if self.settings.delete_mode is PermissionModeEnum.DENY:
+            raise PermissionError("Delete operations are disabled")
+        if self.settings.delete_mode is PermissionModeEnum.REQUEST:
+            uids_text = ", ".join(uids)
+            confirmation_request_text = (
+                f"Delete emails with uids '[{uids_text}]' from {self.settings.username}?"
+            )
+            if not await self.request_confirmation(confirmation_request_text):
+                raise ToolPermissionDenied()
+
         folder = folder or self.settings.default_folder
 
         async with self._create_imap_client() as client:
@@ -332,12 +344,13 @@ class EmailToolKit(BaseToolKit[EmailSettings]):
             if status != "OK":
                 return False
 
-            status, _ = await client.uid("STORE", uid, "+FLAGS", r"(\Deleted)")
-            if status != "OK":
-                return False
+            for uid in uids:
+                status, _ = await client.uid("STORE", uid, "+FLAGS", r"(\Deleted)")
+                if status != "OK":
+                    return False
 
-            status, _ = await client.expunge()
-            return status == "OK"
+                status, _ = await client.expunge()
+        return True
 
     @tool
     async def move_message(
@@ -445,6 +458,9 @@ class EmailToolKit(BaseToolKit[EmailSettings]):
         Returns:
             True if email was sent successfully
         """
+        if self.settings.send_mode is PermissionModeEnum.DENY:
+            raise PermissionError("Send operations are disabled")
+
         to_list = [to] if isinstance(to, str) else to
         cc_list = [cc] if isinstance(cc, str) else (cc or [])
         bcc_list = [bcc] if isinstance(bcc, str) else (bcc or [])
@@ -473,6 +489,27 @@ class EmailToolKit(BaseToolKit[EmailSettings]):
                         f'attachment; filename="{filepath.split("/")[-1]}"',
                     )
                     msg.attach(part)
+
+        if self.settings.send_mode is PermissionModeEnum.REQUEST:
+            confirmation_request_text = (
+                "Send message?\n"
+                "\n"
+                f"📧 To: {', '.join(to_list)}\n"
+            )
+            if cc_list:
+                confirmation_request_text += f"📋 CC: {', '.join(cc_list)}\n"
+            if bcc_list:
+                confirmation_request_text += f"🔒 BCC: {', '.join(bcc_list)}\n"
+            confirmation_request_text += f"📝 Subject: {subject}\n"
+            if attachments:
+                confirmation_request_text += f"📎 Attachments: {', '.join(attachments)}\n"
+            confirmation_request_text += (
+                "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                f"{body_text or body_html}\n"
+                "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            )
+            if not await self.request_confirmation(confirmation_request_text):
+                raise UserDeniedAction()
 
         async with self._create_smtp_client() as client:
             recipients = to_list + cc_list + bcc_list

@@ -1,3 +1,4 @@
+import asyncio
 import functools
 import json
 import random
@@ -61,6 +62,20 @@ class BaseToolKit(Generic[SettingsType]):
             )
             for tool_function in tool_functions
         ]
+
+    async def request_confirmation(self, question: str) -> bool:
+        from microclaw.channels import BaseChannel
+
+        channel = BaseChannel.get_current_channel()
+        if channel is None:
+            return False
+
+        try:
+            confirmation_id = await channel.request_confirmation(question)
+        except NotImplementedError:
+            return False
+
+        return await channel.wait_for_confirmation(confirmation_id)
 
 
 def tool(function: Callable) -> Callable:

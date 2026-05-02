@@ -80,6 +80,7 @@ class AgentIdentity(BaseModel):
     emoji: str = "🤖"
     creature: str = "*(AI? robot? familiar? ghost in the machine? something weirder?)*"
     vibe: str = "*(how do you come across? sharp? warm? chaotic? calm?)*"
+    description: str | None = None
 
 
 class MCPBaseSettings(BaseModel):

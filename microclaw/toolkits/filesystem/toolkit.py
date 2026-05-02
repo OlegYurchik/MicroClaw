@@ -2,6 +2,8 @@ import pathlib
 from typing import Any
 
 from microclaw.toolkits.base import BaseToolKit, tool
+from microclaw.toolkits.enums import PermissionModeEnum
+from microclaw.toolkits.exceptions import UserDeniedAction
 from .dto import DirectoryInfo, FilesystemItemType
 from .settings import FileSystemToolKitSettings
 
@@ -94,8 +96,13 @@ class FileSystemToolKit(BaseToolKit[FileSystemToolKitSettings]):
             path: Path to the file to write (relative to allowed directories)
             content: Content to write to the file
         """
-        if not self._settings.allow_write:
-            raise PermissionError("File writing is not allowed in settings")
+
+        if self.settings.write_mode is PermissionModeEnum.DENY:
+            raise PermissionError("File writing is not allowed")
+        if self.settings.write_mode is PermissionModeEnum.REQUEST:
+            confirmation_request_text = f"Write content to file '{path}'?"
+            if not await self.request_confirmation(confirmation_request_text):
+                raise UserDeniedAction()
 
         validated_path = self._validate_path(path)
         validated_path.parent.mkdir(parents=True, exist_ok=True)

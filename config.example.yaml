@@ -36,3 +36,11 @@ channels:
     type: telegram
     token: !env TELEGRAM_BOT_TOKEN
     stt: default
+cron:
+  morning:
+    cron: 0 8 * * *
+    args:
+      channel: default
+      channel_internal_id: "123456789"
+      task: |
+        Good morning! Here's your daily summary...

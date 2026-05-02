@@ -3,6 +3,8 @@ import shutil
 from typing import Any, Iterable
 
 from microclaw.toolkits.base import BaseToolKit, tool
+from microclaw.toolkits.enums import PermissionModeEnum
+from microclaw.toolkits.exceptions import UserDeniedAction
 from .dto import CommandResult
 from .settings import CommandToolKitSettings
 
@@ -12,12 +14,12 @@ class CommandToolKit(BaseToolKit[CommandToolKitSettings]):
 
     def __init__(self, key: str, settings: CommandToolKitSettings):
         super().__init__(key=key, settings=settings)
-        self._allowed_commands_set = set(self._settings.allowed_commands)
+        self._allowed_commands_set = set(self._settings.allowed_commands) if self._settings.allowed_commands else None
 
     def _validate_command(self, command: str) -> str:
         base_command = command.split()[0] if command else ""
         
-        if base_command not in self._allowed_commands_set:
+        if self._allowed_commands_set is not None and base_command not in self._allowed_commands_set:
             raise PermissionError(
                 f"Command '{base_command}' is not allowed. "
                 f"Allowed commands: {self._settings.allowed_commands}"
@@ -47,6 +49,15 @@ class CommandToolKit(BaseToolKit[CommandToolKitSettings]):
         Returns:
             CommandResult object with stdout, stderr, and return_code
         """
+
+        if self.settings.execute_mode is PermissionModeEnum.DENY:
+            raise PermissionError("Command execution denied")
+        if self.settings.execute_mode is PermissionModeEnum.REQUEST:
+            full_command = f"{command} {' '.join(args)}" if args else command
+            confirmation_request_text = f"Execute command: {full_command}?"
+            if not await self.request_confirmation(confirmation_request_text):
+                raise UserDeniedAction()
+
         command_path = self._validate_command(command)
 
         try:

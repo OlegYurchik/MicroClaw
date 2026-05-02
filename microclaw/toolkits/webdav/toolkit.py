@@ -7,12 +7,13 @@ from typing import Any
 from aiodav import Client
 
 from microclaw.toolkits.base import BaseToolKit, tool
+from microclaw.toolkits.enums import PermissionModeEnum
+from microclaw.toolkits.exceptions import UserDeniedAction
 from .dto import File, Directory, WebDAVObject
 from .settings import WebDAVSettings
 
 
 class WebDAVToolKit(BaseToolKit[WebDAVSettings]):
-    """Tools for managing files and directories via WebDAV protocol."""
 
     @asynccontextmanager
     async def _create_client(self):
@@ -89,6 +90,15 @@ class WebDAVToolKit(BaseToolKit[WebDAVSettings]):
             path: Path where the file will be saved on WebDAV server
             local_path: Local path of the file to upload
         """
+        self._check_path_access(path)
+        if self.settings.write_mode is PermissionModeEnum.DENY:
+            raise PermissionError("Write operations are disabled")
+        if self.settings.write_mode is PermissionModeEnum.REQUEST:
+            if not await self.request_confirmation(
+                f"Upload file '{local_path}' to WebDAV path '{path}'?"
+            ):
+                raise UserDeniedAction()
+
         async with self._create_client() as client:
             await client.upload_file(path, local_path)
 
@@ -102,11 +112,20 @@ class WebDAVToolKit(BaseToolKit[WebDAVSettings]):
             content: Binary content to write to the file
         """
         path = path.lstrip("/")
-        
+        self._check_path_access(path)
+        if self.settings.write_mode is PermissionModeEnum.DENY:
+            raise PermissionError("Write operations are disabled")
+
+        if self.settings.write_mode is PermissionModeEnum.REQUEST:
+            if not await self.request_confirmation(
+                f"Create file at WebDAV path '{path}' with {len(content)} bytes of content?"
+            ):
+                raise UserDeniedAction()
+
         with tempfile.NamedTemporaryFile(delete=False) as temp_file:
             temp_file.write(content)
             temp_path = temp_file.name
-        
+
         try:
             async with self._create_client() as client:
                 await client.upload_file(path, temp_path)
@@ -121,8 +140,30 @@ class WebDAVToolKit(BaseToolKit[WebDAVSettings]):
         Args:
             path: Path to the file to delete
         """
+        self._check_path_access(path)
+        if self.settings.write_mode is PermissionModeEnum.DENY:
+            raise PermissionError("Write operations are disabled")
+
+        if self.settings.write_mode is PermissionModeEnum.REQUEST:
+            if not await self.request_confirmation(
+                f"Delete file at WebDAV path '{path}'?"
+            ):
+                raise UserDeniedAction()
+
         async with self._create_client() as client:
             await client.delete(path)
+
+    def _check_path_access(self, path: str) -> None:
+        if self.settings.allowed_paths is None:
+            return
+
+        normalized_path = path.lstrip("/").rstrip("/")
+        for allowed_path in self.settings.allowed_paths:
+            normalized_allowed = allowed_path.lstrip("/").rstrip("/")
+            if normalized_path == normalized_allowed or normalized_path.startswith(normalized_allowed + "/"):
+                return
+
+        raise PermissionError(f"Access denied to path: {path}")
 
     @staticmethod
     def _parse_item_info(parent_path: str, item_info: dict[str, Any]) -> WebDAVObject:
@@ -144,9 +185,7 @@ class WebDAVToolKit(BaseToolKit[WebDAVSettings]):
         )
 
     async def __aenter__(self):
-        """Асинхронный вход в контекстный менеджер."""
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
-        """Асинхронный выход из контекстного менеджера."""
         return False

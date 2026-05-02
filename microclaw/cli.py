@@ -2,6 +2,7 @@ import asyncio
 import pathlib
 
 import typer
+from loguru import logger
 
 from .agents import get_cli as get_agents_cli
 from .cron import get_cli as get_cron_cli
@@ -24,11 +25,29 @@ def callback(
 ):
     ctx.obj = {}
 
-    ctx.obj["settings"] = MicroclawSettings.load(
+    settings = MicroclawSettings.load(
         env_prefix="MICROCLAW__",
         env_file=env_path,
         config_file=config_path,
     )
+    ctx.obj["settings"] = settings
+    
+    logger.remove()
+    if settings.logging.console:
+        logger.add(
+            sink=lambda msg: print(msg, end=""),
+            level=settings.logging.level,
+            format=settings.logging.format,
+        )
+    if settings.logging.path:
+        logger.add(
+            sink=settings.logging.path,
+            level=settings.logging.level,
+            format=settings.logging.format,
+            rotation=settings.logging.rotation,
+            retention=settings.logging.retention,
+            compression=settings.logging.compression,
+        )
 
 
 def run(ctx: typer.Context):

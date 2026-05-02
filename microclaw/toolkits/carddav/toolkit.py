@@ -6,6 +6,8 @@ import aiohttp
 import vobject
 
 from microclaw.toolkits import BaseToolKit, ToolKitSettings, tool
+from microclaw.toolkits.enums import PermissionModeEnum
+from microclaw.toolkits.exceptions import UserDeniedAction
 from .dto import AddressBook, Contact
 from .settings import CardDAVSettings
 
@@ -73,41 +75,6 @@ class CardDAVToolKit(BaseToolKit[CardDAVSettings]):
         self._principal_url: str | None = None
         self._xml = XMLBuilder()
 
-    def _create_session(self) -> aiohttp.ClientSession:
-        return aiohttp.ClientSession(
-            auth=(
-                aiohttp.BasicAuth(self.settings.username, self.settings.password)
-                if self.settings.username and self.settings.password
-                else None
-            ),
-            headers={"Content-Type": "application/xml"},
-            raise_for_status=True,
-        )
-
-    async def _get_principal_url(self) -> str:
-        if self._principal_url:
-            return self._principal_url
-
-        async with self._create_session() as session:
-            async with session.request(
-                method="PROPFIND",
-                url=self.settings.url,
-                data=self._xml.principal(),
-                headers={"Depth": "0"},
-            ) as response:
-                content = await response.text()
-
-        if response.status == 207 and content:
-            root = ET.fromstring(content)
-            ns = {"d": "DAV:"}
-            principal_elem = root.find(".//d:current-user-principal/d:href", ns)
-            if principal_elem is not None:
-                self._principal_url = self._get_full_url(principal_elem.text)
-                return self._principal_url
-
-        self._principal_url = self.settings.url.rstrip("/") + "/"
-        return self._principal_url
-
     @tool
     async def get_address_books(self) -> list[AddressBook]:
         """
@@ -147,7 +114,11 @@ class CardDAVToolKit(BaseToolKit[CardDAVSettings]):
 
         address_books = []
         if response.status == 207 and content:
-            address_books = self._parse_address_books(content, address_book_url)
+            all_address_books = self._parse_address_books(content, address_book_url)
+            # Filter by allowed address books
+            for address_book in all_address_books:
+                if self.settings.allowed_address_books is None or address_book.name in self.settings.allowed_address_books:
+                    address_books.append(address_book)
 
         return address_books
 
@@ -196,6 +167,7 @@ class CardDAVToolKit(BaseToolKit[CardDAVSettings]):
         if address_book_url is None:
             address_books = await self.get_address_books()
         else:
+            await self._get_address_book(address_book_url)
             address_books = [AddressBook(url=address_book_url, name="")]
 
         contacts = []
@@ -274,6 +246,18 @@ class CardDAVToolKit(BaseToolKit[CardDAVSettings]):
         Returns:
             Created Contact object
         """
+
+        if self.settings.write_mode is PermissionModeEnum.DENY:
+            raise PermissionError("Write operations denied")
+        if self.settings.write_mode is PermissionModeEnum.REQUEST:
+            confirmation_request_text = (
+                f"Create contact '{display_name}' in address book '{address_book_url}'?"
+            )
+            if not await self.request_confirmation(confirmation_request_text):
+                raise UserDeniedAction()
+
+        await self._get_address_book(address_book_url)
+
         vcard_data = self._create_vcard_data(
             display_name=display_name,
             first_name=first_name,
@@ -332,6 +316,42 @@ class CardDAVToolKit(BaseToolKit[CardDAVSettings]):
         Returns:
             Updated Contact object if successful, None otherwise
         """
+
+        if self.settings.write_mode is PermissionModeEnum.DENY:
+            raise PermissionError("Write operations denied")
+        if self.settings.write_mode is PermissionModeEnum.REQUEST:
+            changes = []
+            if display_name is not None:
+                changes.append(f"display_name: {display_name}")
+            if first_name is not None:
+                changes.append(f"first_name: {first_name}")
+            if last_name is not None:
+                changes.append(f"last_name: {last_name}")
+            if email is not None:
+                changes.append(f"email: {email}")
+            if phone is not None:
+                changes.append(f"phone: {phone}")
+            if organization is not None:
+                changes.append(f"organization: {organization}")
+            if title is not None:
+                changes.append(f"title: {title}")
+            if note is not None:
+                changes.append(f"note: {note}")
+            if birthday is not None:
+                changes.append(f"birthday: {birthday}")
+
+            changes_text = "\n".join(changes)
+            confirmation_request_text = (
+                f"Update contact '{url}'?\n"
+                f"{changes_text}"
+            )
+            if not await self.request_confirmation(confirmation_request_text):
+                raise UserDeniedAction()
+
+        # Check if contact's address book is allowed
+        address_book_url = url.rsplit("/", 1)[0]
+        await self._get_address_book(address_book_url)
+
         async with self._create_session() as session:
             async with session.request(
                 method="GET",
@@ -382,6 +402,18 @@ class CardDAVToolKit(BaseToolKit[CardDAVSettings]):
         Args:
             url: Contact full URL (obtained from get_contacts)
         """
+
+        if self.settings.write_mode is PermissionModeEnum.DENY:
+            raise PermissionError("Write operations denied")
+        if self.settings.write_mode is PermissionModeEnum.REQUEST:
+            confirmation_request_text = f"Delete contact '{url}'?"
+            if not await self.request_confirmation(confirmation_request_text):
+                raise UserDeniedAction()
+
+        # Check if contact's address book is allowed
+        address_book_url = url.rsplit("/", 1)[0]
+        await self._get_address_book(address_book_url)
+
         async with self._create_session() as session:
             async with session.request(method="DELETE", url=url):
                 pass
@@ -463,6 +495,60 @@ class CardDAVToolKit(BaseToolKit[CardDAVSettings]):
             self._update_vcard_field(vcard, "note", note)
         if birthday:
             self._update_vcard_field(vcard, "bday", birthday)
+
+    def _create_session(self) -> aiohttp.ClientSession:
+        return aiohttp.ClientSession(
+            auth=(
+                aiohttp.BasicAuth(self.settings.username, self.settings.password)
+                if self.settings.username and self.settings.password
+                else None
+            ),
+            headers={"Content-Type": "application/xml"},
+            raise_for_status=True,
+        )
+
+    async def _get_principal_url(self) -> str:
+        if self._principal_url:
+            return self._principal_url
+
+        async with self._create_session() as session:
+            async with session.request(
+                method="PROPFIND",
+                url=self.settings.url,
+                data=self._xml.principal(),
+                headers={"Depth": "0"},
+            ) as response:
+                content = await response.text()
+
+        if response.status == 207 and content:
+            root = ET.fromstring(content)
+            ns = {"d": "DAV:"}
+            principal_elem = root.find(".//d:current-user-principal/d:href", ns)
+            if principal_elem is not None:
+                self._principal_url = self._get_full_url(principal_elem.text)
+                return self._principal_url
+
+        self._principal_url = self.settings.url.rstrip("/") + "/"
+        return self._principal_url
+
+    async def _get_address_book(self, address_book_url: str) -> str:
+        if self.settings.allowed_address_books is not None:
+            async with self._create_session() as session:
+                async with session.request(
+                    method="PROPFIND",
+                    url=address_book_url,
+                    data=self._xml.address_book(),
+                    headers={"Depth": "0"},
+                ) as response:
+                    content = await response.text()
+
+            if response.status == 207 and content:
+                display_name = self._parse_address_book(content)
+                if display_name not in self.settings.allowed_address_books:
+                    raise PermissionError(
+                        f"Address book '{display_name}' is not in allowed address books list"
+                    )
+        return address_book_url
 
     def _update_vcard_name_field(self, vcard: Any, first_name: str | None, last_name: str | None) -> None:
         if hasattr(vcard, "n") and vcard.n:

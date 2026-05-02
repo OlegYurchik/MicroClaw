@@ -5,6 +5,7 @@ from .settings import SubAgentSettings
 
 class SubAgentToolKit(BaseToolKit):
     def __init__(self, settings: SubAgentSettings, agent: "Agent"):
+        self._name = settings.name
         self._agent = agent
         self._max_turns = settings.max_turns
         self._summarize_threshold_tokens = settings.summarize_threshold_tokens
@@ -14,6 +15,10 @@ class SubAgentToolKit(BaseToolKit):
             prompt=settings.description,
         )
         super().__init__(key=settings.name, settings=toolkit_settings)
+
+    @property
+    def name(self) -> str:
+        return self._name
 
     @tool
     async def call_agent(self, query: str) -> list[dict]:
@@ -30,20 +35,24 @@ class SubAgentToolKit(BaseToolKit):
 
         result_messages = []
         total_tokens = 0
+        turn = 0
 
-        async for turn, message in enumerate(self._agent.ask(messages=messages, stream=False)):
-            if turn > self._max_turns:
+        async for message in self._agent.ask(messages=messages, stream=False):
+            if self._max_turns is not None and turn > self._max_turns:
                 raise Exception(f"Subagent exceeded maximum number of turns ({self._max_turns})")
-            
+
+            if message.role == "assistant":
+                message.role = "subagent"
             result_messages.append(message)
             if message.spending:
                 total_tokens = message.spending.get_total_tokens()
+            turn += 1
 
         if (
                 self._summarize_threshold_tokens is not None and
                 total_tokens >= self._summarize_threshold_tokens
         ):
-            summary = await self._agent.summarize_dialog(
+            summary = await self._agent.summarize_dialogue(
                 messages=result_messages,
             )
             result_messages = [summary]

@@ -1,13 +1,16 @@
+from .base import BaseCronTask
 from .cli import get_cli
-from .cron import Cron
-from .settings import CronSettings
+from .fabric import get_cron_task
+from .settings import CronTaskSettings
 
 
 __all__ = (
+    # base
+    "BaseCronTask",
     # cli
     "get_cli",
-    # cron
-    "Cron",
+    # fabric
+    "get_cron_task",
     # settings
-    "CronSettings",
+    "CronTaskSettings",
 )

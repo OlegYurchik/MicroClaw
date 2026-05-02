@@ -1,5 +1,6 @@
 import base64
-from typing import Self
+import uuid
+from typing import Any, Self
 
 from pydantic import BaseModel, Field, field_serializer, field_validator
 
@@ -91,4 +92,17 @@ class AgentMessage(BaseModel):
 
 class User(BaseModel):
     id: uuid.UUID
-    toolkits: dict[str, ToolKitSettings] = Field(default_factory=dict)
+    agent: dict[str, Any] | None = None
+
+
+class UserChannelID(BaseModel, frozen=True):
+    channel_key: str
+    channel_internal_id: str
+
+
+class CronTask(BaseModel):
+    id: uuid.UUID
+    path: str
+    cron: str
+    enabled: bool = True
+    args: dict[str, Any] = Field(default_factory=dict)

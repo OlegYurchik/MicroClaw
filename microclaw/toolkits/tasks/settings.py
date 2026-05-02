@@ -1,5 +1,7 @@
 from pydantic import BaseModel, Field
 
+from microclaw.toolkits.enums import PermissionModeEnum
+
 
 class TasksSettings(BaseModel):
     """Settings for connecting to Nextcloud Tasks via CalDAV."""
@@ -16,3 +18,5 @@ class TasksSettings(BaseModel):
         default=True,
         description="Verify SSL certificate (default: True)",
     )
+    allowed_task_lists: list[str] | None = None
+    write_mode: PermissionModeEnum = PermissionModeEnum.REQUEST

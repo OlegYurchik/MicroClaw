@@ -1,3 +1,4 @@
+import datetime
 import uuid
 from typing import AsyncGenerator
 
@@ -7,6 +8,18 @@ from microclaw.dto import AgentMessage, Spending
 
 
 class SessionsStorageInterface(facet.AsyncioServiceMixin):
+    async def create_session(
+            self,
+            session_id: uuid.UUID | None = None,
+    ) -> uuid.UUID:
+        raise NotImplementedError
+
+    async def get_sessions(
+            self,
+            date: datetime.date | None = None,
+    ) -> AsyncGenerator[uuid.UUID]:
+        raise NotImplementedError
+
     async def add_message(self, session_id: uuid.UUID, message: AgentMessage):
         raise NotImplementedError
 

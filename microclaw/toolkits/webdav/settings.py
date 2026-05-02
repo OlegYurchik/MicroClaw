@@ -1,5 +1,7 @@
 from pydantic import BaseModel, Field
 
+from microclaw.toolkits.enums import PermissionModeEnum
+
 
 class WebDAVSettings(BaseModel):
     """Settings for connecting to a WebDAV server."""
@@ -16,3 +18,5 @@ class WebDAVSettings(BaseModel):
         default=True,
         description="Verify SSL certificate (default: True)",
     )
+    allowed_paths: list[str] | None = None
+    write_mode: PermissionModeEnum = PermissionModeEnum.REQUEST

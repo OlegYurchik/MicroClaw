@@ -17,10 +17,11 @@ class SystemValues(BaseModel):
 class SystemPromptValues:
     agent_identity: AgentIdentity
     system: SystemValues
-    toolkits: list[BaseToolKit] = field(default_factory=list)
+    toolkits: dict[str, BaseToolKit] = field(default_factory=dict)
     tools: list[BaseTool] = field(default_factory=list)
-    channel: "ChannelInterface" = None
+    channel: "BaseChannel" = None
     memories: dict[str, str] = field(default_factory=dict)
+    subagents: list["SubAgentToolKit"] = field(default_factory=list)
 
 
 @dataclass

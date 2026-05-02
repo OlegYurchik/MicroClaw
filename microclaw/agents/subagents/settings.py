@@ -1,9 +1,11 @@
+from typing import Any
+
 from pydantic import BaseModel, Field
 
 
 class SubAgentSettings(BaseModel):
     name: str
-    agent: "AgentSettings | str"
+    agent: dict[str, Any] | str
     description: str | None = None
     max_turns: int | None = Field(
         default=None,

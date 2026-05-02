@@ -1,4 +1,5 @@
 import asyncio
+import datetime
 import pathlib
 import uuid
 from typing import AsyncGenerator
@@ -19,13 +20,41 @@ class FilesystemSessionsStorage(SessionsStorageInterface):
 
         self._settings.path.mkdir(parents=True, exist_ok=True)
 
+    async def create_session(self, session_id: uuid.UUID | None = None) -> uuid.UUID:
+        if session_id is None:
+            session_id = uuid.uuid4()
+
+        await self._write_session(session_id=session_id, data=SessionData())
+
+    async def get_sessions(
+            self,
+            date: datetime.date | None = None,
+    ) -> AsyncGenerator[uuid.UUID]:
+        if not self._settings.path.exists():
+            return
+
+        for session_file in self._settings.path.glob("*.json"):
+            if date is not None:
+                mtime = datetime.datetime.fromtimestamp(session_file.stat().st_mtime)
+                if mtime.date() != date:
+                    continue
+
+            try:
+                session_id = uuid.UUID(session_file.stem)
+                yield session_id
+            except ValueError:
+                continue
+
     async def add_message(self, session_id: uuid.UUID, message: AgentMessage):
         lock = await self._get_lock(session_id=session_id)
         async with lock:
             session_data = await self._read_session(session_id=session_id)
             session_data.messages.append(message)
             if message.spending is not None:
-                session_data.context = message.spending.get_total_tokens()
+                if message.is_summary:
+                    session_data.context = message.spending.output_tokens
+                else:
+                    session_data.context += message.spending.get_total_tokens()
                 if session_data.spending is None:
                     session_data.spending = message.spending
                 else:

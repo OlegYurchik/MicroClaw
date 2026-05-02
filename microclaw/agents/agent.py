@@ -27,6 +27,7 @@ from microclaw.agents.settings import (
 )
 from microclaw.dto import AgentMessage, Spending
 from microclaw.toolkits import BaseToolKit
+from microclaw.toolkits.memory import MemoryToolKit
 from .dto import SummaryValues, SummaryMemoryValues, SystemPromptValues, SystemValues
 from .subagents import SubAgentToolKit
 
@@ -47,6 +48,13 @@ class Agent:
         self._model_settings = model_settings
         self._provider_settings = provider_settings
         self._toolkits = toolkits
+
+        self._memory_toolkit = None
+        for toolkit in toolkits.values():
+            if isinstance(toolkit, MemoryToolKit):
+                self._memory_toolkit = toolkit
+                break
+
         self._mcp = mcp
         self._subagents_toolkits = subagents_toolkits.copy() if subagents_toolkits else []
         self._tools = [
@@ -104,15 +112,16 @@ class Agent:
     async def ask(
             self,
             messages: list[AgentMessage],
-            channel: "ChannelInterface" = None,
+            channel: "BaseChannel | None" = None,
             stream: bool = False,
     ) -> AsyncGenerator[AgentMessage]:
         langchain_messages: list[BaseMessage] = self._convert_to_langchain_messages(messages)
 
         tools = list(self._tools) + list(await self._mcp.get_tools())
-        channel_toolkit = channel.get_toolkit()
-        if channel_toolkit is not None:
-            tools.extend(channel_toolkit.get_tools())
+        if channel is not None:
+            channel_toolkit = channel.get_toolkit()
+            if channel_toolkit is not None:
+                tools.extend(channel_toolkit.get_tools())
         for subagent_toolkit in self._subagents_toolkits:
             tools.extend(subagent_toolkit.get_tools())
 
@@ -209,15 +218,14 @@ class Agent:
 
     async def summarize_memory(
             self,
-            content: str,
+            new_context: str,
+            old_context: str,
             max_tokens: int = 300,
             is_daily: bool = False,
     ) -> AgentMessage:
-        if not content.strip():
-            return content 
-
         summary_prompt = self._get_summary_memory_prompt(
-            content=content,
+            old_context=old_context,
+            new_content=new_context,
             max_tokens=max_tokens,
             is_daily=is_daily,
         )
@@ -256,7 +264,7 @@ class Agent:
             )
 
         summary_prompt = self._get_summary_dialogue_prompt(
-            messages=message,
+            messages=messages,
             max_tokens=max_tokens,
         )
         summary_messages = [
@@ -296,7 +304,7 @@ class Agent:
             if is_daily else
             "You are an expert at extracting long-term important information from dialogues."
         )
-        user_prompt = self._get_extract_dialog_info_prompt(
+        user_prompt = self._get_extract_dialogue_info_prompt(
             messages=messages,
             max_tokens=max_tokens,
             is_daily=is_daily,
@@ -304,7 +312,7 @@ class Agent:
 
         extract_messages = [
             SystemMessage(content=system_prompt),
-            HumanMessage(content=prompt),
+            HumanMessage(content=user_prompt),
         ]
 
         response = await self._client.ainvoke(extract_messages)
@@ -313,6 +321,11 @@ class Agent:
     def get_model_context_window_size(self) -> int | None:
         if self._model_settings.context_window_size is not None:
             return self._model_settings.context_window_size
+
+        if hasattr(self._client, "profile") and self._client.profile:
+            max_input_tokens = self._client.profile.get("max_input_tokens")
+            if max_input_tokens:
+                return max_input_tokens
 
         model_name = getattr(self._client, "model_name", None) or self._model_settings.id
 
@@ -335,8 +348,8 @@ class Agent:
     def get_max_memory_flush_tokens(self) -> int:
         return self._settings.max_memory_flush_tokens
 
-    def get_memory_toolkit(self) -> BaseToolKit | None:
-        return self._toolkits.get("memory")
+    def get_memory_toolkit(self) -> MemoryToolKit | None:
+        return self._memory_toolkit
 
     def _convert_content_to_text(self, content) -> str | None:
         if isinstance(content, str):
@@ -359,17 +372,18 @@ class Agent:
 
         return len(tokenizer.encode(text))
 
-    async def _get_agent_prompt(self, channel: "ChannelInterface") -> str:
+    async def _get_agent_prompt(self, channel: "BaseChannel | None") -> str:
         template_path = self.TEMPLATES_DIR / "agent_prompt.j2"
         template_content = template_path.read_text()
         template = Template(template_content)
 
-        toolkits = list(self._toolkits)
+        toolkits = dict(self._toolkits)
         tools = list(self._tools) + list(await self._mcp.get_tools())
-        channel_toolkit = channel.get_toolkit()
-        if channel_toolkit is not None:
-            toolkits.append(channel_toolkit)
-            tools.extend(channel_toolkit.get_tools())
+        if channel is not None:
+            channel_toolkit = channel.get_toolkit()
+            if channel_toolkit is not None:
+                toolkits["channel"] = channel_toolkit
+                tools.extend(channel_toolkit.get_tools())
 
         memories = await self._get_memory_context()
         system_prompt_values = SystemPromptValues(
@@ -379,6 +393,7 @@ class Agent:
             tools=tools,
             channel=channel,
             memories=memories,
+            subagents=self._subagents_toolkits,
         )
 
         prompt = template.render(data=system_prompt_values)

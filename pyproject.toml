@@ -19,6 +19,7 @@ dependencies = [
     "langchain>=1.2.10",
     "langchain-core>=1.2.16",
     "langchain-mcp-adapters>=0.1.0",
+    "loguru>=0.7.3",
 ]
 
 [dependency-groups]
@@ -32,6 +33,9 @@ telegram = [
     "uvicorn>=0.40.0",
     "yarl>=1.22.0",
 ]
+matrix = [
+    "mautrix>=0.21.0",
+]
 openai = [
     "langchain-openai>=1.1.10",
 ]
@@ -41,11 +45,20 @@ cloudru = [
 ollama = [
     "langchain-ollama>=0.1.0",
 ]
+database = [
+    "sqlmodel>=0.0.38",
+    "sqlalchemy>=2.0.49",
+    "alembic>=1.18.4",
+    "pydantic-filters>=0.3.5",
+]
 caldav = [
     "caldav@git+https://github.com/python-caldav/caldav@issue642-clean",
 ]
 tasks = [
     "caldav@git+https://github.com/python-caldav/caldav@issue642-clean",
+]
+audio_tags = [
+    "mutagen>=1.47.0",
 ]
 carddav = [
     "aiohttp>=3.13.3",
@@ -66,4 +79,7 @@ nextcloud_tasks = [
 ]
 homeassistant = [
     "homeassistant-api>=4.3.0",
+]
+discogs = [
+    "python3-discogs-client>=2.7.0",
 ]

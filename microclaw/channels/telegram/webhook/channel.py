@@ -1,3 +1,4 @@
+import asyncio
 from typing import Any
 
 import aiogram
@@ -20,7 +21,7 @@ class TelegramWebhookChannel(BaseTelegramChannel):
             url=str(webhook_url),
             secret_token=self._settings.secret_access_key,
         )
-
+        
         await self.get_server().serve()
 
     def get_server(self) -> uvicorn.Server:

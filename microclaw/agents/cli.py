@@ -3,6 +3,8 @@ import asyncio
 import typer
 
 from microclaw.sessions_storages import get_sessions_storage
+from microclaw.syncers import get_syncer
+from microclaw.users_storages import get_users_storage
 from microclaw.utils import get_by_key_or_first
 
 
@@ -36,11 +38,15 @@ def run(
     sessions_storage_settings = get_by_key_or_first(storage=settings.sessions_storages)
     if sessions_storage_settings is None:
         raise ValueError("You need to setup sessions storage")
+    users_storage_settings = get_by_key_or_first(storage=settings.users_storages)
+    if users_storage_settings is None:
+        raise ValueError("You need to setup users storage")
 
-    agent = asyncio.run(resolver.resolve_agent(
-        agent_settings=agent_settings,
-    ))
-    sessions_storage = get_sessions_storage(settings=sessions_storage_settings) 
+    agents = asyncio.run(resolver.resolve_agents())
+    agent = get_by_key_or_first(storage=agents, key=agent_name)
+    sessions_storage = get_sessions_storage(settings=sessions_storage_settings)
+    users_storage = get_users_storage(settings=users_storage_settings)
+    syncer = get_syncer(settings=settings.syncer)
     channel = CLIChannel(
         settings=CLIChannelSettings(
             show_loader=show_loader,
@@ -50,6 +56,9 @@ def run(
         ),
         agent=agent,
         sessions_storage=sessions_storage,
+        users_storage=users_storage,
+        resolver=resolver,
+        syncer=syncer,
     )
 
     asyncio.run(channel.run())

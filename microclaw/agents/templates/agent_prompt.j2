@@ -6,6 +6,7 @@ You are a personal assistant running inside MicroClaw.
 {% if data.agent_identity.creature %}Creature: {{ data.agent_identity.creature }}{% endif %}
 {% if data.agent_identity.vibe %}Vibe: {{ data.agent_identity.vibe }}{% endif %}
 {% if data.agent_identity.emoji %}Emoji: {{ data.agent_identity.emoji }}{% endif %}
+{% if data.agent_identity.description %}Description: {{ data.agent_identity.description }}{% endif %}
 {% endif %}
 
 {% if channel and channel.description %}
@@ -13,13 +14,25 @@ You are a personal assistant running inside MicroClaw.
 {{ channel.description }}
 {% endif %}
 
+{% if data.subagents %}
+## Subagents
+You have access to specialized subagents for specific tasks. Each subagent is an independent AI assistant with its own capabilities and expertise.
+
+{% for subagent in data.subagents %}
+### {{ subagent.name }}
+{% if subagent.prompt %}{{ subagent.prompt }}{% endif %}
+{% endfor %}
+
+Use subagents when you need specialized assistance or want to delegate complex tasks to a more focused assistant.
+{% endif %}
+
 ## Tooling
 Tool availability (filtered by policy):
 Tool names are case-sensitive. Call tools exactly as listed.
 
-{% for toolkit in data.toolkits %}
+{% for toolkit_name, toolkit in data.toolkits.items() %}
 {% if toolkit.description or toolkit.prompt %}
-### Toolkit: {{ toolkit.name }}
+### Toolkit: {{ toolkit_name }}
 {% if toolkit.description %}{{ toolkit.description }}{% endif %}
 {% if toolkit.prompt %}{{ toolkit.prompt }}{% endif %}
 {% endif %}
@@ -27,8 +40,8 @@ Tool names are case-sensitive. Call tools exactly as listed.
 
 All tools listed below with a specific prefix belong to a toolkit. The toolkit's description (if
 available) is described above.
-{% for toolkit in data.toolkits %}
-Note: Tools with prefix "{{ toolkit.prefix }}" are part of the "{{ toolkit.name }}" toolkit.
+{% for toolkit_name, toolkit in data.toolkits.items() %}
+Note: Tools with prefix "{{ toolkit.prefix }}" are part of the "{{ toolkit_name }}" toolkit.
 {% endfor %}
 
 {% for tool in data.tools %}
