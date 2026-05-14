@@ -1,10 +1,9 @@
 import base64
+import enum
 import uuid
 from typing import Any, Self
 
 from pydantic import BaseModel, Field, field_serializer, field_validator
-
-from microclaw.toolkits import ToolKitSettings
 
 
 class Spending(BaseModel):
@@ -46,7 +45,10 @@ class Spending(BaseModel):
             currency=spending.currency,
         )
 
-    def calculate_cost(self, model_costs: "ModelCosts"):
+    def calculate_cost(
+            self,
+            model_costs: "ModelCosts",  # noqa: F821
+    ):
         self.cost = (
             self.input_tokens * model_costs.input / model_costs.per_tokens +
             self.output_tokens * model_costs.output / model_costs.per_tokens +
@@ -90,8 +92,14 @@ class AgentMessage(BaseModel):
         return base64.b64encode(value).decode("utf-8")
 
 
+class UserRoleEnum(str, enum.Enum):
+    USER = "user"
+    ADMIN = "admin"
+
+
 class User(BaseModel):
     id: uuid.UUID
+    role: UserRoleEnum = UserRoleEnum.USER
     agent: dict[str, Any] | None = None
 
 

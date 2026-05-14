@@ -25,15 +25,13 @@ class MemorySessionsStorage(SessionsStorageInterface):
 
     async def add_message(self, session_id: uuid.UUID, message: AgentMessage):
         self._messages[session_id].append(message)
-        if message.spending is None:
+        if not message.spending:
             return
 
         if message.is_summary:
             self._context[session_id] = message.spending.output_tokens
-        elif session_id not in self._context:
-            self._context[session_id] = message.spending.get_total_tokens()
         else:
-            self._context[session_id] += message.spending.get_total_tokens()
+            self._context[session_id] = message.spending.get_total_tokens()
 
         if session_id in self._spendings:
             self._spendings[session_id] += message.spending

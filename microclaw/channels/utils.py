@@ -5,7 +5,7 @@ from microclaw.dto import AgentMessage
 from microclaw.sessions_storages import SessionsStorageInterface
 
 
-class AgentMessageHandler:
+class AgentMessageCollector:
     def __init__(self):
         self._last_chunked_message_id: str | None = None
         self._is_new_message_chunk: bool = True
@@ -27,6 +27,10 @@ class AgentMessageHandler:
             new_message.chunked_message_id != self._last_chunked_message_id
         )
         self._last_chunked_message_id = new_message.chunked_message_id
+        
+        # TODO: Delete later
+        with open("debug_ui.log", "a") as f:
+            f.write(f"register_new_message: chunked_message_id={new_message.chunked_message_id}, is_new_message_chunk={self._is_new_message_chunk}, role={new_message.role}, text={repr(new_message.text[:50] if new_message.text else None)}\n")
 
         await self.handle_new_message(new_message=new_message)
 
@@ -34,7 +38,7 @@ class AgentMessageHandler:
         pass
 
 
-class AgentMessageSaver(AgentMessageHandler):
+class AgentMessageSaver(AgentMessageCollector):
     def __init__(
             self,
             sessions_storage: SessionsStorageInterface,

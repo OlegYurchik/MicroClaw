@@ -1,5 +1,4 @@
 import enum
-from typing import Any
 
 from pydantic import AnyHttpUrl, BaseModel, Field, confloat
 
@@ -107,7 +106,7 @@ class AgentSettings(BaseModel):
     mcp: list[MCPSettings | str] | None = None
     subagents: list[SubAgentSettings | str] | None = Field(default_factory=list)
     temperature: Temperature | None = None
-    max_tool_calls: int | None = Field(default=25, ge=1, le=1000)
+    max_tool_calls: int = Field(default=25, ge=1, le=1000)
     enable_summarization: bool = Field(default=True)
     enable_memory_flush: bool = Field(default=True)
     max_memory_flush_tokens: int = Field(default=10000, ge=50)

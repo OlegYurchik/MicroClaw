@@ -1,9 +1,7 @@
 from types import NoneType
 
-from langchain_core.tools import BaseTool
-from langchain_mcp_adapters.client import MultiServerMCPClient
 
-from .agents import Agent, AgentSettings, InputTypeEnum, MCPLocalSettings, MCPRemoteSettings, MCPSettings
+from .agents import Agent, AgentSettings, InputTypeEnum, MCPRemoteSettings, MCPSettings
 from .agents.subagents.settings import SubAgentSettings
 from .agents.subagents.toolkit import SubAgentToolKit
 from .channels import BaseChannel, get_channel
@@ -13,7 +11,7 @@ from .sessions_storages import (
     SessionsStorageSettingsType,
     get_sessions_storage,
 )
-from .toolkits import BaseToolKit, ToolKitSettings, get_toolkit
+from .toolkits import BaseToolKit, get_toolkit
 from .stt import STT, STTSettings
 from .syncers import SyncerInterface, get_syncer
 from .users_storages import UsersStorageInterface, UsersStorageSettingsType, get_users_storage
@@ -170,22 +168,25 @@ class DependencyResolver:
             mcps_settings = mcps.keys()
         else:
             mcps_settings = agent_settings.mcp
-        agent_mcps_settings = []
+        agent_mcps_settings = {}
         for mcp_settings_or_name in mcps_settings:
             if isinstance(mcp_settings_or_name, str) and mcp_settings_or_name in mcps:
-                agent_mcps_settings.append(mcps[mcp_settings_or_name])
+                agent_mcps_settings[mcp_settings_or_name] = mcps[mcp_settings_or_name]
             elif isinstance(mcp_settings_or_name, MCPSettings):
-                agent_mcps_settings.append(mcp_settings_or_name)
+                name = mcp_settings_or_name.name or (
+                    mcp_settings_or_name.url if isinstance(mcp_settings_or_name, MCPRemoteSettings)
+                    else " ".join((mcp_settings_or_name.command, *mcp_settings_or_name.args))
+                )
+                agent_mcps_settings[name] = mcp_settings_or_name
             else:
                 raise ValueError(f"MCP with name '{mcp_settings_or_name}' not exists")
-        mcp = await self.resolve_mcp(agent_mcps_settings)
 
         return Agent(
             settings=agent_settings,
             model_settings=model_settings,
             provider_settings=provider_settings,
             toolkits=agent_toolkits,
-            mcp=mcp,
+            mcp_settings=agent_mcps_settings,
         )
 
     async def resolve_subagents_for_agent(
@@ -247,31 +248,6 @@ class DependencyResolver:
                 )
         return self._toolkits
 
-    async def resolve_mcp(self, mcp_settings: dict[str, MCPSettings]) -> MultiServerMCPClient:
-        servers = {}
-        for settings in mcp_settings:
-            if isinstance(settings, MCPRemoteSettings):
-                server_name = settings.name or settings.url
-                mcp_data = {}
-                if settings.url.startswith("http"):
-                    mcp_data["transport"] = "http"
-                elif settings.url.startswith("ws"):
-                    mcp_data["transport"] = "ws"
-                else:
-                    raise ValueError(f"Incorrect MCP URL: {settings.url}")
-                mcp_data["url"] = settings.url
-            elif isinstance(settings, MCPLocalSettings):
-                server_name = settings.name or " ".join((settings.command, *settings.args))
-                mcp_data = {
-                    "transport": "stdio",
-                    "command": settings.command,
-                    "args": settings.args,
-                }
-            else:
-                raise ValueError(f"Unsupport MCP settings type: {type(settings)}")
-            servers[server_name] = mcp_data
-
-        return MultiServerMCPClient(servers)
 
     async def resolve_stts(self) -> dict[str, STT]:
         if self._stt is None:

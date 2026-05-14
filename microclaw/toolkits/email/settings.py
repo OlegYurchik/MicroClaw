@@ -1,5 +1,5 @@
 import enum
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 from microclaw.toolkits.enums import PermissionModeEnum
 

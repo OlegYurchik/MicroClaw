@@ -401,6 +401,9 @@ class CardDAVToolKit(BaseToolKit[CardDAVSettings]):
 
         Args:
             url: Contact full URL (obtained from get_contacts)
+
+        Returns:
+            None - indicates successful operation
         """
 
         if self.settings.write_mode is PermissionModeEnum.DENY:

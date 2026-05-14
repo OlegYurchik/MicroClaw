@@ -1,6 +1,6 @@
 import asyncio
 import shutil
-from typing import Any, Iterable
+from typing import Iterable
 
 from microclaw.toolkits.base import BaseToolKit, tool
 from microclaw.toolkits.enums import PermissionModeEnum

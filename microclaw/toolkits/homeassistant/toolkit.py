@@ -139,7 +139,7 @@ class HomeAssistantToolKit(BaseToolKit[HomeAssistantSettings]):
         return entities
 
     @tool
-    async def turn_on(self, entity_id: str, **kwargs: Any) -> str:
+    async def turn_on(self, entity_id: str, **kwargs: Any) -> None:
         """
         Turn on an entity (light, switch, etc.).
 
@@ -149,6 +149,9 @@ class HomeAssistantToolKit(BaseToolKit[HomeAssistantSettings]):
         Args:
             entity_id: Entity identifier (e.g., light.living_room, switch.water_boiler)
             **kwargs: Additional service parameters (e.g., brightness=255, color_temp=400)
+
+        Returns:
+            None - indicates successful operation
         """
         domain = entity_id.split(".")[0]
         await self.call_service(
@@ -159,12 +162,15 @@ class HomeAssistantToolKit(BaseToolKit[HomeAssistantSettings]):
         )
 
     @tool
-    async def turn_off(self, entity_id: str) -> str:
+    async def turn_off(self, entity_id: str) -> None:
         """
         Turn off an entity (light, switch, etc.).
 
         Args:
             entity_id: Entity identifier (e.g., light.living_room, switch.water_boiler)
+
+        Returns:
+            None - indicates successful operation
         """
         domain = entity_id.split(".")[0]
         await self.call_service(
@@ -174,12 +180,15 @@ class HomeAssistantToolKit(BaseToolKit[HomeAssistantSettings]):
         )
 
     @tool
-    async def toggle(self, entity_id: str) -> str:
+    async def toggle(self, entity_id: str) -> None:
         """
         Toggle an entity (light, switch, etc.).
 
         Args:
             entity_id: Entity identifier (e.g., light.living_room, switch.water_boiler)
+
+        Returns:
+            None - indicates successful operation
         """
         domain = entity_id.split(".")[0]
         await self.call_service(
@@ -195,7 +204,7 @@ class HomeAssistantToolKit(BaseToolKit[HomeAssistantSettings]):
             service: str,
             service_data: dict[str, Any] | None = None,
             entity_id: str | None = None,
-    ) -> str:
+    ) -> None:
         """
         Call a Home Assistant service.
 
@@ -204,6 +213,9 @@ class HomeAssistantToolKit(BaseToolKit[HomeAssistantSettings]):
             service: Service name (e.g., turn_on, turn_off)
             service_data: Optional service parameters
             entity_id: Optional entity ID to target
+
+        Returns:
+            None - indicates successful operation
         """
         if entity_id:
             service_data = service_data or {}

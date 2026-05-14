@@ -1,5 +1,4 @@
 import pathlib
-from typing import Any
 
 from microclaw.toolkits.base import BaseToolKit, tool
 from microclaw.toolkits.enums import PermissionModeEnum
@@ -95,6 +94,9 @@ class FileSystemToolKit(BaseToolKit[FileSystemToolKitSettings]):
         Args:
             path: Path to the file to write (relative to allowed directories)
             content: Content to write to the file
+
+        Returns:
+            None - indicates successful operation
         """
 
         if self.settings.write_mode is PermissionModeEnum.DENY:

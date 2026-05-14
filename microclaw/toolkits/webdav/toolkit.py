@@ -77,6 +77,9 @@ class WebDAVToolKit(BaseToolKit[WebDAVSettings]):
         Args:
             path: Path to the file on WebDAV server
             local_path: Local path where the file will be saved
+
+        Returns:
+            None - indicates successful operation
         """
         async with self._create_client() as client:
             await client.download_file(path, local_path)
@@ -89,6 +92,9 @@ class WebDAVToolKit(BaseToolKit[WebDAVSettings]):
         Args:
             path: Path where the file will be saved on WebDAV server
             local_path: Local path of the file to upload
+
+        Returns:
+            None - indicates successful operation
         """
         self._check_path_access(path)
         if self.settings.write_mode is PermissionModeEnum.DENY:
@@ -110,6 +116,9 @@ class WebDAVToolKit(BaseToolKit[WebDAVSettings]):
         Args:
             path: Path where the file will be created on WebDAV server
             content: Binary content to write to the file
+
+        Returns:
+            None - indicates successful operation
         """
         path = path.lstrip("/")
         self._check_path_access(path)
@@ -139,6 +148,9 @@ class WebDAVToolKit(BaseToolKit[WebDAVSettings]):
 
         Args:
             path: Path to the file to delete
+
+        Returns:
+            None - indicates successful operation
         """
         self._check_path_access(path)
         if self.settings.write_mode is PermissionModeEnum.DENY:

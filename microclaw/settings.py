@@ -17,6 +17,7 @@ from .agents import (
     ModelSettings,
     ProviderSettings,
 )
+from .api.rest import RESTAPISettings
 from .toolkits import ToolKitSettings
 from .channels import ChannelSettingsType
 from .sessions_storages import SessionsStorageSettingsType
@@ -47,6 +48,7 @@ class LoggingSettings(BaseSettings):
 
 class MicroclawSettings(BaseSettings):
     logging: LoggingSettings = Field(default_factory=LoggingSettings)
+    rest: RESTAPISettings = Field(default_factory=RESTAPISettings)
     sessions_storages: dict[str, SessionsStorageSettingsType] = {
         "default": FilesystemSessionsStorageSettings(),
     }

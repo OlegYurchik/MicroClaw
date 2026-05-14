@@ -1,5 +1,6 @@
 import datetime
 import pathlib
+import uuid
 from typing import Any, AsyncGenerator
 
 import tiktoken
@@ -23,12 +24,14 @@ from microclaw.agents.settings import (
     ModelSettings,
     ProviderSettings,
     APITypeEnum,
+    MCPLocalSettings,
+    MCPRemoteSettings,
     MCPSettings,
 )
 from microclaw.dto import AgentMessage, Spending
 from microclaw.toolkits import BaseToolKit
 from microclaw.toolkits.memory import MemoryToolKit
-from .dto import SummaryValues, SummaryMemoryValues, SystemPromptValues, SystemValues
+from .dto import SummaryValues, SummaryMemoryValues, AgentPromptValues, SystemValues, MCPInfo
 from .subagents import SubAgentToolKit
 
 
@@ -41,7 +44,7 @@ class Agent:
             model_settings: ModelSettings,
             provider_settings: ProviderSettings,
             toolkits: dict[str, BaseToolKit],
-            mcp: MultiServerMCPClient,
+            mcp_settings: dict[str, MCPSettings] | None = None,
             subagents_toolkits: list[SubAgentToolKit] | None = None,
     ):
         self._settings = settings
@@ -55,7 +58,8 @@ class Agent:
                 self._memory_toolkit = toolkit
                 break
 
-        self._mcp = mcp
+        self._mcp_settings = mcp_settings or {}
+        self._mcp = self._create_mcp_client()
         self._subagents_toolkits = subagents_toolkits.copy() if subagents_toolkits else []
         self._tools = [
             tool
@@ -63,6 +67,32 @@ class Agent:
             for tool in toolkit.get_tools()
         ]
         self._client = self.get_client()
+
+    def _create_mcp_client(self) -> MultiServerMCPClient:
+        servers = {}
+        for settings in self._mcp_settings.values():
+            if isinstance(settings, MCPRemoteSettings):
+                server_name = settings.name or settings.url
+                mcp_data = {}
+                if settings.url.startswith("http"):
+                    mcp_data["transport"] = "http"
+                elif settings.url.startswith("ws"):
+                    mcp_data["transport"] = "ws"
+                else:
+                    raise ValueError(f"Incorrect MCP URL: {settings.url}")
+                mcp_data["url"] = settings.url
+            elif isinstance(settings, MCPLocalSettings):
+                server_name = settings.name or " ".join((settings.command, *settings.args))
+                mcp_data = {
+                    "transport": "stdio",
+                    "command": settings.command,
+                    "args": settings.args,
+                }
+            else:
+                raise ValueError(f"Unsupported MCP settings type: {type(settings)}")
+            servers[server_name] = mcp_data
+
+        return MultiServerMCPClient(servers)
 
     def set_subagents_toolkits(self, subagents_toolkits: list[SubAgentToolKit]):
         self._subagents_toolkits = subagents_toolkits.copy()
@@ -112,10 +142,11 @@ class Agent:
     async def ask(
             self,
             messages: list[AgentMessage],
-            channel: "BaseChannel | None" = None,
+            channel: "BaseChannel | None" = None,  # noqa: F821
             stream: bool = False,
     ) -> AsyncGenerator[AgentMessage]:
         langchain_messages: list[BaseMessage] = self._convert_to_langchain_messages(messages)
+        system_prompt = await self._get_agent_prompt(channel=channel)
 
         tools = list(self._tools) + list(await self._mcp.get_tools())
         if channel is not None:
@@ -128,11 +159,11 @@ class Agent:
         config = {
             "recursion_limit": self._settings.max_tool_calls,
         }
-        
+
         agent = create_agent(
             model=self._client,
             tools=tools,
-            system_prompt=await self._get_agent_prompt(channel=channel),
+            system_prompt=system_prompt,
             middleware=[_handle_tool_errors],
         )
 
@@ -143,76 +174,101 @@ class Agent:
         )
 
         spending = self._get_empty_spending()
-        accumulated_messages: dict[str, str] = {}
- 
+        accumulated_message: AgentMessage | None = None
+        current_chunked_message_id: str | None = None
+
         async for event in events_generator:
             event_type = event["event"]
             match event_type:
                 case "on_chat_model_start":
+                    current_chunked_message_id = str(uuid.uuid4())
+                    accumulated_message = AgentMessage(
+                        role="assistant",
+                        chunked_message_id=current_chunked_message_id,
+                    )
+                    spending = self._get_empty_spending()
+                    spending.input_tokens = self._get_tokens_count(text=system_prompt)
                     spending.input_tokens += sum(
-                        self._get_tokens_count(
-                            text=self._convert_content_to_text(message.content) or "",
-                        )
-                        for messages_list in event["data"]["input"]["messages"]
-                        for message in messages_list
+                        self._get_tokens_count(text=message.text)
+                        for message in messages
+                        if message.text
                     )
                 case "on_chat_model_stream":
                     chunk = event["data"]["chunk"]
                     text = self._convert_content_to_text(chunk.content)
-                    if text is None:
+                    if not text:
                         continue
+                    spending.output_tokens += self._get_tokens_count(text=text)
                     message = AgentMessage(
                         role="assistant",
                         text=text,
-                        chunked_message_id=chunk.id,
+                        chunked_message_id=current_chunked_message_id,
                     )
                     if stream:
                         yield message
                     else:
-                        if chunk.id not in accumulated_messages:
-                            accumulated_messages[chunk.id] = message
-                        accumulated_messages[chunk.id].text += text
+                        accumulated_message.text = (accumulated_message.text or "") + message.text
                 case "on_chat_model_end":
                     output = event["data"]["output"]
-                    text = self._convert_content_to_text(output.content)
-                    if text is not None:
-                        spending.output_tokens = self._get_tokens_count(text=output.content)
+                    # TODO: Enable later
+                    if False and (usage_metadata := getattr(output, "usage_metadata", None)):
+                        spending.input_tokens = usage_metadata.get("input_tokens", spending.input_tokens)
+                        spending.output_tokens = usage_metadata.get("output_tokens", spending.output_tokens)
+                        spending.cache_read_tokens = usage_metadata.get("cache_read_tokens", spending.cache_read_tokens)
+                        spending.cache_write_tokens = usage_metadata.get("cache_write_tokens", spending.cache_write_tokens)
+                    # TODO: Enable later
+                    elif (
+                            False and
+                            (response_metadata := getattr(output, "response_metadata", None)) and
+                            (token_usage := response_metadata.get("token_usage"))
+                    ):
+                        spending.input_tokens = token_usage.get("prompt_tokens", 0)
+                        spending.output_tokens = token_usage.get("completion_tokens", 0)
+                    else:
+                        text = self._convert_content_to_text(output.content)
+                        if text is not None:
+                            spending.output_tokens = self._get_tokens_count(text)
                     if self._model_settings.costs is not None:
                         spending.calculate_cost(model_costs=self._model_settings.costs)
-                    if not stream and accumulated_messages:
-                        for accumulated_message in accumulated_messages.values():
-                            yield accumulated_message
-                        accumulated_messages.clear()
-                    
+                    if not stream and accumulated_message:
+                        yield accumulated_message
+                        accumulated_message = None
+
                     yield AgentMessage(
                         role="assistant",
                         spending=spending,
                     )
                     spending = self._get_empty_spending()
                 case "on_tool_start":
+                    text = f"Tool name: {event["name"]}; tool input: {event["data"].get("input", {})}"
+                    spending.input_tokens += self._get_tokens_count(text=text)
+
                     yield AgentMessage(
                         role="tool",
-                        text=f"Tool name: {event["name"]}; tool input: {event["data"].get("input", {})}",
-                        chunked_message_id=event["run_id"],
+                        text=text,
                         spending=None,
                     )
                 case "on_tool_end":
                     tool_output = event["data"].get("output")
-                    subagent_spending = self._extract_subagent_spending(tool_output)
+                    text = f"Tool name: {event["name"]}; tool output: {tool_output}"
+                    spending.input_tokens += self._get_tokens_count(text=text)
+                    # subagent_spending = self._extract_subagent_spending(tool_output)
+
                     yield AgentMessage(
                         role="tool",
-                        text=f"Tool name: {event["name"]}; tool output: {tool_output}",
-                        chunked_message_id=event["run_id"],
-                        spending=subagent_spending,
+                        text=text,
+                        # spending=subagent_spending,
                     )
                 case "on_tool_error":
                     error_data = event["data"]
                     error_message = error_data.get("error", "Unknown error")
                     tool_name = event["name"]
+                    text = f"Tool name: {tool_name}; error: {error_message}"
+                    spending.input_tokens += self._get_tokens_count(text=text)
+
                     yield AgentMessage(
                         role="tool",
-                        text=f"Tool name: {tool_name}; error: {error_message}",
-                        chunked_message_id=event["run_id"],
+                        text=text,
                         spending=None,
                     )
 
@@ -225,7 +281,7 @@ class Agent:
     ) -> AgentMessage:
         summary_prompt = self._get_summary_memory_prompt(
             old_context=old_context,
-            new_content=new_context,
+            new_context=new_context,
             max_tokens=max_tokens,
             is_daily=is_daily,
         )
@@ -372,31 +428,43 @@ class Agent:
 
         return len(tokenizer.encode(text))
 
-    async def _get_agent_prompt(self, channel: "BaseChannel | None") -> str:
+    async def _get_agent_prompt(
+        self,
+        channel: "BaseChannel | None" = None,  # noqa: F821
+    ) -> str:
         template_path = self.TEMPLATES_DIR / "agent_prompt.j2"
         template_content = template_path.read_text()
         template = Template(template_content)
 
         toolkits = dict(self._toolkits)
-        tools = list(self._tools) + list(await self._mcp.get_tools())
+        tools = list(self._tools)
         if channel is not None:
             channel_toolkit = channel.get_toolkit()
             if channel_toolkit is not None:
                 toolkits["channel"] = channel_toolkit
                 tools.extend(channel_toolkit.get_tools())
 
+        mcps = {}
+        for server_name, mcp_setting in self._mcp_settings.items():
+            mcps[server_name] = MCPInfo(
+                name=server_name,
+                description=mcp_setting.description,
+            )
+
         memories = await self._get_memory_context()
-        system_prompt_values = SystemPromptValues(
+        agent_prompt_values = AgentPromptValues(
             agent_identity=self._settings.identity,
             system=SystemValues(time=datetime.datetime.now(datetime.timezone.utc)),
+            max_tool_calls=self._settings.max_tool_calls,
             toolkits=toolkits,
             tools=tools,
             channel=channel,
             memories=memories,
             subagents=self._subagents_toolkits,
+            mcps=mcps,
         )
 
-        prompt = template.render(data=system_prompt_values)
+        prompt = template.render(data=agent_prompt_values)
         return prompt
 
     async def _get_memory_context(self) -> dict[str, str]:

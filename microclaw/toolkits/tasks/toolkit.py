@@ -1,7 +1,7 @@
 from datetime import datetime, date
 
 from caldav.aio import AsyncDAVClient, AsyncPrincipal, AsyncCalendar, AsyncTodo
-from caldav.elements import cdav, dav
+from caldav.elements import dav
 
 from microclaw.toolkits.base import BaseToolKit, tool
 from microclaw.toolkits.enums import PermissionModeEnum
@@ -98,7 +98,7 @@ class TasksToolKit(BaseToolKit[TasksSettings]):
             url: Task list full url (obtained from get_task_lists or previous interactions)
 
         Returns:
-            None
+            None - indicates successful operation
         """
         calendar = await self._get_task_list(url)
         if self.settings.write_mode is PermissionModeEnum.DENY:
@@ -199,6 +199,12 @@ class TasksToolKit(BaseToolKit[TasksSettings]):
             confirmation_request_text = (
                 f"Create task '{summary}' in task list '{task_list_url}'?"
             )
+            if description is not None:
+                confirmation_request_text += f"\nDescription: {description}"
+            if due is not None:
+                confirmation_request_text += f"\nDue: {due}"
+            if priority is not None:
+                confirmation_request_text += f"\nPriority: {priority}"
             if not await self.request_confirmation(confirmation_request_text):
                 raise UserDeniedAction()
 
@@ -298,7 +304,7 @@ class TasksToolKit(BaseToolKit[TasksSettings]):
             task_list_url: URL of the task list.
 
         Returns:
-            None
+            None - indicates successful operation
         """
         calendar = await self._get_task_list(task_list_url)
         if self.settings.write_mode is PermissionModeEnum.DENY:

@@ -15,7 +15,7 @@ def get_telegram_channel(
         sessions_storage: SessionsStorageInterface,
         syncer: SyncerInterface,
         users_storage: UsersStorageInterface,
-        resolver: "DependencyResolver",
+        resolver: "DependencyResolver",  # noqa: F821
         stt: STT | None = None,
         channel_key: str = "default",
 ) -> BaseTelegramChannel:

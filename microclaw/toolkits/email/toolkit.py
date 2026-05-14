@@ -232,9 +232,6 @@ class EmailToolKit(BaseToolKit[EmailSettings]):
                 if not isinstance(part, bytearray):
                     continue
                 raw_message = bytes(part)
-                msg = email.message_from_bytes(raw_message)
-                email_msg = self._parse_email_message(msg, uid_str, folder)
-                messages.append(email_msg)
                 break
             if not raw_message:
                 return None
@@ -335,7 +332,7 @@ class EmailToolKit(BaseToolKit[EmailSettings]):
                 f"Delete emails with uids '[{uids_text}]' from {self.settings.username}?"
             )
             if not await self.request_confirmation(confirmation_request_text):
-                raise ToolPermissionDenied()
+                raise UserDeniedAction()
 
         folder = folder or self.settings.default_folder
 
@@ -505,7 +502,7 @@ class EmailToolKit(BaseToolKit[EmailSettings]):
                 confirmation_request_text += f"📎 Attachments: {', '.join(attachments)}\n"
             confirmation_request_text += (
                 "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-                f"{body_text or body_html}\n"
+                f"{(body_text or body_html)[:200]}\n"
                 "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
             )
             if not await self.request_confirmation(confirmation_request_text):
@@ -526,6 +523,8 @@ class EmailToolKit(BaseToolKit[EmailSettings]):
                     )
             except Exception:
                 pass
+
+        return True
 
     @tool
     async def get_unread_count(self, folder: str = "") -> int:

@@ -50,7 +50,6 @@ class CalDAVToolKit(BaseToolKit[CalDAVSettings]):
         Returns:
             List of Calendar objects with url and name
         """
-
         principal = await self.get_principal()
         dav_calendars = await principal.get_calendars()
         calendars = []
@@ -116,9 +115,9 @@ class CalDAVToolKit(BaseToolKit[CalDAVSettings]):
 
         Args:
             url: Calendar full url (obtained from get_calendars or previous interactions)
-        
+
         Returns:
-            None
+            None - indicates successful operation
         """
 
         dav_calendar = await self._get_calendar(url)
@@ -220,11 +219,17 @@ class CalDAVToolKit(BaseToolKit[CalDAVSettings]):
         if self.settings.write_mode is PermissionModeEnum.DENY:
             raise PermissionError("Write operations denied")
         if self.settings.write_mode is PermissionModeEnum.REQUEST:
+            calendar_name = await dav_calendar.get_property(dav.DisplayName())
             confirmation_request_text = (
-                f"Create event '{summary}' in calendar '{calendar_url}'?\n"
+                f"Create event '{summary}' in calendar '{calendar_name}'?\n"
                 f"Start: {start}\n"
-                f"End: {end}"
+                f"End: {end}\n"
+                f"All day: {all_day}"
             )
+            if description is not None:
+                confirmation_request_text += f"\nDescription: {description}"
+            if location is not None:
+                confirmation_request_text += f"\nLocation: {location}"
             if not await self.request_confirmation(confirmation_request_text):
                 raise UserDeniedAction()
 
@@ -378,12 +383,12 @@ class CalDAVToolKit(BaseToolKit[CalDAVSettings]):
     async def delete_event(self, url: str) -> None:
         """
         Delete a calendar event. Use this tool only when user explicitly requests event deletion.
-        
+
         Args:
             url: Event full URL (obtained from get_events or previous interactions)
-        
+
         Returns:
-            None
+            None - indicates successful operation
         """
 
         calendar_url = url.rsplit("/", 1)[0]

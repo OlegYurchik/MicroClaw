@@ -1,23 +1,37 @@
+import datetime
 import uuid
 from typing import AsyncGenerator
 
 import facet
 
-from microclaw.dto import CronTask, User
+from microclaw.dto import CronTask, User, UserRoleEnum
+from microclaw.utils import Empty
 
 
-class UsersStorageInterface(facet.AsyncioServiceMixin):
+class UsersMixin:
     async def get_users(self) -> AsyncGenerator[User]:
         raise NotImplementedError
 
     async def create_user(
             self,
             user_id: uuid.UUID | None = None,
-            agent_settings: "AgentSettings | None" = None,
+            role: UserRoleEnum = UserRoleEnum.USER,
+            agent_settings: "AgentSettings | None" = None,  # noqa: F821
     ) -> User:
         raise NotImplementedError
 
     async def get_user(self, user_id: uuid.UUID) -> User | None:
+        raise NotImplementedError
+
+    async def update_user(
+            self,
+            user_id: uuid.UUID,
+            role: UserRoleEnum | None | Empty = Empty,
+            agent_settings: "AgentSettings | None | Empty" = Empty,  # noqa: F821
+    ) -> User | None:
+        raise NotImplementedError
+
+    async def delete_user(self, user_id: uuid.UUID) -> bool:
         raise NotImplementedError
 
     async def get_user_by_channel(
@@ -30,6 +44,11 @@ class UsersStorageInterface(facet.AsyncioServiceMixin):
     async def get_user_by_session(self, session_id: uuid.UUID) -> User | None:
         raise NotImplementedError
 
+    async def get_user_by_token(self, token: str) -> User | None:
+        raise NotImplementedError
+
+
+class SessionsMixin:
     async def get_actual_session(
             self,
             user_id: uuid.UUID,
@@ -47,6 +66,8 @@ class UsersStorageInterface(facet.AsyncioServiceMixin):
     ) -> None:
         raise NotImplementedError
 
+
+class CronsMixin:
     async def get_crons(self, user_id: uuid.UUID) -> list[CronTask]:
         raise NotImplementedError
 
@@ -59,3 +80,25 @@ class UsersStorageInterface(facet.AsyncioServiceMixin):
 
     async def remove_cron(self, cron_id: uuid.UUID) -> None:
         raise NotImplementedError
+
+
+class TokensMixin:
+    async def create_token_for_user(
+            self,
+            user_id: uuid.UUID,
+            ttl: datetime.timedelta | None = datetime.timedelta(days=30),
+    ) -> str:
+        raise NotImplementedError
+
+    async def delete_token(self, token: str):
+        raise NotImplementedError
+
+
+class UsersStorageInterface(
+        facet.AsyncioServiceMixin,
+        UsersMixin,
+        SessionsMixin,
+        CronsMixin,
+        TokensMixin,
+):
+    pass    

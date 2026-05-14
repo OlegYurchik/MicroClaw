@@ -4,7 +4,11 @@ from .settings import SubAgentSettings
 
 
 class SubAgentToolKit(BaseToolKit):
-    def __init__(self, settings: SubAgentSettings, agent: "Agent"):
+    def __init__(
+            self,
+            settings: SubAgentSettings,
+            agent: "Agent",  # noqa: F821
+    ):
         self._name = settings.name
         self._agent = agent
         self._max_turns = settings.max_turns

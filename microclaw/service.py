@@ -3,6 +3,7 @@ import asyncio
 import facet
 
 from .channels import BaseChannel
+from .cron import BaseCronTask
 from .resolver import DependencyResolver
 from .settings import MicroclawSettings
 
@@ -13,7 +14,7 @@ class MicroclawService(facet.AsyncioServiceMixin):
         self._channels: dict[str, BaseChannel] = asyncio.run(
             self._resolver.resolve_channels(),
         )
-        self._crons: dict[str, Cron] = asyncio.run(
+        self._crons: dict[str, BaseCronTask] = asyncio.run(
             self._resolver.resolve_crons(),
         )
 

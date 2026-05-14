@@ -1,4 +1,3 @@
-import asyncio
 import functools
 import json
 import random
@@ -6,7 +5,7 @@ import string
 from typing import Any, Callable, Generic, TypeVar
 
 from langchain_core.tools import StructuredTool as LangChainStructuredTool
-from pydantic import BaseModel, create_model
+from pydantic import BaseModel
 
 from .settings import ToolKitSettings
 

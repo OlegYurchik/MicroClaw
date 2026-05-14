@@ -50,11 +50,15 @@ class FilesystemSessionsStorage(SessionsStorageInterface):
         async with lock:
             session_data = await self._read_session(session_id=session_id)
             session_data.messages.append(message)
-            if message.spending is not None:
+            if message.spending:
                 if message.is_summary:
                     session_data.context = message.spending.output_tokens
                 else:
-                    session_data.context += message.spending.get_total_tokens()
+                    # Перезапись только если новый контекст больше предыдущего
+                    new_context = message.spending.get_total_tokens()
+                    if new_context > session_data.context:
+                        session_data.context = new_context
+                
                 if session_data.spending is None:
                     session_data.spending = message.spending
                 else:

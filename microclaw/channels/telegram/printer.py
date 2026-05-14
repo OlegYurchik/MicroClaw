@@ -1,19 +1,15 @@
-import re
 import uuid
-from contextlib import asynccontextmanager
 
 import aiogram
-from aiogram.enums import ParseMode
 
 from microclaw.agents import Agent
-from microclaw.channels.utils import AgentMessageHandler
+from microclaw.channels.utils import AgentMessageCollector
 from microclaw.dto import AgentMessage
 from microclaw.sessions_storages import SessionsStorageInterface
 
 
-class AgentMessagePrinter(AgentMessageHandler):
+class AgentMessagePrinter(AgentMessageCollector):
     MAX_MESSAGE_LENGTH = 4096
-    FINISH_MESSAGE = "NO_REPLY"
     RESERVED_CHARS = r"_*\[\]()~`>#+-=|{}.!\\"
 
     def __init__(
@@ -44,10 +40,17 @@ class AgentMessagePrinter(AgentMessageHandler):
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         await self._flush_messages()
+        if exc_type is not None:
+            if self._debug:
+                await self.print(text=f"Got exception: {exc_val}")
+            else:
+                await self.print(
+                    text="Internal error, please contact agent administrator",
+                )
         await super().__aexit__(exc_type, exc_val, exc_tb)
 
     async def handle_new_message(self, new_message: AgentMessage):
-        if new_message.role != "assistant":
+        if new_message.role != "assistant" or not new_message.text:
             return
 
         if self.is_new_message_chunk:
@@ -62,19 +65,6 @@ class AgentMessagePrinter(AgentMessageHandler):
                 continue
             await self.print(text=message.text)
         self._messages = []
-
-    @asynccontextmanager
-    async def catch_exception(self):
-        try:
-            yield
-        except Exception as exception:
-            if self._debug:
-                await self.print(text=f"Got exception: {exception}")
-            else:
-                await self.print(
-                    text="Internal error, please contact agent administrator",
-                )
-            raise exception
 
     async def print(self, text: str):
         buttons = []
@@ -105,7 +95,7 @@ class AgentMessagePrinter(AgentMessageHandler):
             reply_markup = aiogram.types.InlineKeyboardMarkup(inline_keyboard=[buttons])
 
         text_list = [
-            text[i:i + self.MAX_MESSAGE_LENGTH]
+            text[i:i + self.MAX_MESSAGE_LENGTH].strip()
             for i in range(0, len(text), self.MAX_MESSAGE_LENGTH)
         ]
         
@@ -115,9 +105,10 @@ class AgentMessagePrinter(AgentMessageHandler):
                 text=text_chunk,
                 # parse=ParseMode.MARKDOWN_V2,
             )
-        await self._bot.send_message(
-            chat_id=self._chat_id,
-            text=text_list[-1],
-            reply_markup=reply_markup,
-            # parse=ParseMode.MARKDOWN_V2,
-        )
+        if text_list[-1]:
+            await self._bot.send_message(
+                chat_id=self._chat_id,
+                text=text_list[-1],
+                reply_markup=reply_markup,
+                # parse=ParseMode.MARKDOWN_V2,
+            )

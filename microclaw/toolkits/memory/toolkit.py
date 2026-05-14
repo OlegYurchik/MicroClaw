@@ -2,7 +2,6 @@ import datetime
 import tiktoken
 
 from microclaw.toolkits.base import BaseToolKit, tool
-from microclaw.toolkits.settings import ToolKitSettings
 from .drivers.fabric import get_memory_driver
 from .settings import MemoryToolKitSettings
 
@@ -55,6 +54,9 @@ class MemoryToolKit(BaseToolKit[MemoryToolKitSettings]):
             content: Content to append to memory
             date: Date to append memory for. If None, appends to general memory.
 
+        Returns:
+            None - indicates successful operation
+
         Raises:
             MemorySizeExceeded: If memory size limit is exceeded
         """
@@ -85,4 +87,14 @@ class MemoryToolKit(BaseToolKit[MemoryToolKitSettings]):
         return await self._driver.memory_search(query, limit)
 
     async def rewrite_memory(self, content: str, date: datetime.date | None = None) -> None:
+        """
+        Rewrite memory content for a specific date or general memory.
+
+        Args:
+            content: New content to write to memory
+            date: Date to rewrite memory for. If None, rewrites general memory.
+
+        Returns:
+            None - indicates successful operation
+        """
         await self._driver.rewrite_memory(content, date)
