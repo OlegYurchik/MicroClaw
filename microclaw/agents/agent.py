@@ -1,5 +1,6 @@
 import datetime
 import pathlib
+import traceback
 import uuid
 from typing import Any, AsyncGenerator
 
@@ -17,6 +18,7 @@ from langchain_openai import ChatOpenAI
 from langchain_ollama import ChatOllama
 from langchain.agents import create_agent
 from langchain.agents.middleware import wrap_tool_call
+from langchain.agents.middleware import ModelCallLimitMiddleware, ToolCallLimitMiddleware
 from langchain.messages import ToolMessage
 
 from microclaw.agents.settings import (
@@ -155,16 +157,17 @@ class Agent:
                 tools.extend(channel_toolkit.get_tools())
         for subagent_toolkit in self._subagents_toolkits:
             tools.extend(subagent_toolkit.get_tools())
-
-        config = {
-            "recursion_limit": self._settings.max_tool_calls,
-        }
+        tool_call_limiter = ToolCallLimitMiddleware(
+            run_limit=self._settings.max_tool_calls,
+            exit_behavior="continue",
+        )
+        config = {"recursion_limit": 1000}
 
         agent = create_agent(
             model=self._client,
             tools=tools,
             system_prompt=system_prompt,
-            middleware=[_handle_tool_errors],
+            middleware=[_handle_tool_errors, tool_call_limiter],
         )
 
         events_generator = agent.astream_events(
@@ -187,7 +190,6 @@ class Agent:
                         chunked_message_id=current_chunked_message_id,
                     )
                     spending = self._get_empty_spending()
-                    spending.input_tokens = self._get_tokens_count(text=system_prompt)
                     spending.input_tokens += sum(
                         self._get_tokens_count(text=message.text)
                         for message in messages
@@ -216,7 +218,7 @@ class Agent:
                         spending.output_tokens = usage_metadata.get("output_tokens", spending.output_tokens)
                         spending.cache_read_tokens = usage_metadata.get("cache_read_tokens", spending.cache_read_tokens)
                         spending.cache_write_tokens = usage_metadata.get("cache_write_tokens", spending.cache_write_tokens)
-                    # TODO: Enable later
+                    # TODO: Enable leter
                     elif (
                             False and
                             (response_metadata := getattr(output, "response_metadata", None)) and
@@ -239,38 +241,38 @@ class Agent:
                         spending=spending,
                     )
                     spending = self._get_empty_spending()
-                case "on_tool_start":
-                    text = f"Tool name: {event["name"]}; tool input: {event["data"].get("input", {})}"
-                    spending.input_tokens += self._get_tokens_count(text=text)
+                # case "on_tool_start":
+                #     text = f"Tool name: {event["name"]}; tool input: {event["data"].get("input", {})}"
+                #     spending.input_tokens += self._get_tokens_count(text=text)
 
-                    yield AgentMessage(
-                        role="tool",
-                        text=text,
-                        spending=None,
-                    )
-                case "on_tool_end":
-                    tool_output = event["data"].get("output")
-                    text = f"Tool name: {event["name"]}; tool output: {tool_output}"
-                    spending.input_tokens += self._get_tokens_count(text=text)
-                    # subagent_spending = self._extract_subagent_spending(tool_output)
+                #     yield AgentMessage(
+                #         role="tool",
+                #         text=text,
+                #         spending=None,
+                #     )
+                # case "on_tool_end":
+                #     tool_output = event["data"].get("output")
+                #     text = f"Tool name: {event["name"]}; tool output: {tool_output}"
+                #     spending.input_tokens += self._get_tokens_count(text=text)
+                #     # subagent_spending = self._extract_subagent_spending(tool_output)
 
-                    yield AgentMessage(
-                        role="tool",
-                        text=text,
-                        # spending=subagent_spending,
-                    )
-                case "on_tool_error":
-                    error_data = event["data"]
-                    error_message = error_data.get("error", "Unknown error")
-                    tool_name = event["name"]
-                    text = f"Tool name: {tool_name}; error: {error_message}"
-                    spending.input_tokens += self._get_tokens_count(text=text)
+                #     yield AgentMessage(
+                #         role="tool",
+                #         text=text,
+                #         # spending=subagent_spending,
+                #     )
+                # case "on_tool_error":
+                #     error_data = event["data"]
+                #     error_message = error_data.get("error", "Unknown error")
+                #     tool_name = event["name"]
+                #     text = f"Tool name: {tool_name}; error: {error_message}"
+                #     spending.input_tokens += self._get_tokens_count(text=text)
 
-                    yield AgentMessage(
-                        role="tool",
-                        text=text,
-                        spending=None,
-                    )
+                #     yield AgentMessage(
+                #         role="tool",
+                #         text=text,
+                #         spending=None,
+                #     )
 
     async def summarize_memory(
             self,
@@ -619,7 +621,10 @@ async def _handle_tool_errors(request, handler) -> Any:
     try:
         return await handler(request)
     except BaseException as exception:
+        tb = "".join(
+            traceback.format_exception(type(exception), exception, exception.__traceback__),
+        )
         return ToolMessage(
-            content=f"Tool error: {exception}",
+            content=f"Tool error: {exception}\n\nTraceback:\n{tb}",
             tool_call_id=request.tool_call["id"],
         )

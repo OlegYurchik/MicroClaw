@@ -10,12 +10,13 @@ class AgentMessageCollector:
         self._last_chunked_message_id: str | None = None
         self._is_new_message_chunk: bool = True
 
-    async def __aenter__(self):
-        pass
+    async def __aenter__(self) -> Self:
+        return self
 
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
+    async def __aexit__(self, exc_type, exc_val, exc_tb) -> bool:
         self._last_chunked_message_id = None
         self._is_new_message_chunk = False
+        return False
 
     @property
     def is_new_message_chunk(self) -> bool:
@@ -28,10 +29,6 @@ class AgentMessageCollector:
         )
         self._last_chunked_message_id = new_message.chunked_message_id
         
-        # TODO: Delete later
-        with open("debug_ui.log", "a") as f:
-            f.write(f"register_new_message: chunked_message_id={new_message.chunked_message_id}, is_new_message_chunk={self._is_new_message_chunk}, role={new_message.role}, text={repr(new_message.text[:50] if new_message.text else None)}\n")
-
         await self.handle_new_message(new_message=new_message)
 
     async def handle_new_message(self, new_message: AgentMessage):
@@ -50,13 +47,9 @@ class AgentMessageSaver(AgentMessageCollector):
         self._sessions_storage = sessions_storage
         self._session_id = session_id
 
-    async def __aenter__(self) -> Self:
-        await super().__aenter__()
-        return self
-
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
+    async def __aexit__(self, exc_type, exc_val, exc_tb) -> bool:
         await self._flush_messages()
-        await super().__aexit__(exc_type, exc_val, exc_tb)
+        return await super().__aexit__(exc_type, exc_val, exc_tb)
 
     async def handle_new_message(self, new_message: AgentMessage):
         if self.is_new_message_chunk:

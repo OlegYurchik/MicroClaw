@@ -105,16 +105,17 @@ class CLIChannel(BaseChannel):
                     await saver.register_new_message(new_message)
                     await printer.register_new_message(new_message)
 
-            if (
-                    agent.is_summarization_enabled() and
-                    await self.is_context_went_across_threshold(
-                        agent=agent,
-                        session_id=session_id,
-                    )
-            ):
-                await self._app.add_message(role=RoleEnum.SYSTEM, text="[dim]Summarizing...[/dim]")
-                await self.summarize_dialog_if_needed(agent=agent, session_id=session_id)
-                await self._app.update_message(role=RoleEnum.SYSTEM, text="Dialog summarized")
+            async with printer:
+                if (
+                        agent.is_summarization_enabled() and
+                        await self.is_context_went_across_threshold(
+                            agent=agent,
+                            session_id=session_id,
+                        )
+                ):
+                    await self._app.add_message(role=RoleEnum.SYSTEM, text="[dim]Summarizing...[/dim]")
+                    await self.summarize_dialog_if_needed(agent=agent, session_id=session_id)
+                    await self._app.update_message(role=RoleEnum.SYSTEM, text="Dialog summarized")
 
     async def print_spent(self):
         if self._session_id is None:

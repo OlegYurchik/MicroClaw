@@ -75,7 +75,8 @@ class MessageBox(Static):
             self.set_class(self._role is role, role.value)
         self._static.update(self._build_message_text())
 
-    def update_message(self, text: str | None = None) -> None:
+    def update_message(self, role: RoleEnum, text: str | None = None) -> None:
+        self._role = role
         self._text = text
         self._static.update(self._build_message_text())
 
@@ -208,10 +209,10 @@ class ChatWidget(Vertical):
         await self._messages_container.mount(self._last_message_box)
         self._messages_container.scroll_end()
 
-    async def update_message(self, text: str | None = None) -> None:
+    async def update_message(self, role: RoleEnum, text: str | None = None) -> None:
         if self._last_message_box is None:
             return
-        self._last_message_box.update_message(text=text)
+        self._last_message_box.update_message(role=role, text=text)
         self._messages_container.scroll_end()
 
 
@@ -254,8 +255,8 @@ class CLIApp(App):
     async def add_message(self, role: RoleEnum, text: str | None = None) -> None:
         await self._chat_widget.add_message(role=role, text=text)
 
-    async def update_message(self, text: str | None = None) -> None:
-        await self._chat_widget.update_message(text=text)
+    async def update_message(self, role: RoleEnum, text: str | None = None) -> None:
+        await self._chat_widget.update_message(role=role, text=text)
 
     def show_confirmation_modal(self, question: str, confirmation_id: uuid.UUID) -> None:
         modal = ConfirmationModal(question, confirmation_id, self._channel)

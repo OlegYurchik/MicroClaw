@@ -175,7 +175,7 @@ class TasksToolKit(BaseToolKit[TasksSettings]):
         summary: str,
         task_list_url: str,
         description: str | None = None,
-        due: str | None = None,
+        due: datetime | date | None = None,
         priority: int | None = None,
         
     ) -> Task:
@@ -185,7 +185,7 @@ class TasksToolKit(BaseToolKit[TasksSettings]):
         Args:
             summary: Title/summary of the task
             description: Optional description of the task
-            due: Optional due date in ISO format (e.g., "2024-12-31" or "2024-12-31T23:59:59")
+            due: Optional due date as datetime or date object
             priority: Optional priority level (1=highest, 9=lowest, 0=undefined)
             task_list_url: URL of the task list.
 
@@ -211,7 +211,7 @@ class TasksToolKit(BaseToolKit[TasksSettings]):
         todo_data = {"summary": summary}
         if description:
             todo_data["description"] = description
-        if due:
+        if due is not None:
             todo_data["due"] = due
         if priority is not None:
             todo_data["priority"] = priority
@@ -226,7 +226,7 @@ class TasksToolKit(BaseToolKit[TasksSettings]):
             task_list_url: str,
             summary: str | None = None,
             description: str | None = None,
-            due: str | None = None,
+            due: datetime | date | None = None,
             priority: int | None = None,
             completed: bool | None = None,
     ) -> Task:
@@ -237,7 +237,7 @@ class TasksToolKit(BaseToolKit[TasksSettings]):
             task_uid: Unique identifier of the task
             summary: Optional new title/summary of the task
             description: Optional new description of the task
-            due: Optional new due date in ISO format
+            due: Optional new due date as datetime or date object
             priority: Optional new priority level (1=highest, 9=lowest, 0=undefined)
             completed: Optional new completion status
             task_list_url: URL of the task list.
@@ -278,7 +278,10 @@ class TasksToolKit(BaseToolKit[TasksSettings]):
         if description is not None:
             todo.vobject_instance.vtodo.description.value = description
         if due is not None:
-            todo.vobject_instance.vtodo.due.value = due
+            if "due" in todo.vobject_instance.vtodo.contents:
+                todo.vobject_instance.vtodo.due.value = due
+            else:
+                todo.vobject_instance.vtodo.add("due").value = due
         if priority is not None:
             todo.vobject_instance.vtodo.priority.value = priority
         if completed is not None:

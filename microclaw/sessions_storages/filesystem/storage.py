@@ -54,11 +54,8 @@ class FilesystemSessionsStorage(SessionsStorageInterface):
                 if message.is_summary:
                     session_data.context = message.spending.output_tokens
                 else:
-                    # Перезапись только если новый контекст больше предыдущего
-                    new_context = message.spending.get_total_tokens()
-                    if new_context > session_data.context:
-                        session_data.context = new_context
-                
+                    session_data.context = message.spending.get_total_tokens()
+
                 if session_data.spending is None:
                     session_data.spending = message.spending
                 else:

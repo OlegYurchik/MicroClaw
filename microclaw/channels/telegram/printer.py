@@ -35,10 +35,7 @@ class AgentMessagePrinter(AgentMessageCollector):
 
         self._messages: list[AgentMessage] = []
 
-    async def __aenter__(self):
-        await super().__aenter__()
-
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
+    async def __aexit__(self, exc_type, exc_val, exc_tb) -> bool:
         await self._flush_messages()
         if exc_type is not None:
             if self._debug:
@@ -48,6 +45,7 @@ class AgentMessagePrinter(AgentMessageCollector):
                     text="Internal error, please contact agent administrator",
                 )
         await super().__aexit__(exc_type, exc_val, exc_tb)
+        return True
 
     async def handle_new_message(self, new_message: AgentMessage):
         if new_message.role != "assistant" or not new_message.text:

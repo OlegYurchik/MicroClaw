@@ -29,18 +29,16 @@ class AgentMessagePrinter(AgentMessageCollector):
 
         self._text = ""
 
-    async def __aenter__(self):
-        await self._create_message_widget(role=RoleEnum.AI, text=None)
-        await super().__aenter__()
-
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
+    async def __aexit__(self, exc_type, exc_val, exc_tb) -> bool:
         await self.print_spent()
         if exc_type is not None:
             if self._debug:
-                self._app.show_error_modal(f"Got exception: {exc_val}")
+                text = f"Got exception: {exc_val}"
             else:
-                self._app.show_error_modal("Internal error, please contact agent administrator")
+                text = "Internal error, please contact agent administrator"
+            await self._create_message_widget(role=RoleEnum.SYSTEM, text=text)
         await super().__aexit__(exc_type, exc_val, exc_tb)
+        return True
 
     async def handle_new_message(self, new_message: AgentMessage):
         if new_message.role != "assistant" or not new_message.text:
@@ -48,19 +46,20 @@ class AgentMessagePrinter(AgentMessageCollector):
 
         if self.is_new_message_chunk:
             self._text = new_message.text
+            await self._create_message_widget(role=RoleEnum.AI, text=self._text)
         else:
             self._text += new_message.text
-        await self._update_message_widget(text=self._text)
+            await self._update_message_widget(role=RoleEnum.AI, text=self._text)
 
     async def _create_message_widget(self, role: RoleEnum, text: str | None = None):
         await self._app.add_message(role=role, text=text)
 
     async def _update_message_widget(
             self,
-            role: RoleEnum | None = None,
+            role: RoleEnum,
             text: str | None = None,
     ):
-        await self._app.update_message(text=text)
+        await self._app.update_message(role=role, text=text)
 
     async def print_spent(self):
         context_usage = None
