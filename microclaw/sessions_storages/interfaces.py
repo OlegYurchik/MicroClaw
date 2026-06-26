@@ -1,10 +1,13 @@
-import datetime
 import uuid
 from typing import AsyncGenerator
 
 import facet
 
+from pydantic_filters import BaseSort
+from pydantic_filters.pagination import OffsetPagination as BasePagination
+
 from microclaw.dto import AgentMessage, Spending
+from .filters import SessionFilter, MessageFilter
 
 
 class SessionsStorageInterface(facet.AsyncioServiceMixin):
@@ -16,7 +19,9 @@ class SessionsStorageInterface(facet.AsyncioServiceMixin):
 
     async def get_sessions(
             self,
-            date: datetime.date | None = None,
+            filter: SessionFilter | None = None,
+            pagination: BasePagination | None = None,
+            sort: BaseSort | None = None,
     ) -> AsyncGenerator[uuid.UUID]:
         raise NotImplementedError
 
@@ -25,8 +30,9 @@ class SessionsStorageInterface(facet.AsyncioServiceMixin):
 
     async def get_messages(
             self,
-            session_id: uuid.UUID,
-            last: int | None = None,
+            filter: MessageFilter | None = None,
+            pagination: BasePagination | None = None,
+            sort: BaseSort | None = None,
             from_last_summarization: bool = True,
     ) -> AsyncGenerator[AgentMessage]:
         raise NotImplementedError

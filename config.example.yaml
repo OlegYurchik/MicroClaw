@@ -35,6 +35,8 @@ channels:
   default:
     type: telegram
     token: !env TELEGRAM_BOT_TOKEN
+    method: polling
+    ip_family: auto
     stt: default
 cron:
   morning:

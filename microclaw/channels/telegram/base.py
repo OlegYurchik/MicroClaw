@@ -1,9 +1,11 @@
 import asyncio
 import contextlib
+import socket
 import uuid
 
 import aiogram
 import contextvars
+from aiogram.client.session.aiohttp import AiohttpSession
 from aiogram.enums import ParseMode
 from aiogram.filters.callback_data import CallbackData
 
@@ -21,7 +23,7 @@ from microclaw.utils import suppress_exception
 from .middlewares.auth import AuthMiddleware
 from .middlewares.typing import TypingMiddleware
 from .printer import AgentMessagePrinter
-from .settings import TelegramSettings
+from .settings import TelegramIPFamilyEnum, TelegramSettings
 from .toolkit import TelegramToolKit
 
 
@@ -58,7 +60,13 @@ class BaseTelegramChannel(BaseChannel):
             resolver=resolver,
         )
 
-        self._bot = aiogram.Bot(token=settings.token)
+        session = None
+        if settings.ip_family != TelegramIPFamilyEnum.AUTO:
+            family = socket.AF_INET if settings.ip_family == TelegramIPFamilyEnum.IPV4 else socket.AF_INET6
+            session = AiohttpSession()
+            session._connector_init["family"] = family
+            session._connector_init["ttl_dns_cache"] = 300
+        self._bot = aiogram.Bot(token=settings.token, session=session)
         self._dispatcher = aiogram.Dispatcher()
         self._dispatcher.message.middleware(AuthMiddleware(allow_from=self._settings.allow_from))
         self._dispatcher.message.middleware(TypingMiddleware(delay=self.TYPING_ACTION_DELAY))
@@ -112,24 +120,34 @@ class BaseTelegramChannel(BaseChannel):
             new_messages: list[AgentMessage] | None = None,
             agent: Agent | None = None,
     ):
+        request_id = uuid.uuid4()
         chat_id = channel_internal_id
-        user = await self._get_or_create_user(chat_id)
-        agent = (
-            agent or
-            await self.get_agent_for_user(user) or
-            self._agent
+        logger.info(
+            "[%s] Starting conversation for session_id=%s chat_id=%s",
+            request_id, session_id, chat_id,
         )
-        for agent_message in new_messages or ():
-            await self._sessions_storage.add_message(
-                session_id=session_id,
-                message=agent_message,
+        with self.set_current_request_id(request_id):
+            user = await self._get_or_create_user(chat_id)
+            agent = (
+                agent or
+                await self.get_agent_for_user(user) or
+                self._agent
             )
-        await self._generate_and_send_answer(
-            session_id=session_id,
-            chat_id=chat_id,
-            agent=agent,
-            messages=new_messages,
-        )
+            for agent_message in new_messages or ():
+                await self._sessions_storage.add_message(
+                    session_id=session_id,
+                    message=agent_message,
+                )
+            await self._generate_and_send_answer(
+                session_id=session_id,
+                chat_id=chat_id,
+                agent=agent,
+                messages=new_messages,
+            )
+            logger.info(
+                "[%s] Finished conversation for session_id=%s chat_id=%s",
+                request_id, session_id, chat_id,
+            )
 
     async def handle_new_session(self, message: aiogram.types.Message):
         user = await self._get_or_create_user(message.chat.id)
@@ -149,104 +167,149 @@ class BaseTelegramChannel(BaseChannel):
         await printer.print(text="Dialog context reset")
 
     async def handle_voice_message(self, message: aiogram.types.Message):
-        user = await self._get_or_create_user(message.chat.id)
-        agent = await self.get_agent_for_user(user) or self._agent
-        session_id = await self._get_or_create_session(user, message.chat.id)
-
-        printer = AgentMessagePrinter(
-            bot=self._bot,
-            chat_id=message.chat.id,
-            session_id=session_id,
-            sessions_storage=self._sessions_storage,
-            agent=agent,
-            show_context_usage=self._settings.show_context_usage,
-            show_costs=self._settings.show_costs,
-            debug=self._settings.debug,
+        request_id = uuid.uuid4()
+        logger.info(
+            "[%s] Received voice message event chat_id=%s",
+            request_id, message.chat.id,
         )
+        with self.set_current_request_id(request_id):
+            user = await self._get_or_create_user(message.chat.id)
+            agent = await self.get_agent_for_user(user) or self._agent
+            session_id = await self._get_or_create_session(user, message.chat.id)
 
-        if self._stt is None:
-            await printer.print(
-                text="Voice messages not supported",
+            await self.reject_all_pending_confirmations(session_id=session_id)
+
+            printer = AgentMessagePrinter(
+                bot=self._bot,
+                chat_id=message.chat.id,
+                session_id=session_id,
+                sessions_storage=self._sessions_storage,
+                agent=agent,
+                show_context_usage=self._settings.show_context_usage,
+                show_costs=self._settings.show_costs,
+                debug=self._settings.debug,
             )
-            return
 
-        file = await self._bot.get_file(message.voice.file_id)
-        audio_bytes_io = await self._bot.download_file(file.file_path)
-        audio_bytes = audio_bytes_io.read()
-        audio_format = "ogg"
+            if self._stt is None:
+                await printer.print(
+                    text="Voice messages not supported",
+                )
+                return
 
-        await self._sessions_storage.add_message(
-            session_id=session_id,
-            message=AgentMessage(role="user", audio=audio_bytes, audio_format=audio_format),
-        )
+            file = await self._bot.get_file(message.voice.file_id)
+            audio_bytes_io = await self._bot.download_file(file.file_path)
+            audio_bytes = audio_bytes_io.read()
+            audio_format = "ogg"
 
-        async with printer:
-            stt_message = await self._stt.transcribe_bytes(audio_bytes, format=audio_format)
-        await self._sessions_storage.add_message(
-            session_id=session_id,
-            message=stt_message,
-        )
+            await self._sessions_storage.add_message(
+                session_id=session_id,
+                message=AgentMessage(role="user", audio=audio_bytes, audio_format=audio_format),
+            )
 
-        context_info = self._get_message_context(message=message)
-        text_with_context = f"""
-        {context_info}
-        IMPORTANT: It is voice message
-        
-        ##User message:
-        {stt_message.text}
-        """
+            async with printer:
+                stt_message = await self._stt.transcribe_bytes(audio_bytes, format=audio_format)
+            await self._sessions_storage.add_message(
+                session_id=session_id,
+                message=stt_message,
+            )
 
-        await self._sessions_storage.add_message(
-            session_id=session_id,
-            message=AgentMessage(role="stt", text=text_with_context),
-        )
-        await self._generate_and_send_answer(
-            chat_id=message.chat.id,
-            session_id=session_id,
-            agent=agent,
-        )
+            context_info = self._get_message_context(message=message)
+            text_with_context = f"""
+            {context_info}
+            IMPORTANT: It is voice message
+            
+            ##User message:
+            {stt_message.text}
+            """
+
+            await self._sessions_storage.add_message(
+                session_id=session_id,
+                message=AgentMessage(role="stt", text=text_with_context),
+            )
+            logger.info(
+                "[%s] Starting processing for session_id=%s chat_id=%s",
+                request_id, session_id, message.chat.id,
+            )
+            await self._generate_and_send_answer(
+                chat_id=message.chat.id,
+                session_id=session_id,
+                agent=agent,
+            )
+            logger.info(
+                "[%s] Finished processing for session_id=%s chat_id=%s",
+                request_id, session_id, message.chat.id,
+            )
 
     async def handle_text_message(self, message: aiogram.types.Message):
-        user = await self._get_or_create_user(message.chat.id)
-        agent = await self.get_agent_for_user(user) or self._agent
-        session_id = await self._get_or_create_session(user, message.chat.id)
-
-        context_info = self._get_message_context(message=message)
-        text_with_context = f"""
-        {context_info}
-        
-        ##User message:
-        {message.text}
-        """
-
-        await self._sessions_storage.add_message(
-            session_id=session_id,
-            message=AgentMessage(role="user", text=text_with_context),
+        request_id = uuid.uuid4()
+        logger.info(
+            "[%s] Received text message event chat_id=%s",
+            request_id, message.chat.id,
         )
-        await self._generate_and_send_answer(
-            chat_id=message.chat.id,
-            session_id=session_id,
-            agent=agent,
-        )
+        with self.set_current_request_id(request_id):
+            user = await self._get_or_create_user(message.chat.id)
+            agent = await self.get_agent_for_user(user) or self._agent
+            session_id = await self._get_or_create_session(user, message.chat.id)
+
+            await self.reject_all_pending_confirmations(session_id=session_id)
+
+            context_info = self._get_message_context(message=message)
+            text_with_context = f"""
+            {context_info}
+            
+            ##User message:
+            {message.text}
+            """
+
+            await self._sessions_storage.add_message(
+                session_id=session_id,
+                message=AgentMessage(role="user", text=text_with_context),
+            )
+            logger.info(
+                "[%s] Starting processing for session_id=%s chat_id=%s",
+                request_id, session_id, message.chat.id,
+            )
+            await self._generate_and_send_answer(
+                chat_id=message.chat.id,
+                session_id=session_id,
+                agent=agent,
+            )
+            logger.info(
+                "[%s] Finished processing for session_id=%s chat_id=%s",
+                request_id, session_id, message.chat.id,
+            )
 
     async def handle_confirmation_callback(self, callback_query: aiogram.types.CallbackQuery, callback_data: ConfirmationCallbackData):
-        confirmation_id = uuid.UUID(callback_data.id)
-        approved = callback_data.approved == "yes"
-        await self.resolve_confirmation(confirmation_id, approved)
-
-        status_text = "✅ Confirmed" if approved else "❌ Rejected"
-        keyboard = aiogram.types.InlineKeyboardMarkup(
-            inline_keyboard=[
-                [
-                    aiogram.types.InlineKeyboardButton(
-                        text=status_text,
-                        callback_data="null",
-                    ),
-                ],
-            ],
+        request_id = uuid.uuid4()
+        logger.info(
+            "[%s] Received confirmation callback event chat_id=%s",
+            request_id, callback_query.message.chat.id,
         )
-        await callback_query.message.edit_reply_markup(reply_markup=keyboard)
-        await callback_query.answer()
+        with self.set_current_request_id(request_id):
+            user = await self._get_or_create_user(callback_query.message.chat.id)
+            session_id = await self._get_or_create_session(user, callback_query.message.chat.id)
+
+            confirmation_id = uuid.UUID(callback_data.id)
+            approved = callback_data.approved == "yes"
+            await self.resolve_confirmation(
+                session_id=session_id,
+                confirmation_id=confirmation_id,
+                approved=approved,
+            )
+
+            status_text = "✅ Confirmed" if approved else "❌ Rejected"
+            keyboard = aiogram.types.InlineKeyboardMarkup(
+                inline_keyboard=[
+                    [
+                        aiogram.types.InlineKeyboardButton(
+                            text=status_text,
+                            callback_data="null",
+                        ),
+                    ],
+                ],
+            )
+            await callback_query.message.edit_reply_markup(reply_markup=keyboard)
+            await callback_query.answer()
 
     def _get_message_context(self, message: aiogram.types.Message) -> str:
         chat_title = getattr(message.chat, "title", None)
@@ -278,6 +341,11 @@ class BaseTelegramChannel(BaseChannel):
             agent: Agent,
             messages: list[AgentMessage] | None = None,
     ):
+        request_id = uuid.uuid4()
+        logger.info(
+            "[%s] Starting generation for session_id=%s chat_id=%s",
+            request_id, session_id, chat_id,
+        )
         saver = AgentMessageSaver(
             sessions_storage=self._sessions_storage,
             session_id=session_id,
@@ -300,6 +368,8 @@ class BaseTelegramChannel(BaseChannel):
             with (
                     self.set_current_channel(),
                     self.set_current_chat_id(chat_id),
+                    self.set_current_session_id(session_id),
+                    self.set_current_request_id(request_id),
             ):
                 async with (printer, saver):
                     async for new_message in agent.ask(messages=messages, channel=self):
@@ -311,6 +381,11 @@ class BaseTelegramChannel(BaseChannel):
                         self._settings.debug
                 ):
                     await printer.print(text="Dialog summarized")
+
+        logger.info(
+            "[%s] Finished generation for session_id=%s chat_id=%s",
+            request_id, session_id, chat_id,
+        )
 
     @contextlib.asynccontextmanager
     async def _lock_chat_for_generating(self, chat_id: int):

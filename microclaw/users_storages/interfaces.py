@@ -57,6 +57,14 @@ class SessionsMixin:
     ) -> uuid.UUID | None:
         raise NotImplementedError
 
+    async def get_user_sessions(
+            self,
+            user_id: uuid.UUID,
+            channel_key: str,
+            channel_internal_id: str,
+    ) -> list[uuid.UUID]:
+        raise NotImplementedError
+
     async def attach_session_to_user(
             self,
             user_id: uuid.UUID,

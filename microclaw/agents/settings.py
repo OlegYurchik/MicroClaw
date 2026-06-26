@@ -12,7 +12,7 @@ Temperature = confloat(gt=0, le=2)
 class APITypeEnum(str, enum.Enum):
     OPENAI = "openai"
     CLOUDRU = "cloudru"
-    # OLLAMA = "ollama"
+    OLLAMA = "ollama"
 
 
 class InputTypeEnum(str, enum.Enum):
@@ -107,6 +107,12 @@ class AgentSettings(BaseModel):
     subagents: list[SubAgentSettings | str] | None = Field(default_factory=list)
     temperature: Temperature | None = None
     max_tool_calls: int = Field(default=25, ge=1, le=1000)
+    max_model_calls: int = Field(default=50, ge=1, le=1000)
     enable_summarization: bool = Field(default=True)
     enable_memory_flush: bool = Field(default=True)
     max_memory_flush_tokens: int = Field(default=10000, ge=50)
+    max_tool_output_chars: int = Field(
+        default=2000,
+        ge=100,
+        description="Maximum length of tool output included in the context before truncation",
+    )

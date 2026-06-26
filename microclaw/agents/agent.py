@@ -1,4 +1,6 @@
 import datetime
+import json
+import logging
 import pathlib
 import traceback
 import uuid
@@ -36,6 +38,8 @@ from microclaw.toolkits.memory import MemoryToolKit
 from .dto import SummaryValues, SummaryMemoryValues, AgentPromptValues, SystemValues, MCPInfo
 from .subagents import SubAgentToolKit
 
+logger = logging.getLogger(__name__)
+
 
 class Agent:
     TEMPLATES_DIR = pathlib.Path(__file__).parent / "templates"
@@ -48,6 +52,7 @@ class Agent:
             toolkits: dict[str, BaseToolKit],
             mcp_settings: dict[str, MCPSettings] | None = None,
             subagents_toolkits: list[SubAgentToolKit] | None = None,
+            client=None,
     ):
         self._settings = settings
         self._model_settings = model_settings
@@ -68,7 +73,7 @@ class Agent:
             for toolkit in self._toolkits.values()
             for tool in toolkit.get_tools()
         ]
-        self._client = self.get_client()
+        self._client = client or self.get_client()
 
     def _create_mcp_client(self) -> MultiServerMCPClient:
         servers = {}
@@ -147,10 +152,24 @@ class Agent:
             channel: "BaseChannel | None" = None,  # noqa: F821
             stream: bool = False,
     ) -> AsyncGenerator[AgentMessage]:
+        from microclaw.channels.context import REQUEST_ID_CONTEXT
+
+        request_id = REQUEST_ID_CONTEXT.get(None)
         langchain_messages: list[BaseMessage] = self._convert_to_langchain_messages(messages)
         system_prompt = await self._get_agent_prompt(channel=channel)
 
-        tools = list(self._tools) + list(await self._mcp.get_tools())
+        logger.info(
+            "[%s] Agent ask started messages_count=%s tools_count=%s",
+            request_id, len(messages), len(self._tools),
+        )
+
+        mcp_tools = []
+        try:
+            mcp_tools = list(await self._mcp.get_tools())
+        except Exception as e:
+            pass
+
+        tools = list(self._tools) + mcp_tools
         if channel is not None:
             channel_toolkit = channel.get_toolkit()
             if channel_toolkit is not None:
@@ -159,7 +178,11 @@ class Agent:
             tools.extend(subagent_toolkit.get_tools())
         tool_call_limiter = ToolCallLimitMiddleware(
             run_limit=self._settings.max_tool_calls,
-            exit_behavior="continue",
+            exit_behavior="end",
+        )
+        model_call_limiter = ModelCallLimitMiddleware(
+            run_limit=self._settings.max_model_calls,
+            exit_behavior="end",
         )
         config = {"recursion_limit": 1000}
 
@@ -167,7 +190,7 @@ class Agent:
             model=self._client,
             tools=tools,
             system_prompt=system_prompt,
-            middleware=[_handle_tool_errors, tool_call_limiter],
+            middleware=[_handle_tool_errors, tool_call_limiter, model_call_limiter],
         )
 
         events_generator = agent.astream_events(
@@ -241,38 +264,44 @@ class Agent:
                         spending=spending,
                     )
                     spending = self._get_empty_spending()
-                # case "on_tool_start":
-                #     text = f"Tool name: {event["name"]}; tool input: {event["data"].get("input", {})}"
-                #     spending.input_tokens += self._get_tokens_count(text=text)
+                case "on_tool_start":
+                    tool_name = event["name"]
+                    logger.info("[%s] Tool call started tool=%s", request_id, tool_name)
+                    tool_input = event["data"].get("input", {})
+                    compact_input = self._compact_tool_output(tool_input)
+                    text = f"Tool name: {tool_name};\nTool input: {compact_input}"
+                    spending.input_tokens += self._get_tokens_count(text=text)
 
-                #     yield AgentMessage(
-                #         role="tool",
-                #         text=text,
-                #         spending=None,
-                #     )
-                # case "on_tool_end":
-                #     tool_output = event["data"].get("output")
-                #     text = f"Tool name: {event["name"]}; tool output: {tool_output}"
-                #     spending.input_tokens += self._get_tokens_count(text=text)
-                #     # subagent_spending = self._extract_subagent_spending(tool_output)
+                    yield AgentMessage(
+                        role="tool",
+                        text=text,
+                    )
+                case "on_tool_end":
+                    tool_name = event["name"]
+                    logger.info("[%s] Tool call finished tool=%s", request_id, tool_name)
+                    tool_output = event["data"].get("output")
+                    compact_output = self._compact_tool_output(tool_output)
+                    text = f"Tool name: {tool_name};\nTool output: {compact_output}"
+                    spending.input_tokens += self._get_tokens_count(text=text)
 
-                #     yield AgentMessage(
-                #         role="tool",
-                #         text=text,
-                #         # spending=subagent_spending,
-                #     )
-                # case "on_tool_error":
-                #     error_data = event["data"]
-                #     error_message = error_data.get("error", "Unknown error")
-                #     tool_name = event["name"]
-                #     text = f"Tool name: {tool_name}; error: {error_message}"
-                #     spending.input_tokens += self._get_tokens_count(text=text)
+                    yield AgentMessage(
+                        role="tool",
+                        text=text,
+                    )
+                case "on_tool_error":
+                    tool_name = event["name"]
+                    logger.error("[%s] Tool call error tool=%s", request_id, tool_name)
+                    error_data = event["data"]
+                    error_message = self._compact_tool_output(error_data.get("error", "Unknown error"))
+                    text = f"Tool name: {tool_name};\nError: {error_message}"
+                    spending.input_tokens += self._get_tokens_count(text=text)
 
-                #     yield AgentMessage(
-                #         role="tool",
-                #         text=text,
-                #         spending=None,
-                #     )
+                    yield AgentMessage(
+                        role="tool",
+                        text=text,
+                    )
+
+        logger.info("[%s] Agent ask finished", request_id)
 
     async def summarize_memory(
             self,
@@ -572,6 +601,27 @@ class Agent:
                 else "$"
             ),
         )
+
+    def _compact_tool_output(self, output: Any) -> str:
+        max_len = self._settings.max_tool_output_chars
+
+        if output is None:
+            return "None"
+
+        if isinstance(output, (dict, list)):
+            try:
+                text = json.dumps(output, ensure_ascii=False, indent=2, default=str)
+            except Exception:
+                text = str(output)
+        else:
+            text = str(output)
+
+        if len(text) <= max_len:
+            return text
+
+        separator = f"\n\n...[truncated, {len(text)} chars total]...\n\n"
+        half = max((max_len - len(separator)) // 2, 0)
+        return text[:half] + separator + text[-half:]
 
     def _extract_subagent_spending(self, tool_output: Any) -> Spending | None:
         if not isinstance(tool_output, list):

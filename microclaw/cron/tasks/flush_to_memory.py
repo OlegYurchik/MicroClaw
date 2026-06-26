@@ -8,6 +8,8 @@ from microclaw.channels.base import BaseChannel
 from microclaw.cron.base import BaseCronTask
 from microclaw.cron.settings import CronTaskSettings
 from microclaw.sessions_storages.interfaces import SessionsStorageInterface
+from microclaw.sessions_storages.filters import SessionFilter, MessageFilter
+from pydantic_filters.pagination import OffsetPagination as BasePagination
 from microclaw.toolkits.memory.toolkit import MemorySizeExceeded
 from microclaw.utils import get_by_key_or_first
 
@@ -48,7 +50,7 @@ class FlushToMemoryCronTask(BaseCronTask[FlushToMemoryCronTaskSettings]):
     async def _process_day(self, date: datetime.date):
         all_extracted_info = []
         
-        async for session_id in self._sessions_storage.get_sessions(date=date):
+        async for session_id in self._sessions_storage.get_sessions(filter=SessionFilter(created_at=date)):
             user = await self._get_user_by_session(session_id)
             if user is None:
                 logger.warning(f"User not found for session {session_id}")
@@ -66,7 +68,7 @@ class FlushToMemoryCronTask(BaseCronTask[FlushToMemoryCronTaskSettings]):
 
             messages = []
             async for message in self._sessions_storage.get_messages(
-                session_id=session_id,
+                filter=MessageFilter(session_id=session_id),
                 from_last_summarization=False,
             ):
                 messages.append(message)

@@ -24,16 +24,31 @@ class ConfirmationMixin:
     async def request_confirmation(self, question: str) -> uuid.UUID:
         raise NotImplementedError
 
-    async def resolve_confirmation(self, confirmation_id: uuid.UUID, approved: bool) -> None:
-        await self._syncer.set(f"confirm:{confirmation_id}", approved)
+    async def resolve_confirmation(
+            self,
+            session_id: uuid.UUID,
+            confirmation_id: uuid.UUID,
+            approved: bool,
+    ) -> None:
+        await self._syncer.set(f"confirm:{session_id}:{confirmation_id}", approved)
 
-    async def wait_for_confirmation(self, confirmation_id: uuid.UUID) -> bool:
+    async def wait_for_confirmation(
+            self,
+            session_id: uuid.UUID,
+            confirmation_id: uuid.UUID,
+    ) -> bool:
         while True:
-            result = await self._syncer.get(f"confirm:{confirmation_id}")
+            result = await self._syncer.get(f"confirm:{session_id}:{confirmation_id}")
             if result is not None:
-                await self._syncer.delete(f"confirm:{confirmation_id}")
+                await self._syncer.delete(f"confirm:{session_id}:{confirmation_id}")
                 return result
             await asyncio.sleep(self.CONFIRMATION_POLL_INTERVAL)
+
+    async def reject_all_pending_confirmations(self, session_id: uuid.UUID) -> None:
+        pattern = f"confirm:{session_id}:*"
+        keys = await self._syncer.scan_keys(pattern)
+        for key in keys:
+            await self._syncer.set(key, False)
 
 
 class BaseChannel(facet.AsyncioServiceMixin, ConfirmationMixin):

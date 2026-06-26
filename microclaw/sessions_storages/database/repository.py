@@ -2,7 +2,8 @@ import uuid
 from datetime import date
 from typing import AsyncGenerator
 
-from pydantic_filters import BasePagination
+from pydantic_filters import BaseSort
+from pydantic_filters.pagination import OffsetPagination as BasePagination
 
 from microclaw.dto import AgentMessage
 from microclaw.utils.database.base import BaseRepository
@@ -24,12 +25,11 @@ class SessionsRepository(BaseRepository[SessionData, SessionFilter]):
 
     async def get_sessions(
         self,
-        date_filter: date | None = None,
+        date_filter: SessionFilter | None = None,
+        pagination: BasePagination | None = None,
+        sort: BaseSort | None = None,
     ) -> AsyncGenerator[uuid.UUID]:
-        filter_ = None
-        if date_filter is not None:
-            filter_ = SessionFilter(created_at=date_filter)
-        async for item in self.get_items(filter_=filter_):
+        async for item in self.get_items(filter_=date_filter, pagination=pagination, sort=sort):
             yield item.id
 
     async def create_session(self, session_id: uuid.UUID) -> SessionData:
@@ -66,16 +66,13 @@ class MessagesRepository(BaseRepository[AgentMessage, MessageFilter]):
 
     async def get_messages(
         self,
-        session_id: uuid.UUID,
-        last: int | None = None,
+        filter_: MessageFilter | None = None,
+        pagination: BasePagination | None = None,
+        sort: BaseSort | None = None,
     ) -> AsyncGenerator[AgentMessage]:
-        if last is not None:
-            pagination = BasePagination(limit=last, offset=0)
-            async for item in self.get_items(
-                filter_=MessageFilter(session_id=session_id),
-                pagination=pagination,
-            ):
-                yield item
-        else:
-            async for item in self.get_items(filter_=MessageFilter(session_id=session_id)):
-                yield item
+        async for item in self.get_items(
+            filter_=filter_,
+            pagination=pagination,
+            sort=sort,
+        ):
+            yield item

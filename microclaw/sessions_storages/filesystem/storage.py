@@ -6,8 +6,12 @@ from typing import AsyncGenerator
 
 import aiofiles
 
+from pydantic_filters import BaseSort, SortByOrder
+from pydantic_filters.pagination import OffsetPagination as BasePagination
+
 from microclaw.dto import AgentMessage, Spending
 from microclaw.sessions_storages.interfaces import SessionsStorageInterface
+from microclaw.sessions_storages.filters import SessionFilter, MessageFilter
 from .dto import SessionData
 from .settings import FilesystemSessionsStorageSettings
 
@@ -28,22 +32,45 @@ class FilesystemSessionsStorage(SessionsStorageInterface):
 
     async def get_sessions(
             self,
-            date: datetime.date | None = None,
+            filter: SessionFilter | None = None,
+            pagination: BasePagination | None = None,
+            sort: BaseSort | None = None,
     ) -> AsyncGenerator[uuid.UUID]:
         if not self._settings.path.exists():
             return
 
+        page_offset = pagination.offset if pagination else 0
+        page_limit = pagination.limit if pagination else None
+        
+        session_ids = []
+        
         for session_file in self._settings.path.glob("*.json"):
-            if date is not None:
+            if filter is not None and filter.created_at is not None:
                 mtime = datetime.datetime.fromtimestamp(session_file.stat().st_mtime)
-                if mtime.date() != date:
+                if mtime.date() != filter.created_at.date():
                     continue
 
             try:
                 session_id = uuid.UUID(session_file.stem)
-                yield session_id
+                session_ids.append((session_id, session_file.stat().st_mtime))
             except ValueError:
                 continue
+        
+        if sort is not None and sort.sort_by is not None:
+            sort_field = sort.sort_by
+            reverse = sort.sort_by_order == SortByOrder.desc
+            
+            if sort_field in ["created_at", "updated_at", "mtime"]:
+                session_ids.sort(key=lambda x: x[1], reverse=reverse)
+        
+        for i, (session_id, _) in enumerate(session_ids):
+            if i < page_offset:
+                continue
+                
+            if page_limit is not None and i >= page_offset + page_limit:
+                break
+                
+            yield session_id
 
     async def add_message(self, session_id: uuid.UUID, message: AgentMessage):
         lock = await self._get_lock(session_id=session_id)
@@ -64,18 +91,42 @@ class FilesystemSessionsStorage(SessionsStorageInterface):
 
     async def get_messages(
             self,
-            session_id: uuid.UUID,
-            last: int | None = None,
+            filter: MessageFilter | None = None,
+            pagination: BasePagination | None = None,
+            sort: BaseSort | None = None,
             from_last_summarization: bool = True,
     ) -> AsyncGenerator[AgentMessage]:
+        if filter is None or filter.session_id is None:
+            return
+            
+        session_id = filter.session_id
         lock = await self._get_lock(session_id=session_id)
         async with lock:
             session_data = await self._read_session(session_id=session_id)
 
-        messages = session_data.messages
-        if last is None:
-            last = len(messages)
-        messages = messages[-last:]
+        messages = list(session_data.messages)
+        
+        if filter.is_summary is not None:
+            messages = [m for m in messages if m.is_summary == filter.is_summary]
+        if filter.role is not None:
+            messages = [m for m in messages if m.role == filter.role]
+        
+        if sort is not None and sort.sort_by is not None:
+            sort_field = sort.sort_by
+            reverse = sort.sort_by_order == SortByOrder.desc
+            
+
+            if sort_field == 'role':
+                messages.sort(key=lambda m: m.role, reverse=reverse)
+            elif sort_field == 'is_summary':
+                messages.sort(key=lambda m: m.is_summary, reverse=reverse)
+        
+        if pagination and pagination.limit is not None:
+            page_offset = pagination.offset if pagination else 0
+            page_limit = pagination.limit if pagination else None
+            end_index = min(page_offset + page_limit, len(messages)) if page_limit else len(messages)
+            messages = messages[page_offset:end_index]
+        
         if from_last_summarization:
             index = 0
             for i, message in enumerate(messages):

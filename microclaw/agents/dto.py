@@ -40,5 +40,4 @@ class SummaryValues:
 class SummaryMemoryValues:
     old_context: str
     new_context: str
-    additional_context: str
     max_tokens: int

@@ -25,6 +25,8 @@ dependencies = [
 
 [dependency-groups]
 dev = [
+    "pytest>=9.1.1",
+    "pytest-asyncio>=1.4.0",
     "ruff>=0.15.5",
 ]
 telegram = [
@@ -34,8 +36,8 @@ telegram = [
     "uvicorn>=0.40.0",
     "yarl>=1.22.0",
 ]
-matrix = [
-    "mautrix>=0.21.0",
+vk = [
+    "vkbottle>=4.9.0",
 ]
 openai = [
     "langchain-openai>=1.1.10",

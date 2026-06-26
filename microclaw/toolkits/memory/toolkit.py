@@ -86,6 +86,7 @@ class MemoryToolKit(BaseToolKit[MemoryToolKitSettings]):
         """
         return await self._driver.memory_search(query, limit)
 
+    @tool
     async def rewrite_memory(self, content: str, date: datetime.date | None = None) -> None:
         """
         Rewrite memory content for a specific date or general memory.

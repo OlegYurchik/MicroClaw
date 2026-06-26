@@ -60,6 +60,10 @@ microclaw/
 │   │   ├── toolkit.py       # TasksToolKit
 │   │   ├── dto.py           # Task DTOs
 │   │   └── settings.py      # Tasks configuration
+│   ├── sessions/            # Session search and management
+│   │   ├── toolkit.py       # SessionsToolKit
+│   │   ├── dto.py           # Session DTOs
+│   │   └── settings.py      # Sessions configuration
 │   ├── caldav/              # Calendar management
 │   ├── carddav/             # Contact management  
 │   ├── email/               # Email tools

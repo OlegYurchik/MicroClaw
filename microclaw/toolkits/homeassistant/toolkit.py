@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import Any
 
 from homeassistant_api import Client
@@ -15,6 +16,7 @@ from .dto import (
     Entity,
     Service,
     State,
+    StateHistory,
 )
 from .settings import HomeAssistantSettings
 
@@ -108,6 +110,50 @@ class HomeAssistantToolKit(BaseToolKit[HomeAssistantSettings]):
         client = await self._get_client()
         ha_state = await client.async_get_state(entity_id=entity_id)
         return self._convert_state(ha_state)
+
+    @tool
+    async def get_entity_history(
+        self,
+        entity_id: str,
+        start_timestamp: datetime,
+        end_timestamp: datetime,
+        significant_changes_only: bool = False,
+    ) -> StateHistory:
+        """
+        Get historical state changes for an entity within a time range.
+
+        Args:
+            entity_id: Entity identifier (e.g., sensor.temperature)
+            start_timestamp: Start of the history period
+            end_timestamp: End of the history period
+            significant_changes_only: If True, only return significant state changes
+                                     (helps reduce data volume for sensors with frequent updates)
+
+        Returns:
+            StateHistory object containing historical states
+        """
+        client = await self._get_client()
+        ha_entity = await client.async_get_entity(entity_id=entity_id)
+
+        ha_history = client.async_get_entity_histories(
+            entities=(ha_entity,),
+            start_timestamp=start_timestamp,
+            end_timestamp=end_timestamp,
+            significant_changes_only=significant_changes_only,
+        )
+
+        states = []
+        
+        async for ha_history_item in ha_history:
+            for ha_state in ha_history_item.states:
+                states.append(self._convert_state(ha_state))
+
+        return StateHistory(
+            entity_id=entity_id,
+            states=states,
+            start_timestamp=start_timestamp,
+            end_timestamp=end_timestamp,
+        )
 
     @tool
     async def search_entities(self, pattern: str, domain: str | None = None) -> list[Entity]:

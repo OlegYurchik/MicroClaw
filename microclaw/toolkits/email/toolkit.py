@@ -313,7 +313,7 @@ class EmailToolKit(BaseToolKit[EmailSettings]):
             return messages
 
     @tool
-    async def delete_messages(self, uids: list[str], folder: str = "") -> bool:
+    async def delete_messages(self, uids: list[str], folder: str = "") -> None:
         """
         Delete an email messages by UIDs.
 
@@ -324,30 +324,43 @@ class EmailToolKit(BaseToolKit[EmailSettings]):
         Returns:
             True if deletion was successful
         """
-        if self.settings.delete_mode is PermissionModeEnum.DENY:
-            raise PermissionError("Delete operations are disabled")
-        if self.settings.delete_mode is PermissionModeEnum.REQUEST:
-            uids_text = ", ".join(uids)
-            confirmation_request_text = (
-                f"Delete emails with uids '[{uids_text}]' from {self.settings.username}?"
-            )
-            if not await self.request_confirmation(confirmation_request_text):
-                raise UserDeniedAction()
-
         folder = folder or self.settings.default_folder
 
         async with self._create_imap_client() as client:
             status, _ = await client.select(folder)
             if status != "OK":
-                return False
+                return None
+
+            if self.settings.delete_mode is PermissionModeEnum.DENY:
+                raise PermissionError("Delete operations are disabled")
+            if self.settings.delete_mode is PermissionModeEnum.REQUEST:
+                confirmation_messages = []
+                for uid in uids:
+                    status, message_parts = await client.uid("FETCH", uid, "(RFC822.HEADER)")
+                    if status == "OK" and message_parts:
+                        for part in message_parts:
+                            if isinstance(part, bytearray):
+                                raw_header = bytes(part)
+                                msg = email.message_from_bytes(raw_header)
+                                subject = self._decode_header(msg.get("Subject", ""))
+                                confirmation_messages.append(f"* {subject}")
+                                break
+                    else:
+                        confirmation_messages.append(f"* UID {uid} (unable to load details)")
+                confirmation_text = "\n".join(confirmation_messages)
+                confirmation_request_text = (
+                    f"Delete the following emails from {self.settings.username}?\n"
+                    f"{confirmation_text}"
+                )
+                if not await self.request_confirmation(confirmation_request_text):
+                    raise UserDeniedAction()
 
             for uid in uids:
                 status, _ = await client.uid("STORE", uid, "+FLAGS", r"(\Deleted)")
                 if status != "OK":
-                    return False
+                    return None
 
-                status, _ = await client.expunge()
-        return True
+            status, _ = await client.expunge()
 
     @tool
     async def move_message(

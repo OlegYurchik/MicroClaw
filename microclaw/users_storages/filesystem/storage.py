@@ -136,6 +136,20 @@ class FilesystemUsersStorage(UsersStorageInterface):
             return None
         return channel_data.sessions[-1]
 
+    async def get_user_sessions(
+            self,
+            user_id: uuid.UUID,
+            channel_key: str,
+            channel_internal_id: str,
+    ) -> list[uuid.UUID]:
+        channel_data = await self._read_channel(
+            channel_key=channel_key,
+            channel_internal_id=channel_internal_id,
+        )
+        if not channel_data or channel_data.user_id != user_id:
+            return []
+        return channel_data.sessions
+
     async def attach_session_to_user(
             self,
             user_id: uuid.UUID,

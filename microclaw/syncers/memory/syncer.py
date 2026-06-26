@@ -1,3 +1,4 @@
+import fnmatch
 import time
 from typing import Any
 
@@ -32,3 +33,15 @@ class MemorySyncer(SyncerInterface):
             del self._storage[key]
             return True
         return False
+
+    async def scan_keys(self, pattern: str) -> list[str]:
+        now = time.time()
+        matched: list[str] = []
+        for key in list(self._storage.keys()):
+            item = self._storage[key]
+            if item.expire_at is not None and now > item.expire_at:
+                del self._storage[key]
+                continue
+            if fnmatch.fnmatch(key, pattern):
+                matched.append(key)
+        return matched

@@ -51,6 +51,9 @@ class AgentMessagePrinter(AgentMessageCollector):
             self._text += new_message.text
             await self._update_message_widget(role=RoleEnum.AI, text=self._text)
 
+    async def show_thinking(self) -> None:
+        await self._create_message_widget(role=RoleEnum.AI, text=None)
+
     async def _create_message_widget(self, role: RoleEnum, text: str | None = None):
         await self._app.add_message(role=role, text=text)
 

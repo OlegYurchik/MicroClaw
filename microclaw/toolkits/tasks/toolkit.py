@@ -104,7 +104,8 @@ class TasksToolKit(BaseToolKit[TasksSettings]):
         if self.settings.write_mode is PermissionModeEnum.DENY:
             raise PermissionError("Write operations denied")
         if self.settings.write_mode is PermissionModeEnum.REQUEST:
-            confirmation_request_text = f"Delete task list '{url}'?"
+            task_list_name = await calendar.get_property(dav.DisplayName())
+            confirmation_request_text = f"Delete task list '{task_list_name}'?"
             if not await self.request_confirmation(confirmation_request_text):
                 raise UserDeniedAction()
 
@@ -196,8 +197,9 @@ class TasksToolKit(BaseToolKit[TasksSettings]):
         if self.settings.write_mode is PermissionModeEnum.DENY:
             raise PermissionError("Write operations denied")
         if self.settings.write_mode is PermissionModeEnum.REQUEST:
+            task_list_name = await calendar.get_property(dav.DisplayName())
             confirmation_request_text = (
-                f"Create task '{summary}' in task list '{task_list_url}'?"
+                f"Create task '{summary}' in task list '{task_list_name}'?"
             )
             if description is not None:
                 confirmation_request_text += f"\nDescription: {description}"
@@ -246,9 +248,14 @@ class TasksToolKit(BaseToolKit[TasksSettings]):
             Updated Task object
         """
         calendar = await self._get_task_list(task_list_url)
+        todo = await calendar.todo_by_uid(task_uid)
+        if not todo:
+            raise ValueError(f"Task with UID {task_uid} not found")
+        
         if self.settings.write_mode is PermissionModeEnum.DENY:
             raise PermissionError("Write operations denied")
         if self.settings.write_mode is PermissionModeEnum.REQUEST:
+            task_data = await self._convert_todo_to_dto(todo=todo)
             changes = []
             if summary is not None:
                 changes.append(f"summary: {summary}")
@@ -263,15 +270,11 @@ class TasksToolKit(BaseToolKit[TasksSettings]):
 
             changes_text = "\n".join(changes)
             confirmation_request_text = (
-                f"Update task '{task_uid}'?\n"
+                f"Update task '{task_data.summary}'?\n"
                 f"{changes_text}"
             )
             if not await self.request_confirmation(confirmation_request_text):
                 raise UserDeniedAction()
-
-        todo = await calendar.todo_by_uid(task_uid)
-        if not todo:
-            raise ValueError(f"Task with UID {task_uid} not found")
 
         if summary is not None:
             todo.vobject_instance.vtodo.summary.value = summary
@@ -310,16 +313,18 @@ class TasksToolKit(BaseToolKit[TasksSettings]):
             None - indicates successful operation
         """
         calendar = await self._get_task_list(task_list_url)
-        if self.settings.write_mode is PermissionModeEnum.DENY:
-            raise PermissionError("Write operations denied")
-        if self.settings.write_mode is PermissionModeEnum.REQUEST:
-            confirmation_request_text = f"Delete task '{task_uid}'?"
-            if not await self.request_confirmation(confirmation_request_text):
-                raise UserDeniedAction()
-
         todo = await calendar.todo_by_uid(task_uid)
         if not todo:
             raise ValueError(f"Task with UID {task_uid} not found")
+        
+        if self.settings.write_mode is PermissionModeEnum.DENY:
+            raise PermissionError("Write operations denied")
+        if self.settings.write_mode is PermissionModeEnum.REQUEST:
+            task_data = await self._convert_todo_to_dto(todo=todo)
+            confirmation_request_text = f"Delete task '{task_data.summary}'?"
+            if not await self.request_confirmation(confirmation_request_text):
+                raise UserDeniedAction()
+
         await todo.delete()
 
     @tool

@@ -124,7 +124,8 @@ class CalDAVToolKit(BaseToolKit[CalDAVSettings]):
         if self.settings.write_mode is PermissionModeEnum.DENY:
             raise PermissionError("Write operations denied")
         if self.settings.write_mode is PermissionModeEnum.REQUEST:
-            confirmation_request_text = f"Delete calendar '{url}'?"
+            calendar_name = await dav_calendar.get_property(dav.DisplayName())
+            confirmation_request_text = f"Delete calendar '{calendar_name}'?"
             if not await self.request_confirmation(confirmation_request_text):
                 raise UserDeniedAction()
 
@@ -312,9 +313,13 @@ class CalDAVToolKit(BaseToolKit[CalDAVSettings]):
             Updated Event object if successful, None otherwise
         """
 
+        dav_event = AsyncEvent(client=self._client, url=url)
+        await dav_event.load()
+        
         if self.settings.write_mode is PermissionModeEnum.DENY:
             raise PermissionError("Write operations denied")
         if self.settings.write_mode is PermissionModeEnum.REQUEST:
+            event_data = await self._convert_event_to_dto(dav_event)
             changes = []
             if summary is not None:
                 changes.append(f"summary: {summary}")
@@ -331,14 +336,11 @@ class CalDAVToolKit(BaseToolKit[CalDAVSettings]):
 
             changes_text = "\n".join(changes)
             confirmation_request_text = (
-                f"Update event '{url}'?\n"
+                f"Update event '{event_data.summary}'?\n"
                 f"{changes_text}"
             )
             if not await self.request_confirmation(confirmation_request_text):
                 raise UserDeniedAction()
-
-        dav_event = AsyncEvent(client=self._client, url=url)
-        await dav_event.load()
 
         event_url_str = str(dav_event.url)
         calendar_url = event_url_str.rsplit("/", 1)[0]
@@ -396,7 +398,10 @@ class CalDAVToolKit(BaseToolKit[CalDAVSettings]):
         if self.settings.write_mode is PermissionModeEnum.DENY:
             raise PermissionError("Write operations denied")
         if self.settings.write_mode is PermissionModeEnum.REQUEST:
-            confirmation_request_text = f"Delete event '{url}'?"
+            dav_event = AsyncEvent(client=self._client, url=url)
+            await dav_event.load()
+            event_data = await self._convert_event_to_dto(dav_event)
+            confirmation_request_text = f"Delete event '{event_data.summary}'?"
             if not await self.request_confirmation(confirmation_request_text):
                 raise UserDeniedAction()
 

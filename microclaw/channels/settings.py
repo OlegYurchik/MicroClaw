@@ -12,6 +12,7 @@ class ChannelTypeEnum(str, enum.Enum):
     TELEGRAM = "telegram"
     CLI = "cli"
     MATRIX = "matrix"
+    VK = "vk"
 
 
 class ChannelSettings(BaseModel):

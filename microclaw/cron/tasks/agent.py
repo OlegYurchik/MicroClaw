@@ -59,10 +59,7 @@ class AgentCronTask(BaseCronTask[AgentCronTaskSettings]):
             channel_internal_id=self._settings.channel_internal_id,
         )
         if user is None:
-            user = await users_storage.create_user(
-                channel_key=self._settings.channel,
-                channel_internal_id=self._settings.channel_internal_id,
-            )
+            user = await users_storage.create_user()
         
         session_id = await users_storage.get_actual_session(
             user_id=user.id,
@@ -79,11 +76,13 @@ class AgentCronTask(BaseCronTask[AgentCronTaskSettings]):
                 channel_internal_id=self._settings.channel_internal_id,
             )
 
+        task_text = (
+            "This is an automated scheduled task triggered by cron. "
+            "Please execute the following instruction accordingly.\n\n"
+            f"{self._settings.task}"
+        )
         new_messages = [
-            AgentMessage(
-                role="system",
-                text=self._settings.task,
-            ),
+            AgentMessage(role="user", text=task_text),
         ]
 
         await self._channel.start_conversation(

@@ -168,6 +168,7 @@ channels:
     users_storage: default
     type: telegram
     method: polling
+    ip_family: auto
     name: Your Assistant Bot
     token: your_bot_token
     allow_from: [username]
@@ -257,6 +258,7 @@ Available toolkits:
 - `microclaw.toolkits.carddav` - Contact management
 - `microclaw.toolkits.webdav` - File operations
 - `microclaw.toolkits.email` - Email processing
+- `microclaw.toolkits.sessions` - Session search and management
 - `microclaw.toolkits.homeassistant` - Smart home control
 - `microclaw.toolkits.discogs` - Music database
 

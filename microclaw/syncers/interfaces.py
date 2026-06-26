@@ -11,3 +11,6 @@ class SyncerInterface(facet.AsyncioServiceMixin):
 
     async def delete(self, key: str) -> bool:
         raise NotImplementedError
+
+    async def scan_keys(self, pattern: str) -> list[str]:
+        raise NotImplementedError

@@ -5,6 +5,8 @@ from microclaw.channels.base import BaseChannel
 from microclaw.channels.utils import AgentMessageSaver
 from microclaw.dto import AgentMessage, User
 from microclaw.sessions_storages.interfaces import SessionsStorageInterface
+from microclaw.sessions_storages.filters import MessageFilter
+from pydantic_filters.pagination import OffsetPagination as BasePagination
 from microclaw.syncers import SyncerInterface
 from microclaw.users_storages import UsersStorageInterface
 from .printer import AgentMessagePrinter
@@ -46,7 +48,6 @@ class CLIChannel(BaseChannel):
         )
         if self._user is None:
             self._user = await self._users_storage.create_user()
-        self._session_id = await self._create_session()
 
         self.add_task(self._app.run_async())
 
@@ -65,6 +66,11 @@ class CLIChannel(BaseChannel):
         await self._generate_and_send_answer(agent=agent, session_id=session_id)
 
     async def handle_user_message(self, text: str, agent: Agent | None = None) -> None:
+        if self._session_id is None:
+            self._session_id = await self._create_session()
+
+        await self.reject_all_pending_confirmations(session_id=self._session_id)
+
         user_message = AgentMessage(role="user", text=text)
 
         await self._sessions_storage.add_message(
@@ -96,10 +102,14 @@ class CLIChannel(BaseChannel):
             session_id=session_id,
         )
 
-        message_generator = self._sessions_storage.get_messages(session_id=session_id)
+        message_generator = self._sessions_storage.get_messages(filter=MessageFilter(session_id=session_id))
         messages = [_message async for _message in message_generator]
 
-        with self.set_current_channel():
+        with (
+                self.set_current_channel(),
+                self.set_current_session_id(session_id),
+        ):
+            await printer.show_thinking()
             async with (printer, saver):
                 async for new_message in agent.ask(messages=messages, channel=self, stream=True):
                     await saver.register_new_message(new_message)
@@ -133,8 +143,15 @@ class CLIChannel(BaseChannel):
         await printer.print_spent()
 
     async def request_confirmation(self, question: str) -> uuid.UUID:
+        if self._session_id is None:
+            raise RuntimeError("Attribute _session_id in CLIChannel is None")
+
         confirmation_id = uuid.uuid4()
-        self._app.show_confirmation_modal(question, confirmation_id)
+        await self._app.add_confirmation_message(
+            question=question,
+            session_id=self._session_id,
+            confirmation_id=confirmation_id,
+        )
         return confirmation_id
 
     async def _create_session(self) -> uuid.UUID:

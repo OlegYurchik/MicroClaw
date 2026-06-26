@@ -73,3 +73,21 @@ class Service(BaseModel):
         default=None,
         description="Service response schema",
     )
+
+
+class StateHistory(BaseModel):
+    """Represents a collection of historical states for an entity."""
+
+    entity_id: str = Field(description="Entity identifier")
+    states: list[State] = Field(
+        default_factory=list,
+        description="List of historical state entries",
+    )
+    start_timestamp: datetime | None = Field(
+        default=None,
+        description="Start of the history period",
+    )
+    end_timestamp: datetime | None = Field(
+        default=None,
+        description="End of the history period",
+    )

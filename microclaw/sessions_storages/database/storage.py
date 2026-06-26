@@ -1,9 +1,12 @@
-import datetime
 import uuid
 from typing import AsyncGenerator
 
+from pydantic_filters import BaseSort
+from pydantic_filters.pagination import OffsetPagination as BasePagination
+
 from microclaw.dto import AgentMessage, Spending
 from microclaw.sessions_storages.interfaces import SessionsStorageInterface
+from microclaw.sessions_storages.filters import SessionFilter, MessageFilter
 
 from .repository import MessagesRepository, SessionsRepository
 from .settings import DatabaseSessionsStorageSettings
@@ -64,12 +67,17 @@ class DatabaseSessionsStorage(SessionsStorageInterface):
 
     async def get_messages(
             self,
-            session_id: uuid.UUID,
-            last: int | None = None,
+            filter: MessageFilter | None = None,
+            pagination: BasePagination | None = None,
+            sort: BaseSort | None = None,
             from_last_summarization: bool = True,
     ) -> AsyncGenerator[AgentMessage]:
         messages = []
-        async for message in self._messages_repository.get_messages(session_id, last):
+        async for message in self._messages_repository.get_messages(
+            filter_=filter,
+            pagination=pagination,
+            sort=sort,
+        ):
             messages.append(message)
 
         if from_last_summarization:
@@ -98,7 +106,13 @@ class DatabaseSessionsStorage(SessionsStorageInterface):
 
     async def get_sessions(
             self,
-            date: datetime.date | None = None,
+            filter: SessionFilter | None = None,
+            pagination: BasePagination | None = None,
+            sort: BaseSort | None = None,
     ) -> AsyncGenerator[uuid.UUID]:
-        async for session_id in self._sessions_repository.get_sessions(date):
+        async for session_id in self._sessions_repository.get_sessions(
+            date_filter=filter,
+            pagination=pagination,
+            sort=sort,
+        ):
             yield session_id

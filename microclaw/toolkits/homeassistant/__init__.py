@@ -3,6 +3,7 @@ from .dto import (
     Entity,
     Service,
     State,
+    StateHistory,
 )
 from .settings import HomeAssistantSettings
 from .toolkit import HomeAssistantToolKit
@@ -14,6 +15,7 @@ __all__ = (
     "Entity",
     "Service",
     "State",
+    "StateHistory",
     # settings
     "HomeAssistantSettings",
     # toolkit

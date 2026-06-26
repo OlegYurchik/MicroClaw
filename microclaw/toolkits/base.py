@@ -69,12 +69,19 @@ class BaseToolKit(Generic[SettingsType]):
         if channel is None:
             return False
 
+        session_id = BaseChannel.get_current_session_id()
+        if session_id is None:
+            return False
+
         try:
             confirmation_id = await channel.request_confirmation(question)
         except NotImplementedError:
             return False
 
-        return await channel.wait_for_confirmation(confirmation_id)
+        return await channel.wait_for_confirmation(
+            session_id=session_id,
+            confirmation_id=confirmation_id,
+        )
 
 
 def tool(function: Callable) -> Callable:
