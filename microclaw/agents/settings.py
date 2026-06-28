@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import enum
 
-from pydantic import AnyHttpUrl, BaseModel, Field, confloat
+from pydantic import AnyHttpUrl, BaseModel, Field, NonNegativeInt, confloat, conint
 
 from microclaw.toolkits import ToolKitSettings
 
@@ -107,13 +107,12 @@ class AgentSettings(BaseModel):
     mcp: list[MCPSettings | str] | None = None
     subagents: list[str | AgentSettings] = Field(default_factory=list)
     temperature: Temperature | None = None
-    max_tool_calls: int = Field(default=25, ge=1, le=1000)
-    max_model_calls: int = Field(default=50, ge=1, le=1000)
-    enable_summarization: bool = Field(default=True)
-    enable_memory_flush: bool = Field(default=True)
-    max_memory_flush_tokens: int = Field(default=10000, ge=50)
-    max_tool_output_chars: int = Field(
-        default=2000,
-        ge=100,
-        description="Maximum length of tool output included in the context before truncation",
-    )
+    max_tool_calls: conint(ge=1, le=1000) = 25
+    max_model_calls: conint(ge=1, le=1000) = 50
+    enable_summarization: bool = True
+    enable_memory_flush: bool = True
+    max_memory_flush_tokens: conint(ge=50) = 1000
+    max_tool_output_chars: conint(ge=100) = 200
+    model_max_retries: NonNegativeInt = 3
+    model_retry_backoff_factor: confloat(gt=0) = 1.5
+    model_retry_initial_delay: confloat(gt=0) = 1

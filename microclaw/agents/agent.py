@@ -23,7 +23,11 @@ from langchain_ollama import ChatOllama
 from langchain_core.runnables import RunnableLambda
 from deepagents import create_deep_agent
 from langchain.agents.middleware import wrap_tool_call
-from langchain.agents.middleware import ModelCallLimitMiddleware, ToolCallLimitMiddleware
+from langchain.agents.middleware import (
+    ModelCallLimitMiddleware,
+    ModelRetryMiddleware,
+    ToolCallLimitMiddleware,
+)
 from langchain.agents.middleware.types import AgentMiddleware
 from langchain.messages import ToolMessage
 
@@ -247,6 +251,11 @@ class Agent:
             run_limit=self._settings.max_model_calls,
             exit_behavior="end",
         )
+        model_retry = ModelRetryMiddleware(
+            max_retries=self._settings.model_max_retries,
+            backoff_factor=self._settings.model_retry_backoff_factor,
+            initial_delay=self._settings.model_retry_initial_delay,
+        )
         config = {"recursion_limit": 1000}
 
         with _patched_summarization_middleware():
@@ -255,7 +264,7 @@ class Agent:
                 tools=tools,
                 system_prompt=system_prompt,
                 subagents=subagent_specs,
-                middleware=[_handle_tool_errors, tool_call_limiter, model_call_limiter],
+                middleware=[_handle_tool_errors, model_retry, tool_call_limiter, model_call_limiter],
             )
 
         events_generator = agent.astream_events(
