@@ -1,8 +1,6 @@
-import logging
+from loguru import logger
 
 from microclaw.channels.vk.base import BaseVKChannel
-
-logger = logging.getLogger(__name__)
 
 
 class VKPollingChannel(BaseVKChannel):

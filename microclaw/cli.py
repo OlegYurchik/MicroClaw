@@ -9,7 +9,6 @@ from loguru import logger
 from .agents import get_cli as get_agents_cli
 from .cron import get_cli as get_cron_cli
 from .logging import InterceptHandler
-from .packages import PackageInstaller
 from .service import MicroclawService
 from .settings import MicroclawSettings
 
@@ -54,10 +53,6 @@ def callback(
             retention=settings.logging.retention,
             compression=settings.logging.compression,
         )
-
-    if settings.extra_packages.packages:
-        installer = PackageInstaller(settings=settings.extra_packages)
-        installer.install_and_sync_path()
 
 
 def run(ctx: typer.Context):

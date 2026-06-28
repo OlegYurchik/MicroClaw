@@ -8,6 +8,7 @@ import contextvars
 from aiogram.client.session.aiohttp import AiohttpSession
 from aiogram.enums import ParseMode
 from aiogram.filters.callback_data import CallbackData
+from loguru import logger
 
 from microclaw.agents import Agent
 from microclaw.channels.base import BaseChannel
@@ -15,6 +16,7 @@ from microclaw.channels.settings import ChannelTypeEnum
 from microclaw.channels.utils import AgentMessageSaver
 from microclaw.dto import AgentMessage
 from microclaw.sessions_storages import SessionsStorageInterface
+from microclaw.sessions_storages.filters import MessageFilter
 from microclaw.stt import STT
 from microclaw.syncers import SyncerInterface
 from microclaw.users_storages import UsersStorageInterface
@@ -64,8 +66,10 @@ class BaseTelegramChannel(BaseChannel):
         if settings.ip_family != TelegramIPFamilyEnum.AUTO:
             family = socket.AF_INET if settings.ip_family == TelegramIPFamilyEnum.IPV4 else socket.AF_INET6
             session = AiohttpSession()
-            session._connector_init["family"] = family
-            session._connector_init["ttl_dns_cache"] = 300
+            session._connector_init.update(
+                family=family,
+                ttl_dns_cache=300,
+            )
         self._bot = aiogram.Bot(token=settings.token, session=session)
         self._dispatcher = aiogram.Dispatcher()
         self._dispatcher.message.middleware(AuthMiddleware(allow_from=self._settings.allow_from))
@@ -123,8 +127,7 @@ class BaseTelegramChannel(BaseChannel):
         request_id = uuid.uuid4()
         chat_id = channel_internal_id
         logger.info(
-            "[%s] Starting conversation for session_id=%s chat_id=%s",
-            request_id, session_id, chat_id,
+            f"[{request_id}] Starting conversation for session_id={session_id} chat_id={chat_id}",
         )
         with self.set_current_request_id(request_id):
             user = await self._get_or_create_user(chat_id)
@@ -145,8 +148,7 @@ class BaseTelegramChannel(BaseChannel):
                 messages=new_messages,
             )
             logger.info(
-                "[%s] Finished conversation for session_id=%s chat_id=%s",
-                request_id, session_id, chat_id,
+                f"[{request_id}] Finished conversation for session_id={session_id} chat_id={chat_id}",
             )
 
     async def handle_new_session(self, message: aiogram.types.Message):
@@ -169,8 +171,7 @@ class BaseTelegramChannel(BaseChannel):
     async def handle_voice_message(self, message: aiogram.types.Message):
         request_id = uuid.uuid4()
         logger.info(
-            "[%s] Received voice message event chat_id=%s",
-            request_id, message.chat.id,
+            f"[{request_id}] Received voice message event chat_id={message.chat.id}",
         )
         with self.set_current_request_id(request_id):
             user = await self._get_or_create_user(message.chat.id)
@@ -227,8 +228,7 @@ class BaseTelegramChannel(BaseChannel):
                 message=AgentMessage(role="stt", text=text_with_context),
             )
             logger.info(
-                "[%s] Starting processing for session_id=%s chat_id=%s",
-                request_id, session_id, message.chat.id,
+                f"[{request_id}] Starting processing for session_id={session_id} chat_id={message.chat.id}",
             )
             await self._generate_and_send_answer(
                 chat_id=message.chat.id,
@@ -236,15 +236,13 @@ class BaseTelegramChannel(BaseChannel):
                 agent=agent,
             )
             logger.info(
-                "[%s] Finished processing for session_id=%s chat_id=%s",
-                request_id, session_id, message.chat.id,
+                f"[{request_id}] Finished processing for session_id={session_id} chat_id={message.chat.id}",
             )
 
     async def handle_text_message(self, message: aiogram.types.Message):
         request_id = uuid.uuid4()
         logger.info(
-            "[%s] Received text message event chat_id=%s",
-            request_id, message.chat.id,
+            f"[{request_id}] Received text message event chat_id={message.chat.id}",
         )
         with self.set_current_request_id(request_id):
             user = await self._get_or_create_user(message.chat.id)
@@ -266,8 +264,7 @@ class BaseTelegramChannel(BaseChannel):
                 message=AgentMessage(role="user", text=text_with_context),
             )
             logger.info(
-                "[%s] Starting processing for session_id=%s chat_id=%s",
-                request_id, session_id, message.chat.id,
+                f"[{request_id}] Starting processing for session_id={session_id} chat_id={message.chat.id}",
             )
             await self._generate_and_send_answer(
                 chat_id=message.chat.id,
@@ -275,15 +272,13 @@ class BaseTelegramChannel(BaseChannel):
                 agent=agent,
             )
             logger.info(
-                "[%s] Finished processing for session_id=%s chat_id=%s",
-                request_id, session_id, message.chat.id,
+                f"[{request_id}] Finished processing for session_id={session_id} chat_id={message.chat.id}",
             )
 
     async def handle_confirmation_callback(self, callback_query: aiogram.types.CallbackQuery, callback_data: ConfirmationCallbackData):
         request_id = uuid.uuid4()
         logger.info(
-            "[%s] Received confirmation callback event chat_id=%s",
-            request_id, callback_query.message.chat.id,
+            f"[{request_id}] Received confirmation callback event chat_id={callback_query.message.chat.id}",
         )
         with self.set_current_request_id(request_id):
             user = await self._get_or_create_user(callback_query.message.chat.id)
@@ -343,8 +338,7 @@ class BaseTelegramChannel(BaseChannel):
     ):
         request_id = uuid.uuid4()
         logger.info(
-            "[%s] Starting generation for session_id=%s chat_id=%s",
-            request_id, session_id, chat_id,
+            f"[{request_id}] Starting generation for session_id={session_id} chat_id={chat_id}",
         )
         saver = AgentMessageSaver(
             sessions_storage=self._sessions_storage,
@@ -362,7 +356,9 @@ class BaseTelegramChannel(BaseChannel):
         )
 
         async with self._lock_chat_for_generating(chat_id):
-            message_generator = self._sessions_storage.get_messages(session_id=session_id)
+            message_generator = self._sessions_storage.get_messages(
+                filter=MessageFilter(session_id=session_id),
+            )
             messages = [_message async for _message in message_generator]
 
             with (
@@ -383,8 +379,7 @@ class BaseTelegramChannel(BaseChannel):
                     await printer.print(text="Dialog summarized")
 
         logger.info(
-            "[%s] Finished generation for session_id=%s chat_id=%s",
-            request_id, session_id, chat_id,
+            f"[{request_id}] Finished generation for session_id={session_id} chat_id={chat_id}",
         )
 
     @contextlib.asynccontextmanager

@@ -9,6 +9,7 @@ from typing import Self
 
 from microclaw.agents import Agent, AgentSettings
 from microclaw.dto import AgentMessage, User
+from microclaw.sessions_storages.filters import MessageFilter
 from microclaw.sessions_storages.interfaces import SessionsStorageInterface
 from microclaw.stt import STT
 from microclaw.syncers import SyncerInterface
@@ -53,6 +54,8 @@ class ConfirmationMixin:
 
 class BaseChannel(facet.AsyncioServiceMixin, ConfirmationMixin):
     CHANNEL_CONTEXT = contextvars.ContextVar("channel_context", default=None)
+    SESSION_ID_CONTEXT = contextvars.ContextVar("session_id", default=None)
+    REQUEST_ID_CONTEXT = contextvars.ContextVar("request_id", default=None)
 
     def __init__(
             self,
@@ -100,6 +103,30 @@ class BaseChannel(facet.AsyncioServiceMixin, ConfirmationMixin):
         finally:
             self.CHANNEL_CONTEXT.reset(token)
 
+    @contextlib.contextmanager
+    def set_current_request_id(self, request_id: uuid.UUID):
+        token = self.REQUEST_ID_CONTEXT.set(request_id)
+        try:
+            yield
+        finally:
+            self.REQUEST_ID_CONTEXT.reset(token)
+
+    @classmethod
+    def get_current_request_id(cls) -> uuid.UUID | None:
+        return cls.REQUEST_ID_CONTEXT.get(None)
+
+    @classmethod
+    def get_current_session_id(cls) -> uuid.UUID | None:
+        return cls.SESSION_ID_CONTEXT.get(None)
+
+    @contextlib.contextmanager
+    def set_current_session_id(self, session_id: uuid.UUID):
+        token = self.SESSION_ID_CONTEXT.set(session_id)
+        try:
+            yield
+        finally:
+            self.SESSION_ID_CONTEXT.reset(token)
+
     async def get_agent_for_user(self, user: User) -> Agent | None:
         if user.agent is None:
             return None
@@ -135,7 +162,7 @@ class BaseChannel(facet.AsyncioServiceMixin, ConfirmationMixin):
             return False
 
         message_generator = self._sessions_storage.get_messages(
-            session_id=session_id,
+            filter=MessageFilter(session_id=session_id),
         )
         messages = [message async for message in message_generator]
         if not messages:

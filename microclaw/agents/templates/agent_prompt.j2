@@ -16,20 +16,6 @@ Description: {{ data.agent_identity.description }}
 {{ channel.description }}
 {%- endif %}
 
-{%- if data.subagents %}
-## Subagents
-You have access to specialized subagents for specific tasks. Each subagent is an independent AI
-assistant with its own capabilities and expertise.
-
-{%- for subagent in data.subagents %}
-### {{ subagent.name }}
-{% if subagent.prompt %}{{ subagent.prompt }}{% endif %}
-{%- endfor %}
-
-Use subagents when you need specialized assistance or want to delegate complex tasks to a more
-focused assistant.
-{%- endif %}
-
 {%- if data.mcps %}
 ## MCP Servers
 You have access to Model Context Protocol (MCP) servers that provide additional tools and capabilities.

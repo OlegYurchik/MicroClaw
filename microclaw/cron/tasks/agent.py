@@ -1,6 +1,6 @@
-import logging
 import uuid
 
+from loguru import logger
 from pydantic import BaseModel
 
 from microclaw.agents import Agent, AgentSettings
@@ -9,9 +9,6 @@ from microclaw.dto import AgentMessage
 from microclaw.cron.base import BaseCronTask
 from microclaw.cron.settings import CronTaskSettings
 from microclaw.utils import get_by_key_or_first
-
-
-logger = logging.getLogger(__name__)
 
 
 class AgentCronTaskSettings(BaseModel):

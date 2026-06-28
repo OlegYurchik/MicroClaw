@@ -1,3 +1,4 @@
+import contextlib
 import datetime
 import json
 import logging
@@ -6,6 +7,7 @@ import traceback
 import uuid
 from typing import Any, AsyncGenerator
 
+import deepagents.graph
 import tiktoken
 from evolution_langchain import EvolutionInference
 from jinja2 import Template
@@ -18,9 +20,11 @@ from langchain_core.messages import (
 from langchain_mcp_adapters.client import MultiServerMCPClient
 from langchain_openai import ChatOpenAI
 from langchain_ollama import ChatOllama
-from langchain.agents import create_agent
+from langchain_core.runnables import RunnableLambda
+from deepagents import create_deep_agent
 from langchain.agents.middleware import wrap_tool_call
 from langchain.agents.middleware import ModelCallLimitMiddleware, ToolCallLimitMiddleware
+from langchain.agents.middleware.types import AgentMiddleware
 from langchain.messages import ToolMessage
 
 from microclaw.agents.settings import (
@@ -36,7 +40,21 @@ from microclaw.dto import AgentMessage, Spending
 from microclaw.toolkits import BaseToolKit
 from microclaw.toolkits.memory import MemoryToolKit
 from .dto import SummaryValues, SummaryMemoryValues, AgentPromptValues, SystemValues, MCPInfo
-from .subagents import SubAgentToolKit
+
+
+class _NoOpMiddleware(AgentMiddleware):
+    name = "SummarizationMiddleware"
+
+
+@contextlib.contextmanager
+def _patched_summarization_middleware():
+    original = deepagents.graph.create_summarization_middleware
+    deepagents.graph.create_summarization_middleware = lambda *args, **kwargs: _NoOpMiddleware()
+    try:
+        yield
+    finally:
+        deepagents.graph.create_summarization_middleware = original
+
 
 logger = logging.getLogger(__name__)
 
@@ -51,7 +69,7 @@ class Agent:
             provider_settings: ProviderSettings,
             toolkits: dict[str, BaseToolKit],
             mcp_settings: dict[str, MCPSettings] | None = None,
-            subagents_toolkits: list[SubAgentToolKit] | None = None,
+            subagents: list["Agent"] | None = None,
             client=None,
     ):
         self._settings = settings
@@ -67,7 +85,7 @@ class Agent:
 
         self._mcp_settings = mcp_settings or {}
         self._mcp = self._create_mcp_client()
-        self._subagents_toolkits = subagents_toolkits.copy() if subagents_toolkits else []
+        self._subagents = subagents.copy() if subagents else []
         self._tools = [
             tool
             for toolkit in self._toolkits.values()
@@ -101,8 +119,54 @@ class Agent:
 
         return MultiServerMCPClient(servers)
 
-    def set_subagents_toolkits(self, subagents_toolkits: list[SubAgentToolKit]):
-        self._subagents_toolkits = subagents_toolkits.copy()
+    @property
+    def name(self) -> str:
+        return self._settings.identity.name if self._settings.identity else ""
+
+    @property
+    def description(self) -> str | None:
+        return self._settings.identity.description if self._settings.identity else None
+
+    def as_subagent(self) -> dict:
+        """
+        Превращает текущий объект Agent в CompiledSubAgent для использования
+        в родительском агенте DeepAgents.
+        """
+        async def _runnable(input_data: dict) -> dict:
+            messages = input_data.get("messages", [])
+            agent_messages = []
+            for msg in messages:
+                role = "user"
+                if isinstance(msg, HumanMessage):
+                    role = "user"
+                elif isinstance(msg, AIMessage):
+                    role = "assistant"
+                elif isinstance(msg, SystemMessage):
+                    role = "system"
+                elif isinstance(msg, ToolMessage):
+                    role = "tool"
+                text = msg.content if isinstance(msg.content, str) else str(msg.content)
+                agent_messages.append(AgentMessage(role=role, text=text))
+
+            try:
+                last_text: str | None = None
+                async for msg in self.ask(agent_messages, stream=False):
+                    if msg.role == "assistant" and msg.text:
+                        last_text = msg.text
+                final_text = last_text or ""
+            except Exception as exc:
+                final_text = f"Subagent error: {exc}"
+
+            return {"messages": [AIMessage(content=final_text)]}
+
+        return {
+            "name": self.name,
+            "description": self.description or f"Subagent: {self.name}",
+            "runnable": RunnableLambda(_runnable),
+        }
+
+    def set_subagents(self, subagents: list["Agent"]):
+        self._subagents = subagents.copy()
 
     def get_client(self):
         api_type = self._model_settings.api_type or self._provider_settings.api_type
@@ -152,9 +216,9 @@ class Agent:
             channel: "BaseChannel | None" = None,  # noqa: F821
             stream: bool = False,
     ) -> AsyncGenerator[AgentMessage]:
-        from microclaw.channels.context import REQUEST_ID_CONTEXT
+        from microclaw.channels import BaseChannel
 
-        request_id = REQUEST_ID_CONTEXT.get(None)
+        request_id = BaseChannel.get_current_request_id()
         langchain_messages: list[BaseMessage] = self._convert_to_langchain_messages(messages)
         system_prompt = await self._get_agent_prompt(channel=channel)
 
@@ -174,8 +238,7 @@ class Agent:
             channel_toolkit = channel.get_toolkit()
             if channel_toolkit is not None:
                 tools.extend(channel_toolkit.get_tools())
-        for subagent_toolkit in self._subagents_toolkits:
-            tools.extend(subagent_toolkit.get_tools())
+        subagent_specs = [subagent.as_subagent() for subagent in self._subagents]
         tool_call_limiter = ToolCallLimitMiddleware(
             run_limit=self._settings.max_tool_calls,
             exit_behavior="end",
@@ -186,12 +249,14 @@ class Agent:
         )
         config = {"recursion_limit": 1000}
 
-        agent = create_agent(
-            model=self._client,
-            tools=tools,
-            system_prompt=system_prompt,
-            middleware=[_handle_tool_errors, tool_call_limiter, model_call_limiter],
-        )
+        with _patched_summarization_middleware():
+            agent = create_deep_agent(
+                model=self._client,
+                tools=tools,
+                system_prompt=system_prompt,
+                subagents=subagent_specs,
+                middleware=[_handle_tool_errors, tool_call_limiter, model_call_limiter],
+            )
 
         events_generator = agent.astream_events(
             {"messages": langchain_messages},
@@ -491,7 +556,6 @@ class Agent:
             tools=tools,
             channel=channel,
             memories=memories,
-            subagents=self._subagents_toolkits,
             mcps=mcps,
         )
 

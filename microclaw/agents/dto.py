@@ -26,7 +26,6 @@ class AgentPromptValues:
     tools: list[BaseTool] = field(default_factory=list)
     channel: "BaseChannel" = None  # noqa: F821
     memories: dict[str, str] = field(default_factory=dict)
-    subagents: list["SubAgentToolKit"] = field(default_factory=list)  # noqa: F821
     mcps: dict[str, MCPInfo] = field(default_factory=dict)
 
 

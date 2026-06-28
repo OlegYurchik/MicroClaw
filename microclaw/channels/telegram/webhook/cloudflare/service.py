@@ -5,11 +5,9 @@ import platform
 import re
 
 import facet
+from loguru import logger
 
 from .settings import CloudflareTunnelSettings
-
-
-logger = logging.getLogger(__name__)
 
 
 class CloudflareTunnelService(facet.AsyncioServiceMixin):

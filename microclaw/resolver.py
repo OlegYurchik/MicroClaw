@@ -2,8 +2,6 @@ from types import NoneType
 
 
 from .agents import Agent, AgentSettings, InputTypeEnum, MCPRemoteSettings, MCPSettings
-from .agents.subagents.settings import SubAgentSettings
-from .agents.subagents.toolkit import SubAgentToolKit
 from .channels import BaseChannel, get_channel
 from .cron import BaseCronTask, CronTaskSettings, get_cron_task
 from .sessions_storages import (
@@ -192,43 +190,29 @@ class DependencyResolver:
     async def resolve_subagents_for_agent(
             self,
             agent: Agent,
-            subagents_settings: list[SubAgentSettings | str] | None,
+            subagents_settings: list[str | AgentSettings] | None,
     ):
-        if subagents_settings is None:
+        if not subagents_settings:
             return
 
-        subagent_toolkits = []
+        subagents = []
         for subagent_settings_or_key in subagents_settings:
             if isinstance(subagent_settings_or_key, str):
                 if subagent_settings_or_key not in self._settings.agents:
                     raise ValueError(
                         f"Subagent '{subagent_settings_or_key}' not found in agents settings",
                     )
-                agent_settings = self._settings.agents[subagent_settings_or_key]
-                subagent_settings = SubAgentSettings(
-                    name=agent_settings.identity.name,
-                    description=agent_settings.identity.description,
-                    agent=agent_settings.model_dump(),
-                )
-            elif isinstance(subagent_settings_or_key, SubAgentSettings):
-                subagent_settings = subagent_settings_or_key
+                subagent = self._agents.get(subagent_settings_or_key)
+                if subagent is None:
+                    raise ValueError(f"Agent for subagent '{subagent_settings_or_key}' not resolved")
+            elif isinstance(subagent_settings_or_key, AgentSettings):
+                subagent = await self.resolve_agent(agent_settings=subagent_settings_or_key)
             else:
                 raise ValueError(f"Invalid subagent settings type: {type(subagent_settings_or_key)}")
 
-            if isinstance(subagent_settings.agent, str):
-                subagent = self._agents.get(subagent_settings.agent)
-            elif isinstance(subagent_settings.agent, dict):
-                subagent = await self.resolve_agent(agent_settings=AgentSettings(**subagent_settings.agent))
-            if subagent is None:
-                raise ValueError(f"Agent for subagent '{subagent_settings.name}' not found")
+            subagents.append(subagent)
 
-            toolkit = SubAgentToolKit(
-                settings=subagent_settings,
-                agent=subagent,
-            )
-            subagent_toolkits.append(toolkit)
-
-        agent.set_subagents_toolkits(subagent_toolkits)
+        agent.set_subagents(subagents)
 
     async def resolve_sessions_storages(self) -> dict[str, SessionsStorageInterface]:
         if self._sessions_storages is None:

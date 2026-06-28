@@ -1,20 +1,17 @@
 import datetime
-import logging
 import uuid
 
+from loguru import logger
 from pydantic import BaseModel
+from pydantic_filters.pagination import OffsetPagination as BasePagination
 
 from microclaw.channels.base import BaseChannel
 from microclaw.cron.base import BaseCronTask
 from microclaw.cron.settings import CronTaskSettings
 from microclaw.sessions_storages.interfaces import SessionsStorageInterface
 from microclaw.sessions_storages.filters import SessionFilter, MessageFilter
-from pydantic_filters.pagination import OffsetPagination as BasePagination
 from microclaw.toolkits.memory.toolkit import MemorySizeExceeded
 from microclaw.utils import get_by_key_or_first
-
-
-logger = logging.getLogger(__name__)
 
 
 class FlushToMemoryCronTaskSettings(BaseModel):

@@ -2,12 +2,12 @@ import asyncio
 import contextlib
 import contextvars
 import json
-import logging
 import random
 import uuid
 from typing import Any
 
 import aiohttp
+from loguru import logger
 from vkbottle import Callback, Keyboard, Text
 from vkbottle.bot import Bot, Message
 from vkbottle.polling import BotPolling
@@ -28,8 +28,6 @@ from .settings import VKSettings
 from .printer import VKAgentMessagePrinter
 from .toolkit import VKToolKit
 
-logger = logging.getLogger(__name__)
-
 
 class FixedBotPolling(BotPolling):
     """Workaround: vkbottle omits lp_version in groups.getLongPollServer."""
@@ -44,7 +42,7 @@ class FixedBotPolling(BotPolling):
             if not response.get("groups", []):
                 raise RuntimeError(
                     "Unable to get group id for bot polling. "
-                    "Perhaps you are using a user access token?"
+                    "Perhaps you are using a user access token?",
                 )
             self.group_id = response["groups"][0]["id"]
 
@@ -139,8 +137,7 @@ class BaseVKChannel(BaseChannel):
         request_id = uuid.uuid4()
         with self.set_current_request_id(request_id):
             logger.info(
-                "[%s] Conversation start session=%s peer=%s",
-                request_id, session_id, peer_id,
+                f"[{request_id}] Conversation start session={session_id} peer={peer_id}",
             )
             user = await self._get_or_create_user(peer_id)
             agent = agent or await self.get_agent_for_user(user) or self._agent
@@ -153,8 +150,7 @@ class BaseVKChannel(BaseChannel):
                 messages=new_messages,
             )
             logger.info(
-                "[%s] Conversation end session=%s peer=%s",
-                request_id, session_id, peer_id,
+                f"[{request_id}] Conversation end session={session_id} peer={peer_id}",
             )
 
 
@@ -162,15 +158,11 @@ class BaseVKChannel(BaseChannel):
         request_id = uuid.uuid4()
         with self.set_current_request_id(request_id):
             logger.info(
-                "[%s] msg from_id=%s peer_id=%s text=%r att=%d",
-                request_id,
-                message.from_id,
-                message.peer_id,
-                message.text,
-                len(message.attachments) if message.attachments else 0,
+                f"[{request_id}] msg from_id={message.from_id} peer_id={message.peer_id} "
+                f"text={message.text!r} att={len(message.attachments) if message.attachments else 0}",
             )
             if self._is_auth_disabled(message):
-                logger.warning("[%s] rejected by allow_from", request_id)
+                logger.warning(f"[{request_id}] rejected by allow_from")
                 return
 
             text = (message.text or "").strip()
@@ -193,7 +185,7 @@ class BaseVKChannel(BaseChannel):
     async def handle_voice_message(self, message: Message):
         request_id = uuid.uuid4()
         with self.set_current_request_id(request_id):
-            logger.info("[%s] voice peer=%s", request_id, message.peer_id)
+            logger.info(f"[{request_id}] voice peer={message.peer_id}")
 
             user = await self._get_or_create_user(message.peer_id)
             agent = await self.get_agent_for_user(user) or self._agent
@@ -202,7 +194,7 @@ class BaseVKChannel(BaseChannel):
             printer = self._printer(message.peer_id, session_id, agent)
 
             if self._stt is None:
-                logger.warning("[%s] STT unavailable", request_id)
+                logger.warning(f"[{request_id}] STT unavailable")
                 await printer.print(text="Voice messages not supported")
                 return
 
@@ -302,19 +294,6 @@ class BaseVKChannel(BaseChannel):
             except Exception:
                 logger.exception("send_message_event_answer failed")
 
-            cmid = obj.get("conversation_message_id")
-            if cmid is not None:
-                keyboard = Keyboard(inline=True)
-                keyboard.add(Text(status_text))
-                try:
-                    await self._bot.api.messages.edit(
-                        peer_id=peer_id,
-                        cmid=cmid,
-                        keyboard=keyboard.get_json(),
-                    )
-                except Exception:
-                    logger.exception("messages.edit failed")
-
 
     async def _generate_and_send_answer(
             self,
@@ -325,7 +304,7 @@ class BaseVKChannel(BaseChannel):
     ):
         request_id = uuid.uuid4()
         with self.set_current_request_id(request_id):
-            logger.info("[%s] gen start session=%s peer=%s", request_id, session_id, peer_id)
+            logger.info(f"[{request_id}] gen start session={session_id} peer={peer_id}")
             saver = AgentMessageSaver(
                 sessions_storage=self._sessions_storage,
                 session_id=session_id,
@@ -354,7 +333,7 @@ class BaseVKChannel(BaseChannel):
                     ):
                         await printer.print(text="Dialog summarized")
 
-            logger.info("[%s] gen end session=%s peer=%s", request_id, session_id, peer_id)
+            logger.info(f"[{request_id}] gen end session={session_id} peer={peer_id}")
 
 
     async def request_confirmation(self, question: str) -> uuid.UUID:

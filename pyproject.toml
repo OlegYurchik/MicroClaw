@@ -20,7 +20,9 @@ dependencies = [
     "langchain-core>=1.2.16",
     "langchain-mcp-adapters>=0.1.0",
     "loguru>=0.7.3",
+    "tenacity>=9.0.0",
     "textual>=8.2.5",
+    "deepagents>=0.6.12",
 ]
 
 [dependency-groups]

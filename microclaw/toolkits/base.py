@@ -6,7 +6,14 @@ from typing import Any, Callable, Generic, TypeVar
 
 from langchain_core.tools import StructuredTool as LangChainStructuredTool
 from pydantic import BaseModel
+from tenacity import (
+    retry,
+    retry_if_not_exception_type,
+    stop_after_attempt,
+    wait_exponential,
+)
 
+from .exceptions import UserDeniedAction
 from .settings import ToolKitSettings
 
 
@@ -109,6 +116,12 @@ def _return_dict(function: Callable) -> Callable:
                 return response
         return response
 
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=1, max=10),
+        retry=retry_if_not_exception_type((UserDeniedAction, PermissionError)),
+        reraise=True,
+    )
     @functools.wraps(function)
     async def wrapper(*args, **kwargs):
         return convert(response=await function(*args, **kwargs))
