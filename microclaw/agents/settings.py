@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import enum
 
-from pydantic import AnyHttpUrl, BaseModel, Field, NonNegativeInt, confloat, conint
+from pydantic import AnyHttpUrl, BaseModel, Field, NonNegativeInt, PositiveInt, confloat, conint
 
 from microclaw.toolkits import ToolKitSettings
 
@@ -55,20 +55,8 @@ class ModelSettings(BaseModel):
     headers: dict[str, str] = Field(default_factory=dict)
     temperature: Temperature | None = None
     context_window_size: int | None = Field(default=None, gt=0)
-    context_threshold_size: float | None = Field(
-        default=0.8,
-        gt=0,
-        lt=1,
-        description=(
-            "Threshold for triggering summarization (percentage of max context). None means no "
-            "summarization"
-        ),
-    )
-    audio_max_size: int | None = Field(
-        default=None,
-        gt=0,
-        description="Maximum audio file size in bytes. None means no limit",
-    )
+    context_threshold_size: confloat(gt=0, lt=1) | None = 0.8
+    audio_max_size: PositiveInt | None = None
     input_types: list[InputTypeEnum] = Field(
         default_factory=lambda: [InputTypeEnum.TEXT],
         description="List of supported input types",
@@ -90,14 +78,21 @@ class MCPBaseSettings(BaseModel):
 
 class MCPRemoteSettings(MCPBaseSettings):
     url: str
+    headers: dict[str, str] = Field(default_factory=dict)
 
 
 class MCPLocalSettings(MCPBaseSettings):
     command: str
     args: list[str] = Field(default_factory=list)
+    env: dict[str, str] = Field(default_factory=dict)
 
 
 MCPSettings = MCPRemoteSettings | MCPLocalSettings
+
+
+class SkillSettings(BaseModel):
+    name: str
+    url: AnyHttpUrl | None = None
 
 
 class AgentSettings(BaseModel):
@@ -105,6 +100,7 @@ class AgentSettings(BaseModel):
     model: ModelSettings | str | None = None
     toolkits: list[ToolKitSettings | str] | None = None
     mcp: list[MCPSettings | str] | None = None
+    skills: list[SkillSettings | str] | None = None
     subagents: list[str | AgentSettings] = Field(default_factory=list)
     temperature: Temperature | None = None
     max_tool_calls: conint(ge=1, le=1000) = 25

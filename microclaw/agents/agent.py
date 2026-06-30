@@ -75,11 +75,13 @@ class Agent:
             mcp_settings: dict[str, MCPSettings] | None = None,
             subagents: list["Agent"] | None = None,
             client=None,
+            skills: list[str] | None = None,
     ):
         self._settings = settings
         self._model_settings = model_settings
         self._provider_settings = provider_settings
         self._toolkits = toolkits
+        self._skills = skills or []
 
         self._memory_toolkit = None
         for toolkit in toolkits.values():
@@ -110,6 +112,7 @@ class Agent:
                 else:
                     raise ValueError(f"Incorrect MCP URL: {settings.url}")
                 mcp_data["url"] = settings.url
+                mcp_data["headers"] = settings.headers or {}
             elif isinstance(settings, MCPLocalSettings):
                 server_name = settings.name or " ".join((settings.command, *settings.args))
                 mcp_data = {
@@ -117,6 +120,7 @@ class Agent:
                     "command": settings.command,
                     "args": settings.args,
                 }
+                mcp_data["env"] = settings.env or {}
             else:
                 raise ValueError(f"Unsupported MCP settings type: {type(settings)}")
             servers[server_name] = mcp_data
@@ -265,6 +269,7 @@ class Agent:
                 system_prompt=system_prompt,
                 subagents=subagent_specs,
                 middleware=[_handle_tool_errors, model_retry, tool_call_limiter, model_call_limiter],
+                skills=self._skills,
             )
 
         events_generator = agent.astream_events(

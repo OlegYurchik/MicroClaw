@@ -1,7 +1,12 @@
+import asyncio
 from types import NoneType
+from urllib.parse import urlparse
 
+from loguru import logger
+from pydantic import AnyHttpUrl
+from skillnet_ai.downloader import SkillDownloader
 
-from .agents import Agent, AgentSettings, InputTypeEnum, MCPRemoteSettings, MCPSettings
+from .agents import Agent, AgentSettings, InputTypeEnum, MCPRemoteSettings, MCPSettings, SkillSettings
 from .channels import BaseChannel, get_channel
 from .cron import BaseCronTask, CronTaskSettings, get_cron_task
 from .sessions_storages import (
@@ -179,13 +184,84 @@ class DependencyResolver:
             else:
                 raise ValueError(f"MCP with name '{mcp_settings_or_name}' not exists")
 
+        skill_paths = await self.resolve_skills(agent_settings)
+
         return Agent(
             settings=agent_settings,
             model_settings=model_settings,
             provider_settings=provider_settings,
             toolkits=agent_toolkits,
             mcp_settings=agent_mcps_settings,
+            skills=skill_paths,
         )
+
+    async def resolve_skills(self, agent_settings: AgentSettings) -> list[str]:
+        if not agent_settings.skills:
+            return []
+
+        self._settings.skills_dir.mkdir(parents=True, exist_ok=True)
+
+        skill_paths = []
+        for skill_item in agent_settings.skills:
+            skill_path = await self.resolve_skill(skill_item)
+            if skill_path:
+                skill_paths.append(skill_path)
+        return skill_paths
+
+    async def resolve_skill(self, skill: SkillSettings | str) -> str | None:
+        skill = self._normalize_skill(skill)
+
+        expected_path = self._settings.skills_dir / skill.name
+        if expected_path.exists():
+            return str(expected_path.resolve())
+
+        if skill.url:
+            downloaded_path = await asyncio.to_thread(
+                SkillDownloader().download,
+                str(skill.url),
+                target_dir=str(self._settings.skills_dir),
+            )
+            if downloaded_path:
+                return downloaded_path
+
+        logger.warning("Skill '%s' not found locally and could not be downloaded", skill.name)
+        return None
+
+    def _normalize_skill(self, skill: SkillSettings | str) -> SkillSettings:
+        if isinstance(skill, SkillSettings):
+            return skill
+
+        try:
+            skill_url = AnyHttpUrl(skill)
+        except Exception:
+            skill_url = None
+
+        if skill_url is not None:
+            return SkillSettings(
+                name=self._get_skill_name_from_url(url=skill_url),
+                url=skill_url,
+            )
+
+        global_skill = self._settings.skills.get(skill)
+        if isinstance(global_skill, SkillSettings):
+            return global_skill
+
+        if isinstance(global_skill, str):
+            try:
+                skill_url = AnyHttpUrl(global_skill)
+            except Exception:
+                skill_url = None
+            if skill_url is not None:
+                return SkillSettings(name=skill, url=skill_url)
+            return SkillSettings(name=global_skill, url=None)
+
+        return SkillSettings(name=skill, url=None)
+
+    @staticmethod
+    def _get_skill_name_from_url(url: AnyHttpUrl | str) -> str:
+        parsed = urlparse(str(url))
+        path_parts = [p for p in parsed.path.split("/") if p]
+        return path_parts[-1] if path_parts else str(url)
 
     async def resolve_subagents_for_agent(
             self,
@@ -293,15 +369,6 @@ class DependencyResolver:
                     settings=cron_settings,
                     resolver=self,
                 )
-            self._crons["flush_to_memory"] = await get_cron_task(
-                key="flush_to_memory",
-                settings=CronTaskSettings(
-                    path="microclaw.cron.tasks.flush_to_memory.FlushToMemoryCronTask",
-                    cron="0 1 * * *",
-                    enabled=True,
-                ),
-                resolver=self,
-            )
             
             users_storages = await self.resolve_users_storages()
             for storage_key, users_storage in users_storages.items():

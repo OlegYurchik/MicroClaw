@@ -11,6 +11,7 @@ from .settings import (
     ModelCosts,
     ModelSettings,
     ProviderSettings,
+    SkillSettings,
 )
 
 
@@ -30,4 +31,5 @@ __all__ = (
     "ModelCosts",
     "ModelSettings",
     "ProviderSettings",
+    "SkillSettings",
 )

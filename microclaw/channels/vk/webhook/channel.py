@@ -20,11 +20,12 @@ class VKWebhookChannel(BaseVKChannel):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._confirmation_code: str | None = None
-        self._webhook_secret_key: str | None = None
+        self._secret_access_key: str | None = None
 
         self._callback = BotCallback(
             url=str(self._settings.root_url),
-            title="MicroClaw Webhook",
+            title=self._settings.title,
+            secret_key=self._settings.secret_access_key,
         )
 
         self._bot = Bot(
@@ -47,7 +48,7 @@ class VKWebhookChannel(BaseVKChannel):
         # Give uvicorn a moment to start listening before calling setup_webhook
         await asyncio.sleep(1)
 
-        self._confirmation_code, self._webhook_secret_key = await self._bot.setup_webhook()
+        self._confirmation_code, self._secret_access_key = await self._bot.setup_webhook()
 
         await server_task
 
@@ -77,8 +78,8 @@ class VKWebhookChannel(BaseVKChannel):
                 )
             return PlainTextResponse(self._confirmation_code)
 
-        if self._webhook_secret_key:
-            if data.get("secret") != self._webhook_secret_key:
+        if self._secret_access_key:
+            if data.get("secret") != self._secret_access_key:
                 raise fastapi.HTTPException(
                     status_code=fastapi.status.HTTP_403_FORBIDDEN,
                     detail="Forbidden.",

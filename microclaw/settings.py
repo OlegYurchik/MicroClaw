@@ -5,7 +5,7 @@ from typing import Self
 
 import yaml
 import yaml_include
-from pydantic import Field, model_validator
+from pydantic import AnyHttpUrl, Field, model_validator
 from pydantic_settings import BaseSettings
 from yaml_env_tag import construct_env_tag
 
@@ -16,6 +16,7 @@ from .agents import (
     MCPSettings,
     ModelSettings,
     ProviderSettings,
+    SkillSettings,
 )
 from .api.rest import RESTAPISettings
 from .toolkits import ToolKitSettings
@@ -67,6 +68,8 @@ class MicroclawSettings(BaseSettings):
     }
     toolkits: dict[str, ToolKitSettings] = Field(default_factory=dict)
     mcp: dict[str, MCPSettings] = Field(default_factory=dict)
+    skills_dir: pathlib.Path = pathlib.Path("./.skills")
+    skills: dict[str, SkillSettings | AnyHttpUrl | str] = Field(default_factory=dict)
     agents: dict[str, AgentSettings] = {
         "default": AgentSettings(),
     }

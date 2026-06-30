@@ -177,8 +177,8 @@ class TasksToolKit(BaseToolKit[TasksSettings]):
         task_list_url: str,
         description: str | None = None,
         due: datetime | date | None = None,
+        start: datetime | date | None = None,
         priority: int | None = None,
-        
     ) -> Task:
         """
         Create a new task. Use this tool when user wants to add a new task.
@@ -187,6 +187,7 @@ class TasksToolKit(BaseToolKit[TasksSettings]):
             summary: Title/summary of the task
             description: Optional description of the task
             due: Optional due date as datetime or date object
+            start: Optional start date as datetime or date object
             priority: Optional priority level (1=highest, 9=lowest, 0=undefined)
             task_list_url: URL of the task list.
 
@@ -205,6 +206,8 @@ class TasksToolKit(BaseToolKit[TasksSettings]):
                 confirmation_request_text += f"\nDescription: {description}"
             if due is not None:
                 confirmation_request_text += f"\nDue: {due}"
+            if start is not None:
+                confirmation_request_text += f"\nStart: {start}"
             if priority is not None:
                 confirmation_request_text += f"\nPriority: {priority}"
             if not await self.request_confirmation(confirmation_request_text):
@@ -215,6 +218,8 @@ class TasksToolKit(BaseToolKit[TasksSettings]):
             todo_data["description"] = description
         if due is not None:
             todo_data["due"] = due
+        if start is not None:
+            todo_data["dtstart"] = start
         if priority is not None:
             todo_data["priority"] = priority
 
@@ -229,6 +234,7 @@ class TasksToolKit(BaseToolKit[TasksSettings]):
             summary: str | None = None,
             description: str | None = None,
             due: datetime | date | None = None,
+            start: datetime | date | None = None,
             priority: int | None = None,
             completed: bool | None = None,
     ) -> Task:
@@ -240,6 +246,7 @@ class TasksToolKit(BaseToolKit[TasksSettings]):
             summary: Optional new title/summary of the task
             description: Optional new description of the task
             due: Optional new due date as datetime or date object
+            start: Optional new start date as datetime or date object
             priority: Optional new priority level (1=highest, 9=lowest, 0=undefined)
             completed: Optional new completion status
             task_list_url: URL of the task list.
@@ -263,6 +270,8 @@ class TasksToolKit(BaseToolKit[TasksSettings]):
                 changes.append(f"description: {description}")
             if due is not None:
                 changes.append(f"due: {due}")
+            if start is not None:
+                changes.append(f"start: {start}")
             if priority is not None:
                 changes.append(f"priority: {priority}")
             if completed is not None:
@@ -285,6 +294,11 @@ class TasksToolKit(BaseToolKit[TasksSettings]):
                 todo.vobject_instance.vtodo.due.value = due
             else:
                 todo.vobject_instance.vtodo.add("due").value = due
+        if start is not None:
+            if "dtstart" in todo.vobject_instance.vtodo.contents:
+                todo.vobject_instance.vtodo.dtstart.value = start
+            else:
+                todo.vobject_instance.vtodo.add("dtstart").value = start
         if priority is not None:
             todo.vobject_instance.vtodo.priority.value = priority
         if completed is not None:

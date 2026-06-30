@@ -29,45 +29,6 @@ from .printer import VKAgentMessagePrinter
 from .toolkit import VKToolKit
 
 
-class FixedBotPolling(BotPolling):
-    """Workaround: vkbottle omits lp_version in groups.getLongPollServer."""
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.lp_version = 3
-
-    async def get_server(self) -> dict[str, Any]:
-        if self.group_id is None:
-            response = (await self.api.request("groups.getById", {}))["response"]
-            if not response.get("groups", []):
-                raise RuntimeError(
-                    "Unable to get group id for bot polling. "
-                    "Perhaps you are using a user access token?",
-                )
-            self.group_id = response["groups"][0]["id"]
-
-        return (
-            await self.api.request(
-                "groups.getLongPollServer",
-                {"group_id": self.group_id, "lp_version": self.lp_version},
-            )
-        )["response"]
-
-    async def get_event(self, server: dict[str, Any]) -> dict[str, Any]:
-        return await self.api.http_client.request_json(
-            url=server["server"],
-            method="POST",
-            params={
-                "act": "a_check",
-                "key": server["key"],
-                "ts": server["ts"],
-                "wait": self.wait,
-                "rps_delay": self.rps_delay,
-            },
-            timeout=aiohttp.ClientTimeout(total=self.wait + 10),
-        )
-
-
 class BaseVKChannel(BaseChannel):
     MAX_MESSAGE_LENGTH = 4096
     CHAT_ID_CONTEXT = contextvars.ContextVar("chat_id", default=None)
@@ -94,7 +55,7 @@ class BaseVKChannel(BaseChannel):
             resolver=resolver,
         )
 
-        self._bot = Bot(token=settings.token, polling=FixedBotPolling())
+        self._bot = Bot(token=settings.token, polling=BotPolling())
         self._bot.on.message()(self._handle_message)
         self._bot.on.raw_event(
             GroupEventType.MESSAGE_EVENT,
