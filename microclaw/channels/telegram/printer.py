@@ -96,14 +96,16 @@ class AgentMessagePrinter(AgentMessageCollector):
             text[i:i + self.MAX_MESSAGE_LENGTH].strip()
             for i in range(0, len(text), self.MAX_MESSAGE_LENGTH)
         ]
-        
+
         for text_chunk in text_list[:-1]:
+            if not text_chunk:
+                continue
             await self._bot.send_message(
                 chat_id=self._chat_id,
                 text=text_chunk,
                 # parse=ParseMode.MARKDOWN_V2,
             )
-        if text_list[-1]:
+        if text_list and text_list[-1]:
             await self._bot.send_message(
                 chat_id=self._chat_id,
                 text=text_list[-1],

@@ -71,6 +71,8 @@ class VKAgentMessagePrinter(AgentMessageCollector):
         ]
 
         for chunk in text_chunks:
+            if not chunk:
+                continue
             await self._bot.api.messages.send(
                 peer_id=self._peer_id,
                 message=chunk,
