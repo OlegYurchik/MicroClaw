@@ -6,6 +6,18 @@ from typing import Any, Self
 from pydantic import BaseModel, Field, field_serializer, field_validator
 
 
+class InterruptEntry(BaseModel):
+    id: str
+    value: Any
+    description: str | None = None
+    session_id: str | None = None
+
+
+class DecisionEnum(str, enum.Enum):
+    APPROVE = "approve"
+    REJECT = "reject"
+
+
 class Spending(BaseModel):
     input_tokens: int = 0
     output_tokens: int = 0

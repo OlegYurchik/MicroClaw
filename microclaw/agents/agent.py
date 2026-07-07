@@ -1,7 +1,6 @@
 import contextlib
 import datetime
 import json
-import logging
 import pathlib
 import traceback
 import uuid
@@ -22,14 +21,20 @@ from langchain_openai import ChatOpenAI
 from langchain_ollama import ChatOllama
 from langchain_core.runnables import RunnableLambda
 from deepagents import create_deep_agent
-from langchain.agents.middleware import wrap_tool_call
+from langchain.agents.middleware import wrap_tool_call, wrap_model_call
 from langchain.agents.middleware import (
     ModelCallLimitMiddleware,
     ModelRetryMiddleware,
     ToolCallLimitMiddleware,
 )
-from langchain.agents.middleware.types import AgentMiddleware
+from langchain.agents.middleware.types import (
+    AgentMiddleware,
+    ModelRequest,
+    ModelResponse,
+)
 from langchain.messages import ToolMessage
+from langgraph.types import Command, Interrupt
+from loguru import logger
 
 from microclaw.agents.settings import (
     AgentSettings,
@@ -40,9 +45,10 @@ from microclaw.agents.settings import (
     MCPRemoteSettings,
     MCPSettings,
 )
-from microclaw.dto import AgentMessage, Spending
+from microclaw.dto import AgentMessage, DecisionEnum, InterruptEntry, Spending
 from microclaw.toolkits import BaseToolKit
 from microclaw.toolkits.memory import MemoryToolKit
+from .checkpointer import SyncerCheckpointer
 from .dto import SummaryValues, SummaryMemoryValues, AgentPromptValues, SystemValues, MCPInfo
 
 
@@ -60,9 +66,6 @@ def _patched_summarization_middleware():
         deepagents.graph.create_summarization_middleware = original
 
 
-logger = logging.getLogger(__name__)
-
-
 class Agent:
     TEMPLATES_DIR = pathlib.Path(__file__).parent / "templates"
 
@@ -72,6 +75,7 @@ class Agent:
             model_settings: ModelSettings,
             provider_settings: ProviderSettings,
             toolkits: dict[str, BaseToolKit],
+            syncer: SyncerInterface,
             mcp_settings: dict[str, MCPSettings] | None = None,
             subagents: list["Agent"] | None = None,
             client=None,
@@ -82,6 +86,7 @@ class Agent:
         self._provider_settings = provider_settings
         self._toolkits = toolkits
         self._skills = skills or []
+        self._checkpointer = SyncerCheckpointer(syncer)
 
         self._memory_toolkit = None
         for toolkit in toolkits.values():
@@ -136,10 +141,6 @@ class Agent:
         return self._settings.identity.description if self._settings.identity else None
 
     def as_subagent(self) -> dict:
-        """
-        Превращает текущий объект Agent в CompiledSubAgent для использования
-        в родительском агенте DeepAgents.
-        """
         async def _runnable(input_data: dict) -> dict:
             messages = input_data.get("messages", [])
             agent_messages = []
@@ -223,23 +224,88 @@ class Agent:
             messages: list[AgentMessage],
             channel: "BaseChannel | None" = None,  # noqa: F821
             stream: bool = False,
-    ) -> AsyncGenerator[AgentMessage]:
+    ) -> AsyncGenerator[AgentMessage, None]:
         from microclaw.channels import BaseChannel
 
+        session_id = BaseChannel.get_current_session_id()
         request_id = BaseChannel.get_current_request_id()
         langchain_messages: list[BaseMessage] = self._convert_to_langchain_messages(messages)
         system_prompt = await self._get_agent_prompt(channel=channel)
 
         logger.info(
-            "[%s] Agent ask started messages_count=%s tools_count=%s",
-            request_id, len(messages), len(self._tools),
+            "[%s] Agent ask started session=%s messages_count=%s tools_count=%s",
+            request_id, session_id, len(messages), len(self._tools),
         )
 
+        if session_id is not None:
+            await self._checkpointer.adelete_thread(str(session_id))
+
+        agent = await self._create_agent(
+            channel=channel,
+            system_prompt=system_prompt,
+        )
+
+        config = {
+            "recursion_limit": 1000,
+            "configurable": {"thread_id": str(session_id or "")},
+        }
+
+        events_generator = agent.astream_events(
+            {"messages": langchain_messages},
+            config=config,
+            version="v2",
+        )
+
+        async for msg in self._process_events(events_generator, request_id, stream, messages=messages):
+            yield msg
+
+        logger.info("[%s] Agent ask finished", request_id)
+
+    async def handle_confirmation(
+            self,
+            session_id: uuid.UUID,
+            decision: DecisionEnum,
+    ) -> AsyncGenerator[AgentMessage, None]:
+        from microclaw.channels import BaseChannel
+
+        request_id = BaseChannel.get_current_request_id()
+        logger.info(
+            "[%s] Agent handle_confirmation started session=%s decision=%s",
+            request_id, session_id, decision,
+        )
+
+        system_prompt = await self._get_agent_prompt(channel=None)
+        agent = await self._create_agent(
+            channel=None,
+            system_prompt=system_prompt,
+        )
+
+        config = {
+            "recursion_limit": 1000,
+            "configurable": {"thread_id": str(session_id)},
+        }
+
+        events_generator = agent.astream_events(
+            Command(resume=decision.value),
+            config=config,
+            version="v2",
+        )
+
+        async for msg in self._process_events(events_generator, request_id, stream=False):
+            yield msg
+
+        logger.info("[%s] Agent handle_confirmation finished", request_id)
+
+    async def _create_agent(
+            self,
+            channel: "BaseChannel | None",
+            system_prompt: str,
+    ):
         mcp_tools = []
         try:
             mcp_tools = list(await self._mcp.get_tools())
-        except Exception as e:
-            pass
+        except Exception as exception:
+            logger.warning(f"Cannot load MCP tools: {exception}")
 
         tools = list(self._tools) + mcp_tools
         if channel is not None:
@@ -260,7 +326,6 @@ class Agent:
             backoff_factor=self._settings.model_retry_backoff_factor,
             initial_delay=self._settings.model_retry_initial_delay,
         )
-        config = {"recursion_limit": 1000}
 
         with _patched_summarization_middleware():
             agent = create_deep_agent(
@@ -268,16 +333,23 @@ class Agent:
                 tools=tools,
                 system_prompt=system_prompt,
                 subagents=subagent_specs,
-                middleware=[_handle_tool_errors, model_retry, tool_call_limiter, model_call_limiter],
+                middleware=[_handle_tool_errors, _disable_parallel_tool_calls, model_retry, tool_call_limiter, model_call_limiter],
                 skills=self._skills,
+                checkpointer=self._checkpointer,
             )
 
-        events_generator = agent.astream_events(
-            {"messages": langchain_messages},
-            config=config,
-            version="v2",
-        )
+        return agent
 
+    async def _process_events(
+            self,
+            events_generator,
+            request_id: uuid.UUID,
+            stream: bool,
+            messages: list[AgentMessage] | None = None,
+    ) -> AsyncGenerator[AgentMessage, None]:
+        from microclaw.channels import BaseChannel
+
+        session_id = BaseChannel.get_current_session_id()
         spending = self._get_empty_spending()
         accumulated_message: AgentMessage | None = None
         current_chunked_message_id: str | None = None
@@ -292,11 +364,12 @@ class Agent:
                         chunked_message_id=current_chunked_message_id,
                     )
                     spending = self._get_empty_spending()
-                    spending.input_tokens += sum(
-                        self._get_tokens_count(text=message.text)
-                        for message in messages
-                        if message.text
-                    )
+                    if messages:
+                        spending.input_tokens += sum(
+                            self._get_tokens_count(text=message.text)
+                            for message in messages
+                            if message.text
+                        )
                 case "on_chat_model_stream":
                     chunk = event["data"]["chunk"]
                     text = self._convert_content_to_text(chunk.content)
@@ -312,15 +385,38 @@ class Agent:
                         yield message
                     else:
                         accumulated_message.text = (accumulated_message.text or "") + message.text
+                case "on_chain_stream":
+                    chunk = event["data"].get("chunk", {})
+                    if isinstance(chunk, dict) and "__interrupt__" in chunk:
+                        interrupts = chunk["__interrupt__"]
+                        entries = []
+                        for intr in interrupts:
+                            val = intr.value
+                            description = (
+                                val.get("description", str(val))
+                                if isinstance(val, dict)
+                                else str(val)
+                            )
+                            entries.append(
+                                InterruptEntry(
+                                    id=intr.id,
+                                    value=val,
+                                    description=description,
+                                    session_id=str(session_id) if session_id else None,
+                                )
+                            )
+                        yield AgentMessage(
+                            role="request_confirmation",
+                            text=json.dumps([entry.model_dump() for entry in entries], default=str),
+                        )
+                        return
                 case "on_chat_model_end":
                     output = event["data"]["output"]
-                    # TODO: Enable later
                     if False and (usage_metadata := getattr(output, "usage_metadata", None)):
                         spending.input_tokens = usage_metadata.get("input_tokens", spending.input_tokens)
                         spending.output_tokens = usage_metadata.get("output_tokens", spending.output_tokens)
                         spending.cache_read_tokens = usage_metadata.get("cache_read_tokens", spending.cache_read_tokens)
                         spending.cache_write_tokens = usage_metadata.get("cache_write_tokens", spending.cache_write_tokens)
-                    # TODO: Enable leter
                     elif (
                             False and
                             (response_metadata := getattr(output, "response_metadata", None)) and
@@ -379,8 +475,6 @@ class Agent:
                         role="tool",
                         text=text,
                     )
-
-        logger.info("[%s] Agent ask finished", request_id)
 
     async def summarize_memory(
             self,
@@ -756,3 +850,9 @@ async def _handle_tool_errors(request, handler) -> Any:
             content=f"Tool error: {exception}\n\nTraceback:\n{tb}",
             tool_call_id=request.tool_call["id"],
         )
+
+
+@wrap_model_call
+async def _disable_parallel_tool_calls(request: ModelRequest, handler) -> Any:
+    request = request.override(model_settings={"parallel_tool_calls": False})
+    return await handler(request)
