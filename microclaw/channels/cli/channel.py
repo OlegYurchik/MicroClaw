@@ -1,9 +1,11 @@
+import datetime
+import json
 import uuid
 
 from microclaw.agents import Agent
 from microclaw.channels.base import BaseChannel
 from microclaw.channels.utils import AgentMessageSaver
-from microclaw.dto import AgentMessage, User
+from microclaw.dto import AgentMessage, DecisionEnum, User
 from microclaw.sessions_storages.interfaces import SessionsStorageInterface
 from microclaw.sessions_storages.filters import MessageFilter
 from pydantic_filters.pagination import OffsetPagination as BasePagination
@@ -112,8 +114,13 @@ class CLIChannel(BaseChannel):
             await printer.show_thinking()
             async with (printer, saver):
                 async for new_message in agent.ask(messages=messages, channel=self, stream=True):
-                    await saver.register_new_message(new_message)
-                    await printer.register_new_message(new_message)
+                    if new_message.role == "request_confirmation":
+                        entries = json.loads(new_message.text)
+                        for entry in entries:
+                            await self._send_confirmation(entry, session_id)
+                    else:
+                        await saver.register_new_message(new_message)
+                        await printer.register_new_message(new_message)
 
             async with printer:
                 if (
@@ -143,6 +150,11 @@ class CLIChannel(BaseChannel):
         await printer.print_spent()
 
     async def request_confirmation(self, question: str) -> uuid.UUID:
+        warnings.warn(
+            "request_confirmation is deprecated; use interrupt() in tools instead",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         if self._session_id is None:
             raise RuntimeError("Attribute _session_id in CLIChannel is None")
 
@@ -153,6 +165,59 @@ class CLIChannel(BaseChannel):
             confirmation_id=confirmation_id,
         )
         return confirmation_id
+
+    async def _send_confirmation(self, entry: dict, session_id: uuid.UUID):
+        confirmation_id = uuid.uuid4()
+        await self._app.add_confirmation_message(
+            question=entry.get("description", ""),
+            session_id=session_id,
+            confirmation_id=confirmation_id,
+        )
+        await self._syncer.set(
+            f"{self.CONFIRMATION_PREFIX}:{session_id}:{confirmation_id}",
+            {
+                "session_id": str(session_id),
+                "interrupt_id": entry.get("id"),
+                "status": "pending",
+                "created_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            },
+        )
+
+    async def _handle_confirmation_callback(self, session_id: uuid.UUID, confirmation_id: uuid.UUID, approved: bool):
+        key = f"{self.CONFIRMATION_PREFIX}:{session_id}:{confirmation_id}"
+        record = await self._syncer.get(key)
+        if not record:
+            return
+
+        _session_id = uuid.UUID(record["session_id"])
+        request_id = uuid.uuid4()
+        agent = self._agent
+
+        with self.set_current_request_id(request_id):
+            printer = AgentMessagePrinter(
+                app=self._app,
+                session_id=_session_id,
+                sessions_storage=self._sessions_storage,
+                agent=agent,
+                show_context_usage=self._settings.show_context_usage,
+                show_costs=self._settings.show_costs,
+                debug=self._settings.debug,
+            )
+            saver = AgentMessageSaver(
+                sessions_storage=self._sessions_storage,
+                session_id=_session_id,
+            )
+
+            async with (printer, saver):
+                async for msg in agent.handle_confirmation(
+                    session_id=_session_id,
+                    decision=DecisionEnum.APPROVE if approved else DecisionEnum.REJECT,
+                ):
+                    await saver.register_new_message(msg)
+                    await printer.register_new_message(msg)
+
+        record["status"] = "resolved"
+        await self._syncer.set(key, record)
 
     async def _create_session(self) -> uuid.UUID:
         session_id = uuid.uuid4()

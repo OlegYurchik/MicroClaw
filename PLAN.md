@@ -9,62 +9,35 @@
 - `SyncerCheckpointer` — адаптер поверх `Syncer` (pickle + base64, TTL, `adelete_thread`).
 - `DecisionEnum` (dto.py) — `APPROVE` / `REJECT`.
 - `_disable_parallel_tool_calls` — middleware `@wrap_model_call` для последовательных вызовов тулз.
-- Базовая обработка `__interrupt__` в `Agent.ask()` — yield `AgentMessage(role="request_confirmation", text=json.dumps([...]))`.
+- `Agent.ask()` — `thread_id = session_id`, очистка checkpoint перед запуском, yield `AgentMessage(role="request_confirmation", text=json.dumps([...]))`.
 - `Agent.handle_confirmation()` — восстановление графа через `Command(resume=decision.value)`.
 - `Agent._create_agent()` + `Agent._process_events()` — структура методов.
-- `thread_id = session_id` — `ask()` использует `session_id`, `handle_confirmation()` тоже.
-- Очистка checkpoint перед `ask()` — `await self._checkpointer.adelete_thread(str(session_id))`.
 - `InterruptEntry` (dto.py) — `{id, value, description, session_id}`.
 - `session_id` проставляется в `InterruptEntry` при формировании entries в `_process_events`.
 
+### Каналы (Этап 1):
+
+- **ConfirmationMixin** (`base.py`):
+  - `wait_for_confirmation()` — **удалён**, бросает `NotImplementedError`.
+  - `request_confirmation()` / `resolve_confirmation()` — помечены `DeprecationWarning`.
+  - `reject_all_pending_confirmations()` — новая логика через syncer + `agent.handle_confirmation(REJECT)`.
+- **AgentMessageSaver** (`utils.py`) — skip `request_confirmation`, не сохраняет в историю чата.
+- **Telegram** (`base.py`):
+  - `_generate_and_send_answer` — обработка `request_confirmation` в потоке, отправка inline-кнопок, сохранение в syncer.
+  - `handle_confirmation_callback` — загрузка из syncer, вызов `agent.handle_confirmation()`, стриминг результата в printer/saver.
+- **VK** (`base.py`) — аналогично Telegram.
+- **CLI** (`channel.py`, `messages.py`):
+  - Обработка `request_confirmation` в `_generate_and_send_answer`.
+  - `_handle_confirmation_callback` — вызов `agent.handle_confirmation()` с printer/saver.
+  - `messages.py` — callback через `_handle_confirmation_callback` вместо `resolve_confirmation`.
+
 ## Осталось
 
-### Этап 1 — Рефакторинг каналов и ConfirmationMixin
-
-**Цель:** перейти от блокирующего `wait_for_confirmation()` к асинхронной обработке interrupts через `agent.handle_confirmation()`.
-
-#### 1.1 ConfirmationMixin — рефакторинг методов
-
-- **`wait_for_confirmation()`** — **удалить**. Блокирующий polling ломает durable execution (нода висит и не сохраняет checkpoint).
-- **`request_confirmation()`** — пометить **deprecated**. Тулзы больше не вызывают его напрямую; канал сам реагирует на `role="request_confirmation"` из потока.
-- **`resolve_confirmation()`** — адаптировать: вместо `syncer.set("confirm:{session_id}:{id}", approved)` вызывать `agent.handle_confirmation(session_id, decision)`.
-- **`reject_all_pending_confirmations(session_id)`** — изменить логику:
-  - Загрузить из syncer все записи по паттерну `confirmation:{session_id}:*`.
-  - Для каждой со `status="pending"` вызвать `agent.handle_confirmation(session_id, DecisionEnum.REJECT)`.
-  - Обновить статус на `"rejected"`.
-
-#### 1.2 Обработка `role="request_confirmation"` в потоке
-
-При получении `AgentMessage(role="request_confirmation", text="[...]")` из `agent.ask()`:
-
-- `AgentMessageSaver` — **не сохранять** в историю чата (чтобы не засорять контекст LLM).
-- Парсим `text` как JSON → `list[InterruptEntry]`.
-- Для каждого entry отправляем отдельное сообщение с кнопками:
-  - **Telegram / VK** — inline-кнопки (Подтвердить / Отклонить) + текст `description`.
-  - **CLI** — существующий TUI-диалог подтверждения.
-- Сохраняем в syncer: `syncer.set(f"confirmation:{session_id}:{confirmation_id}", {...})`.
-  - Структура: `{session_id, interrupt_id, status="pending", created_at}`.
-  - `session_id` — ключевое поле, используется при вызове `agent.handle_confirmation()`.
-
-#### 1.3 Callback / ввод пользователя
-
-- **Telegram / VK** — callback с `confirmation_id` и `approved`.
-- **CLI** — реакция на TUI-диалог.
-- По `confirmation_id` достаём из syncer `session_id`.
-- Устанавливаем `request_id` через `set_current_request_id()` (как при `ask()`).
-- Вызываем `agent.handle_confirmation(session_id, decision=DecisionEnum.APPROVE | REJECT)`.
-- Результат стримим в `AgentMessagePrinter`.
-- Обновляем статус записи на `"resolved"` или удаляем ключ.
-
-#### 1.4 Восстановление при старте канала `restore_pending_confirmations()`
+### Этап 1 — Восстановление при старте канала `restore_pending_confirmations()`
 
 - Загружаем из syncer все записи по паттерну `confirmation:{session_id}:*`.
 - Для каждой со `status="pending"` перерисовываем кнопки / TUI-диалог.
-- Если запись висит слишком долго — можно отклонить автоматически (опционально).
-
-#### 1.5 Принтеры
-
-- VK- и CLI-принтеры сейчас фильтруют только `role="assistant"` — добавить обработку `request_confirmation` (отображать запрос пользователю).
+- Требуется mapping `session_id → chat_id/peer_id` для повторной отправки UI.
 
 ### Этап 2 — Рефакторинг тулз
 

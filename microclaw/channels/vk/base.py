@@ -1,6 +1,7 @@
 import asyncio
 import contextlib
 import contextvars
+import datetime
 import json
 import random
 import uuid
@@ -17,7 +18,7 @@ from microclaw.agents import Agent
 from microclaw.channels.base import BaseChannel
 from microclaw.channels.settings import ChannelTypeEnum
 from microclaw.channels.utils import AgentMessageSaver
-from microclaw.dto import AgentMessage
+from microclaw.dto import AgentMessage, DecisionEnum
 from microclaw.sessions_storages import SessionsStorageInterface
 from microclaw.sessions_storages.filters import MessageFilter
 from microclaw.stt import STT
@@ -235,11 +236,31 @@ class BaseVKChannel(BaseChannel):
 
             user = await self._get_or_create_user(peer_id)
             session_id = await self._get_or_create_session(user, peer_id)
-            await self.resolve_confirmation(
-                session_id=session_id,
-                confirmation_id=uuid.UUID(confirmation_id_str),
-                approved=approved,
+
+            key = f"{self.CONFIRMATION_PREFIX}:{session_id}:{confirmation_id_str}"
+            record = await self._syncer.get(key)
+            if not record:
+                logger.warning("VK confirmation not found: %s", key)
+                return
+
+            _session_id = uuid.UUID(record["session_id"])
+            agent = await self.get_agent_for_user(user) or self._agent
+            printer = self._printer(peer_id, _session_id, agent)
+            saver = AgentMessageSaver(
+                sessions_storage=self._sessions_storage,
+                session_id=_session_id,
             )
+
+            async with (printer, saver):
+                async for msg in agent.handle_confirmation(
+                    session_id=_session_id,
+                    decision=DecisionEnum.APPROVE if approved else DecisionEnum.REJECT,
+                ):
+                    await saver.register_new_message(msg)
+                    await printer.register_new_message(msg)
+
+            record["status"] = "resolved"
+            await self._syncer.set(key, record)
 
             status_text = "✅ Confirmed" if approved else "❌ Rejected"
             event_id = obj.get("event_id")
@@ -285,8 +306,13 @@ class BaseVKChannel(BaseChannel):
                 ):
                     async with (printer, saver):
                         async for new_message in agent.ask(messages=messages, channel=self):
-                            await saver.register_new_message(new_message)
-                            await printer.register_new_message(new_message)
+                            if new_message.role == "request_confirmation":
+                                entries = json.loads(new_message.text)
+                                for entry in entries:
+                                    await self._send_confirmation(entry, peer_id, session_id)
+                            else:
+                                await saver.register_new_message(new_message)
+                                await printer.register_new_message(new_message)
 
                     if (
                         await self.summarize_dialog_if_needed(agent=agent, session_id=session_id)
@@ -322,6 +348,33 @@ class BaseVKChannel(BaseChannel):
         )
         return confirmation_id
 
+    async def _send_confirmation(self, entry: dict, peer_id: int, session_id: uuid.UUID):
+        confirmation_id = uuid.uuid4()
+        keyboard = Keyboard(inline=True)
+        keyboard.add(Callback(
+            "✅ Confirm",
+            payload={"id": str(confirmation_id), "approved": "yes"},
+        ))
+        keyboard.row()
+        keyboard.add(Callback(
+            "❌ Cancel",
+            payload={"id": str(confirmation_id), "approved": "no"},
+        ))
+        await self._bot.api.messages.send(
+            peer_id=peer_id,
+            message=entry.get("description", ""),
+            keyboard=keyboard.get_json(),
+            random_id=random.randint(-2147483648, 2147483647),
+        )
+        await self._syncer.set(
+            f"{self.CONFIRMATION_PREFIX}:{session_id}:{confirmation_id}",
+            {
+                "session_id": str(session_id),
+                "interrupt_id": entry.get("id"),
+                "status": "pending",
+                "created_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            },
+        )
 
     def _is_auth_disabled(self, message: Message) -> bool:
         if not self._settings.allow_from:

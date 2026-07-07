@@ -118,7 +118,7 @@ class ActionMessageBox(BaseMessageBox):
     async def on_button_pressed(self, event: Button.Pressed) -> None:
         approved = event.button.id == self.CONFIRM_BUTTON_ID
 
-        await self._channel.resolve_confirmation(
+        await self._channel._handle_confirmation_callback(
             session_id=self._session_id,
             confirmation_id=self._confirmation_id,
             approved=approved,

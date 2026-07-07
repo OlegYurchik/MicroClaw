@@ -1,5 +1,7 @@
 import asyncio
 import contextlib
+import datetime
+import json
 import socket
 import uuid
 
@@ -14,7 +16,7 @@ from microclaw.agents import Agent
 from microclaw.channels.base import BaseChannel
 from microclaw.channels.settings import ChannelTypeEnum
 from microclaw.channels.utils import AgentMessageSaver
-from microclaw.dto import AgentMessage
+from microclaw.dto import AgentMessage, DecisionEnum, InterruptEntry
 from microclaw.sessions_storages import SessionsStorageInterface
 from microclaw.sessions_storages.filters import MessageFilter
 from microclaw.stt import STT
@@ -286,11 +288,41 @@ class BaseTelegramChannel(BaseChannel):
 
             confirmation_id = uuid.UUID(callback_data.id)
             approved = callback_data.approved == "yes"
-            await self.resolve_confirmation(
-                session_id=session_id,
-                confirmation_id=confirmation_id,
-                approved=approved,
+
+            key = f"{self.CONFIRMATION_PREFIX}:{session_id}:{confirmation_id}"
+            record = await self._syncer.get(key)
+            if not record:
+                await callback_query.answer(text="Confirmation not found", show_alert=True)
+                return
+
+            _session_id = uuid.UUID(record["session_id"])
+            agent = await self.get_agent_for_user(user) or self._agent
+
+            printer = AgentMessagePrinter(
+                bot=self._bot,
+                chat_id=callback_query.message.chat.id,
+                session_id=_session_id,
+                sessions_storage=self._sessions_storage,
+                agent=agent,
+                show_context_usage=self._settings.show_context_usage,
+                show_costs=self._settings.show_costs,
+                debug=self._settings.debug,
             )
+            saver = AgentMessageSaver(
+                sessions_storage=self._sessions_storage,
+                session_id=_session_id,
+            )
+
+            async with (printer, saver):
+                async for msg in agent.handle_confirmation(
+                    session_id=_session_id,
+                    decision=DecisionEnum.APPROVE if approved else DecisionEnum.REJECT,
+                ):
+                    await saver.register_new_message(msg)
+                    await printer.register_new_message(msg)
+
+            record["status"] = "resolved"
+            await self._syncer.set(key, record)
 
             status_text = "✅ Confirmed" if approved else "❌ Rejected"
             keyboard = aiogram.types.InlineKeyboardMarkup(
@@ -369,8 +401,13 @@ class BaseTelegramChannel(BaseChannel):
             ):
                 async with (printer, saver):
                     async for new_message in agent.ask(messages=messages, channel=self):
-                        await saver.register_new_message(new_message)
-                        await printer.register_new_message(new_message)
+                        if new_message.role == "request_confirmation":
+                            entries = json.loads(new_message.text)
+                            for entry in entries:
+                                await self._send_confirmation(entry, chat_id, session_id)
+                        else:
+                            await saver.register_new_message(new_message)
+                            await printer.register_new_message(new_message)
 
                 if (
                         await self.summarize_dialog_if_needed(agent=agent, session_id=session_id) and
@@ -380,6 +417,36 @@ class BaseTelegramChannel(BaseChannel):
 
         logger.info(
             f"[{request_id}] Finished generation for session_id={session_id} chat_id={chat_id}",
+        )
+
+    async def _send_confirmation(self, entry: dict, chat_id: int, session_id: uuid.UUID):
+        confirmation_id = uuid.uuid4()
+        keyboard = aiogram.types.InlineKeyboardMarkup(inline_keyboard=[
+            [
+                aiogram.types.InlineKeyboardButton(
+                    text="✅ Confirm",
+                    callback_data=ConfirmationCallbackData(id=str(confirmation_id), approved="yes").pack(),
+                ),
+                aiogram.types.InlineKeyboardButton(
+                    text="❌ Cancel",
+                    callback_data=ConfirmationCallbackData(id=str(confirmation_id), approved="no").pack(),
+                ),
+            ]
+        ])
+        await self._bot.send_message(
+            chat_id=chat_id,
+            text=f"```\n{entry.get('description', '')}\n```",
+            reply_markup=keyboard,
+            parse_mode=ParseMode.MARKDOWN_V2,
+        )
+        await self._syncer.set(
+            f"{self.CONFIRMATION_PREFIX}:{session_id}:{confirmation_id}",
+            {
+                "session_id": str(session_id),
+                "interrupt_id": entry.get("id"),
+                "status": "pending",
+                "created_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            },
         )
 
     @contextlib.asynccontextmanager

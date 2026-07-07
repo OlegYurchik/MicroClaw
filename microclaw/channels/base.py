@@ -3,12 +3,13 @@ import contextlib
 import contextvars
 import datetime
 import uuid
+import warnings
 
 import facet
 from typing import Self
 
 from microclaw.agents import Agent, AgentSettings
-from microclaw.dto import AgentMessage, User
+from microclaw.dto import AgentMessage, DecisionEnum, InterruptEntry, User
 from microclaw.sessions_storages.filters import MessageFilter
 from microclaw.sessions_storages.interfaces import SessionsStorageInterface
 from microclaw.stt import STT
@@ -21,8 +22,14 @@ from .settings import ChannelSettings
 
 class ConfirmationMixin:
     CONFIRMATION_POLL_INTERVAL = 0.1
+    CONFIRMATION_PREFIX = "confirmation"
 
     async def request_confirmation(self, question: str) -> uuid.UUID:
+        warnings.warn(
+            "request_confirmation is deprecated; use interrupt() in tools instead",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         raise NotImplementedError
 
     async def resolve_confirmation(
@@ -31,6 +38,11 @@ class ConfirmationMixin:
             confirmation_id: uuid.UUID,
             approved: bool,
     ) -> None:
+        warnings.warn(
+            "resolve_confirmation is deprecated; use syncer + agent.handle_confirmation() instead",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         await self._syncer.set(f"confirm:{session_id}:{confirmation_id}", approved)
 
     async def wait_for_confirmation(
@@ -38,18 +50,29 @@ class ConfirmationMixin:
             session_id: uuid.UUID,
             confirmation_id: uuid.UUID,
     ) -> bool:
-        while True:
-            result = await self._syncer.get(f"confirm:{session_id}:{confirmation_id}")
-            if result is not None:
-                await self._syncer.delete(f"confirm:{session_id}:{confirmation_id}")
-                return result
-            await asyncio.sleep(self.CONFIRMATION_POLL_INTERVAL)
+        raise NotImplementedError(
+            "wait_for_confirmation is removed; use interrupt() + handle_confirmation() instead"
+        )
 
     async def reject_all_pending_confirmations(self, session_id: uuid.UUID) -> None:
-        pattern = f"confirm:{session_id}:*"
+        pattern = f"{self.CONFIRMATION_PREFIX}:{session_id}:*"
         keys = await self._syncer.scan_keys(pattern)
         for key in keys:
-            await self._syncer.set(key, False)
+            data = await self._syncer.get(key)
+            if data and data.get("status") == "pending":
+                data["status"] = "rejected"
+                await self._syncer.set(key, data)
+                _session_id = data.get("session_id")
+                if _session_id and hasattr(self, "_agent"):
+                    try:
+                        agent = self._agent
+                        async for _ in agent.handle_confirmation(
+                            session_id=_session_id,
+                            decision=DecisionEnum.REJECT,
+                        ):
+                            pass
+                    except Exception:
+                        pass  # best effort
 
 
 class BaseChannel(facet.AsyncioServiceMixin, ConfirmationMixin):

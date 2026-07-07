@@ -52,6 +52,8 @@ class AgentMessageSaver(AgentMessageCollector):
         return await super().__aexit__(exc_type, exc_val, exc_tb)
 
     async def handle_new_message(self, new_message: AgentMessage):
+        if new_message.role == "request_confirmation":
+            return  # Не сохранять прерывания в историю чата
         if self.is_new_message_chunk:
             await self._flush_messages()
             self._messages.append(new_message.model_copy())
