@@ -1,3 +1,5 @@
+from microclaw.dto import DecisionEnum
+from langgraph.types import interrupt
 import asyncio
 import email
 import re
@@ -56,8 +58,7 @@ async def _protocol_starttls(self, host, ssl_context=None):
 
 
 async def _imap_starttls(self):
-    return (await asyncio.wait_for(
-        self.protocol.starttls(self.host), self.timeout))
+    return await asyncio.wait_for(self.protocol.starttls(self.host), self.timeout)
 
 
 aioimaplib.IMAP4ClientProtocol.starttls = _protocol_starttls
@@ -143,21 +144,23 @@ class EmailToolKit(BaseToolKit[EmailSettings]):
                     continue
 
                 folder_name = match.group(1)
-                folders.append(EmailFolder(
-                    name=folder_name,
-                    path=folder_name,
-                    flags=[],
-                ))
+                folders.append(
+                    EmailFolder(
+                        name=folder_name,
+                        path=folder_name,
+                        flags=[],
+                    )
+                )
 
             return folders
 
     @tool
     async def get_messages(
-            self,
-            folder: str = "",
-            limit: int = 5,
-            unread_only: bool = False,
-            since_date: str | None = None,
+        self,
+        folder: str = "",
+        limit: int = 5,
+        unread_only: bool = False,
+        since_date: str | None = None,
     ) -> list[EmailMessage]:
         """
         Get list of email messages from a folder.
@@ -205,7 +208,9 @@ class EmailToolKit(BaseToolKit[EmailSettings]):
             return messages
 
     @tool
-    async def get_message_by_uid(self, uid: str, folder: str = "") -> FullEmailMessage | None:
+    async def get_message_by_uid(
+        self, uid: str, folder: str = ""
+    ) -> FullEmailMessage | None:
         """
         Get a specific email message by its UID.
 
@@ -237,17 +242,19 @@ class EmailToolKit(BaseToolKit[EmailSettings]):
                 return None
 
             message = email.message_from_bytes(raw_message)
-            return self._parse_full_email_message(message=message, uid=uid, folder=folder)
+            return self._parse_full_email_message(
+                message=message, uid=uid, folder=folder
+            )
 
     @tool
     async def search_messages(
-            self,
-            subject: str | None = None,
-            from_addr: str | None = None,
-            to_addr: str | None = None,
-            body_text: str | None = None,
-            folder: str = "",
-            limit: int = 50,
+        self,
+        subject: str | None = None,
+        from_addr: str | None = None,
+        to_addr: str | None = None,
+        body_text: str | None = None,
+        folder: str = "",
+        limit: int = 50,
     ) -> list[EmailMessage]:
         """
         Search for email messages matching criteria.
@@ -336,7 +343,9 @@ class EmailToolKit(BaseToolKit[EmailSettings]):
             if self.settings.delete_mode is PermissionModeEnum.REQUEST:
                 confirmation_messages = []
                 for uid in uids:
-                    status, message_parts = await client.uid("FETCH", uid, "(RFC822.HEADER)")
+                    status, message_parts = await client.uid(
+                        "FETCH", uid, "(RFC822.HEADER)"
+                    )
                     if status == "OK" and message_parts:
                         for part in message_parts:
                             if isinstance(part, bytearray):
@@ -346,13 +355,16 @@ class EmailToolKit(BaseToolKit[EmailSettings]):
                                 confirmation_messages.append(f"* {subject}")
                                 break
                     else:
-                        confirmation_messages.append(f"* UID {uid} (unable to load details)")
+                        confirmation_messages.append(
+                            f"* UID {uid} (unable to load details)"
+                        )
                 confirmation_text = "\n".join(confirmation_messages)
                 confirmation_request_text = (
                     f"Delete the following emails from {self.settings.username}?\n"
                     f"{confirmation_text}"
                 )
-                if not await self.request_confirmation(confirmation_request_text):
+                decision = interrupt({"description": confirmation_request_text})
+                if decision == DecisionEnum.REJECT.value:
                     raise UserDeniedAction()
 
             for uid in uids:
@@ -364,10 +376,10 @@ class EmailToolKit(BaseToolKit[EmailSettings]):
 
     @tool
     async def move_message(
-            self,
-            uid: str,
-            destination_folder: str,
-            source_folder: str = "",
+        self,
+        uid: str,
+        destination_folder: str,
+        source_folder: str = "",
     ) -> bool:
         """
         Move an email message to another folder.
@@ -444,14 +456,14 @@ class EmailToolKit(BaseToolKit[EmailSettings]):
 
     @tool
     async def send_email(
-            self,
-            to: str | list[str],
-            subject: str,
-            body_text: str = "",
-            body_html: str = "",
-            cc: str | list[str] | None = None,
-            bcc: str | list[str] | None = None,
-            attachments: list[str] | None = None,
+        self,
+        to: str | list[str],
+        subject: str,
+        body_text: str = "",
+        body_html: str = "",
+        cc: str | list[str] | None = None,
+        bcc: str | list[str] | None = None,
+        attachments: list[str] | None = None,
     ) -> bool:
         """
         Send an email message.
@@ -502,9 +514,7 @@ class EmailToolKit(BaseToolKit[EmailSettings]):
 
         if self.settings.send_mode is PermissionModeEnum.REQUEST:
             confirmation_request_text = (
-                "Send message?\n"
-                "\n"
-                f"📧 To: {', '.join(to_list)}\n"
+                f"Send message?\n\n📧 To: {', '.join(to_list)}\n"
             )
             if cc_list:
                 confirmation_request_text += f"📋 CC: {', '.join(cc_list)}\n"
@@ -512,13 +522,16 @@ class EmailToolKit(BaseToolKit[EmailSettings]):
                 confirmation_request_text += f"🔒 BCC: {', '.join(bcc_list)}\n"
             confirmation_request_text += f"📝 Subject: {subject}\n"
             if attachments:
-                confirmation_request_text += f"📎 Attachments: {', '.join(attachments)}\n"
+                confirmation_request_text += (
+                    f"📎 Attachments: {', '.join(attachments)}\n"
+                )
             confirmation_request_text += (
                 "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
                 f"{(body_text or body_html)[:200]}\n"
                 "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
             )
-            if not await self.request_confirmation(confirmation_request_text):
+            decision = interrupt({"description": confirmation_request_text})
+            if decision == DecisionEnum.REJECT.value:
                 raise UserDeniedAction()
 
         async with self._create_smtp_client() as client:
@@ -561,9 +574,7 @@ class EmailToolKit(BaseToolKit[EmailSettings]):
             return len(uids)
 
     async def _get_uids_by_search(
-            self,
-            client: aioimaplib.IMAP4,
-            *criteria: str
+        self, client: aioimaplib.IMAP4, *criteria: str
     ) -> list[str]:
         try:
             status, data = await client.uid("SEARCH", *criteria)
@@ -607,8 +618,12 @@ class EmailToolKit(BaseToolKit[EmailSettings]):
                 uids.append(uid)
         return uids
 
-    def _parse_full_email_message(self, message: Message, uid: str, folder: str) -> FullEmailMessage:
-        email_message = self._parse_email_message(message=message, uid=uid, folder=folder)
+    def _parse_full_email_message(
+        self, message: Message, uid: str, folder: str
+    ) -> FullEmailMessage:
+        email_message = self._parse_email_message(
+            message=message, uid=uid, folder=folder
+        )
 
         body_text = ""
         body_html = ""
@@ -618,19 +633,33 @@ class EmailToolKit(BaseToolKit[EmailSettings]):
                 content_type = part.get_content_type()
                 content_disposition = str(part.get("Content-Disposition", ""))
 
-                if content_type == "text/plain" and "attachment" not in content_disposition:
-                    body_text = part.get_payload(decode=True).decode(
-                        part.get_content_charset() or "utf-8", errors="replace"
-                    ) or ""
-                elif content_type == "text/html" and "attachment" not in content_disposition:
-                    body_html = part.get_payload(decode=True).decode(
-                        part.get_content_charset() or "utf-8", errors="replace"
-                    ) or ""
+                if (
+                    content_type == "text/plain"
+                    and "attachment" not in content_disposition
+                ):
+                    body_text = (
+                        part.get_payload(decode=True).decode(
+                            part.get_content_charset() or "utf-8", errors="replace"
+                        )
+                        or ""
+                    )
+                elif (
+                    content_type == "text/html"
+                    and "attachment" not in content_disposition
+                ):
+                    body_html = (
+                        part.get_payload(decode=True).decode(
+                            part.get_content_charset() or "utf-8", errors="replace"
+                        )
+                        or ""
+                    )
         else:
             content_type = message.get_content_type()
             payload = message.get_payload(decode=True)
             if payload:
-                decoded_payload = payload.decode(message.get_content_charset() or "utf-8", errors="replace")
+                decoded_payload = payload.decode(
+                    message.get_content_charset() or "utf-8", errors="replace"
+                )
                 if content_type == "text/html":
                     body_html = decoded_payload
                 else:
@@ -642,12 +671,15 @@ class EmailToolKit(BaseToolKit[EmailSettings]):
             if filename or "attachment" in str(part.get("Content-Disposition", "")):
                 if filename:
                     filename = self._decode_header(filename)
-                attachments.append(EmailAttachment(
-                    filename=filename or "unnamed",
-                    content_type=part.get_content_type() or "application/octet-stream",
-                    size=len(part.get_payload(decode=True) or b""),
-                    content_id=part.get("Content-ID", "").strip("<>"),
-                ))
+                attachments.append(
+                    EmailAttachment(
+                        filename=filename or "unnamed",
+                        content_type=part.get_content_type()
+                        or "application/octet-stream",
+                        size=len(part.get_payload(decode=True) or b""),
+                        content_id=part.get("Content-ID", "").strip("<>"),
+                    )
+                )
 
         return FullEmailMessage(
             **email_message.model_dump(),
@@ -656,7 +688,9 @@ class EmailToolKit(BaseToolKit[EmailSettings]):
             attachments=attachments,
         )
 
-    def _parse_email_message(self, message: Message, uid: str, folder: str) -> EmailMessage:
+    def _parse_email_message(
+        self, message: Message, uid: str, folder: str
+    ) -> EmailMessage:
         message_id = message.get("Message-ID", "")
         subject = self._decode_header(message.get("Subject"))
         from_addr = self._decode_header(message.get("From"))

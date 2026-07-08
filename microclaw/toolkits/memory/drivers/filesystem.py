@@ -31,7 +31,9 @@ class FilesystemMemoryDriver(MemoryDriverInterface):
         filename = date.strftime("%Y-%m-%d.md")
         return await self._read_file(self._memory_dir / filename)
 
-    async def append_to_memory(self, content: str, date: datetime.date | None = None) -> None:
+    async def append_to_memory(
+        self, content: str, date: datetime.date | None = None
+    ) -> None:
         file_path = self._general_memory_file
         if date is not None:
             file_path = self._memory_dir / date.strftime("%Y-%m-%d.md")

@@ -5,8 +5,8 @@ from .settings import ToolKitSettings
 
 
 def get_toolkit(
-        key: str,
-        toolkit_settings_or_path: ToolKitSettings | str,
+    key: str,
+    toolkit_settings_or_path: ToolKitSettings | str,
 ) -> BaseToolKit:
     if isinstance(toolkit_settings_or_path, str):
         toolkit_settings = ToolKitSettings(path=toolkit_settings_or_path)

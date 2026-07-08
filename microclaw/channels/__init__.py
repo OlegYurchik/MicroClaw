@@ -8,10 +8,10 @@ from .settings import ChannelSettings, ChannelTypeEnum
 
 
 ChannelSettingsType = (
-    TelegramPollingSettings |
-    TelegramWebhookSettings |
-    VKPollingSettings |
-    VKWebhookSettings
+    TelegramPollingSettings
+    | TelegramWebhookSettings
+    | VKPollingSettings
+    | VKWebhookSettings
 )
 
 

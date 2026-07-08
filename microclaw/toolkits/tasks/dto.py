@@ -43,16 +43,28 @@ class Task(BaseModel):
         le=9,
         description="Priority level (0=undefined, 1=highest, 9=lowest)",
     )
-    due: datetime | date | None = Field(default=None, description="Due date/time of the task")
-    start: datetime | date | None = Field(default=None, description="Start date/time of the task")
+    due: datetime | date | None = Field(
+        default=None, description="Due date/time of the task"
+    )
+    start: datetime | date | None = Field(
+        default=None, description="Start date/time of the task"
+    )
     completed: bool = Field(default=False, description="Whether the task is completed")
-    completed_at: datetime | None = Field(default=None, description="When the task was completed")
-    created: datetime | None = Field(default=None, description="When the task was created")
-    modified: datetime | None = Field(default=None, description="When the task was last modified")
+    completed_at: datetime | None = Field(
+        default=None, description="When the task was completed"
+    )
+    created: datetime | None = Field(
+        default=None, description="When the task was created"
+    )
+    modified: datetime | None = Field(
+        default=None, description="When the task was last modified"
+    )
     percent_complete: int | None = Field(
         default=None,
         ge=0,
         le=100,
         description="Percentage of task completion (0-100)",
     )
-    categories: list[str] = Field(default_factory=list, description="Categories/tags for the task")
+    categories: list[str] = Field(
+        default_factory=list, description="Categories/tags for the task"
+    )

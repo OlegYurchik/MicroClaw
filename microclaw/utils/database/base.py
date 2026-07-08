@@ -51,7 +51,9 @@ class BaseRepository(Generic[DTOType, FilterType]):
                     yield
 
     @contextmanager
-    def _set_session_to_session_context(self, session: AsyncSession) -> Generator[None, None, None]:
+    def _set_session_to_session_context(
+        self, session: AsyncSession
+    ) -> Generator[None, None, None]:
         token = self._session_context.set(session)
         yield
         self._session_context.reset(token)
@@ -60,8 +62,8 @@ class BaseRepository(Generic[DTOType, FilterType]):
         raise NotImplementedError
 
     async def get_items_count(
-            self,
-            filter_: FilterType | None = None,
+        self,
+        filter_: FilterType | None = None,
     ) -> int:
         table = self.get_db_table()
         statement = select(func.count())
@@ -82,7 +84,7 @@ class BaseRepository(Generic[DTOType, FilterType]):
         pagination: BasePagination | None = None,
         sort: BaseSort | None = None,
         options: list | None = None,
-) -> AsyncGenerator[DTOType]:
+    ) -> AsyncGenerator[DTOType]:
         table = self.get_db_table()
         statement = select(table)
         statement = append_to_statement(
@@ -115,9 +117,9 @@ class BaseRepository(Generic[DTOType, FilterType]):
         return db_item.to_item()
 
     async def update_items(
-            self,
-            filter_: FilterType | None = None,
-            **values,
+        self,
+        filter_: FilterType | None = None,
+        **values,
     ) -> AsyncGenerator[DTOType]:
         table = self.get_db_table()
         statement = update(table)
@@ -135,10 +137,10 @@ class BaseRepository(Generic[DTOType, FilterType]):
             yield db_item.to_item()
 
     async def delete_items(
-            self,
-            filter_: FilterType | None = None,
-            pagination: BasePagination | None = None,
-            sort: BaseSort | None = None,
+        self,
+        filter_: FilterType | None = None,
+        pagination: BasePagination | None = None,
+        sort: BaseSort | None = None,
     ):
         table = self.get_db_table()
         statement = delete(table)

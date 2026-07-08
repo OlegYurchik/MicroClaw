@@ -5,10 +5,7 @@ from .settings import UsersStorageSettings
 from .filesystem import FilesystemUsersStorageSettings
 
 
-UsersStorageSettingsType = (
-    MemoryUsersStorageSettings |
-    FilesystemUsersStorageSettings
-)
+UsersStorageSettingsType = MemoryUsersStorageSettings | FilesystemUsersStorageSettings
 
 
 __all__ = (

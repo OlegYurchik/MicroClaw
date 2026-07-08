@@ -1,3 +1,5 @@
+from microclaw.dto import DecisionEnum
+from langgraph.types import interrupt
 import uuid
 from typing import Any
 
@@ -22,18 +24,18 @@ class CronToolKit(BaseToolKit[CronSettings]):
         """
         users_storage = self._get_users_storage()
         user_id = self._get_user_id()
-        
+
         cron_tasks = await users_storage.get_crons(user_id=user_id)
-        
+
         return cron_tasks
 
     @tool
     async def create_cron(
-            self,
-            path: str,
-            cron: str,
-            enabled: bool = True,
-            args: dict[str, Any] | None = None,
+        self,
+        path: str,
+        cron: str,
+        enabled: bool = True,
+        args: dict[str, Any] | None = None,
     ) -> CronTask:
         """
         Create a new cron task for the current user.
@@ -50,13 +52,16 @@ class CronToolKit(BaseToolKit[CronSettings]):
         if self.settings.create_mode is PermissionModeEnum.DENY:
             raise PermissionError("Create operations denied")
         if self.settings.create_mode is PermissionModeEnum.REQUEST:
-            confirmation_request_text = f"Create cron task with path '{path}' and schedule '{cron}'?"
-            if not await self.request_confirmation(confirmation_request_text):
+            confirmation_request_text = (
+                f"Create cron task with path '{path}' and schedule '{cron}'?"
+            )
+            decision = interrupt({"description": confirmation_request_text})
+            if decision == DecisionEnum.REJECT.value:
                 raise UserDeniedAction()
 
         users_storage = self._get_users_storage()
         user_id = self._get_user_id()
-        
+
         cron_task = CronTask(
             id=uuid.uuid4(),
             path=path,
@@ -64,7 +69,7 @@ class CronToolKit(BaseToolKit[CronSettings]):
             enabled=enabled,
             args=args or {},
         )
-        
+
         await users_storage.create_cron(user_id=user_id, cron_task=cron_task)
         return cron_task
 
@@ -83,11 +88,12 @@ class CronToolKit(BaseToolKit[CronSettings]):
             raise PermissionError("Delete operations denied")
         if self.settings.delete_mode is PermissionModeEnum.REQUEST:
             confirmation_request_text = f"Remove cron task with ID '{cron_id}'?"
-            if not await self.request_confirmation(confirmation_request_text):
+            decision = interrupt({"description": confirmation_request_text})
+            if decision == DecisionEnum.REJECT.value:
                 raise UserDeniedAction()
 
         users_storage = self._get_users_storage()
-        
+
         cron_uuid = uuid.UUID(cron_id)
         await users_storage.remove_cron(cron_id=cron_uuid)
 

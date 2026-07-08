@@ -1,17 +1,15 @@
 import asyncio
 import contextlib
 import contextvars
-import datetime
 import json
 import random
 import uuid
-from typing import Any
+from typing import Sequence, Iterable
 
 import aiohttp
 from loguru import logger
-from vkbottle import Callback, Keyboard, Text
+from vkbottle import Callback, Keyboard
 from vkbottle.bot import Bot, Message
-from vkbottle.polling import BotPolling
 from vkbottle_types.events import GroupEventType
 
 from microclaw.agents import Agent
@@ -35,15 +33,15 @@ class BaseVKChannel(BaseChannel):
     CHAT_ID_CONTEXT = contextvars.ContextVar("chat_id", default=None)
 
     def __init__(
-            self,
-            settings: VKSettings,
-            agent: Agent,
-            sessions_storage: SessionsStorageInterface,
-            syncer: SyncerInterface,
-            users_storage: UsersStorageInterface,
-            resolver: "DependencyResolver",  # noqa: F821
-            stt: STT | None = None,
-            channel_key: str = "default",
+        self,
+        settings: VKSettings,
+        agent: Agent,
+        sessions_storage: SessionsStorageInterface,
+        syncer: SyncerInterface,
+        users_storage: UsersStorageInterface,
+        resolver: "DependencyResolver",  # noqa: F821
+        stt: STT | None = None,
+        channel_key: str = "default",
     ):
         super().__init__(
             settings=settings,
@@ -56,7 +54,13 @@ class BaseVKChannel(BaseChannel):
             resolver=resolver,
         )
 
-        self._bot = Bot(token=settings.token, polling=BotPolling())
+        self._bot = self._create_bot()
+        self._setup_handlers()
+
+    def _create_bot(self) -> Bot:
+        raise NotImplementedError
+
+    def _setup_handlers(self) -> None:
         self._bot.on.message()(self._handle_message)
         self._bot.on.raw_event(
             GroupEventType.MESSAGE_EVENT,
@@ -89,11 +93,11 @@ class BaseVKChannel(BaseChannel):
         raise NotImplementedError
 
     async def start_conversation(
-            self,
-            channel_internal_id: int,
-            session_id: uuid.UUID,
-            new_messages: list[AgentMessage] | None = None,
-            agent: Agent | None = None,
+        self,
+        channel_internal_id: int,
+        session_id: uuid.UUID,
+        new_messages: Iterable[AgentMessage] = (),
+        agent: Agent | None = None,
     ):
         peer_id = channel_internal_id
         request_id = uuid.uuid4()
@@ -103,18 +107,15 @@ class BaseVKChannel(BaseChannel):
             )
             user = await self._get_or_create_user(peer_id)
             agent = agent or await self.get_agent_for_user(user) or self._agent
-            for msg in new_messages or ():
-                await self._sessions_storage.add_message(session_id=session_id, message=msg)
             await self._generate_and_send_answer(
                 session_id=session_id,
                 peer_id=peer_id,
                 agent=agent,
-                messages=new_messages,
+                new_messages=new_messages,
             )
             logger.info(
                 f"[{request_id}] Conversation end session={session_id} peer={peer_id}",
             )
-
 
     async def _handle_message(self, message: Message):
         request_id = uuid.uuid4()
@@ -135,7 +136,6 @@ class BaseVKChannel(BaseChannel):
             else:
                 await self.handle_text_message(message)
 
-
     async def handle_new_session(self, message: Message):
         user = await self._get_or_create_user(message.peer_id)
         session_id = await self._create_new_session(user, message.peer_id)
@@ -152,7 +152,6 @@ class BaseVKChannel(BaseChannel):
             user = await self._get_or_create_user(message.peer_id)
             agent = await self.get_agent_for_user(user) or self._agent
             session_id = await self._get_or_create_session(user, message.peer_id)
-            await self.reject_all_pending_confirmations(session_id=session_id)
             printer = self._printer(message.peer_id, session_id, agent)
 
             if self._stt is None:
@@ -166,55 +165,44 @@ class BaseVKChannel(BaseChannel):
                 return
 
             audio_bytes = await self._download_audio(audio_attachments[0].link_ogg)
-            await self._sessions_storage.add_message(
-                session_id=session_id,
-                message=AgentMessage(role="user", audio=audio_bytes, audio_format="ogg"),
-            )
 
             async with printer:
-                stt_message = await self._stt.transcribe_bytes(audio_bytes, format="ogg")
-            await self._sessions_storage.add_message(session_id=session_id, message=stt_message)
+                stt_message = await self._stt.transcribe_bytes(
+                    audio_bytes, format="ogg"
+                )
 
-            await self._sessions_storage.add_message(
-                session_id=session_id,
-                message=AgentMessage(
+            new_messages = [
+                AgentMessage(role="user", audio=audio_bytes, audio_format="ogg"),
+                stt_message,
+                AgentMessage(
                     role="stt",
                     text=self._format_voice_context(message, stt_message.text),
                 ),
-            )
+            ]
             await self._generate_and_send_answer(
                 peer_id=message.peer_id,
                 session_id=session_id,
                 agent=agent,
+                new_messages=new_messages,
             )
 
     async def handle_text_message(self, message: Message):
         user = await self._get_or_create_user(message.peer_id)
         agent = await self.get_agent_for_user(user) or self._agent
         session_id = await self._get_or_create_session(user, message.peer_id)
-        await self.reject_all_pending_confirmations(session_id=session_id)
 
-        await self._sessions_storage.add_message(
-            session_id=session_id,
-            message=AgentMessage(
-                role="user",
-                text=self._format_text_context(message),
-            ),
+        user_message = AgentMessage(
+            role="user",
+            text=self._format_text_context(message),
         )
         await self._generate_and_send_answer(
             peer_id=message.peer_id,
             session_id=session_id,
             agent=agent,
+            new_messages=[user_message],
         )
 
-
     async def _handle_confirmation_callback(self, event: dict):
-        """Handle VK callback button press (message_event).
-
-        VK sends message_event as:
-        {"type": "message_event", "object": {...}, "group_id": ...}
-        vkbottle passes the whole event dict, so we extract event["object"].
-        """
         request_id = uuid.uuid4()
         with self.set_current_request_id(request_id):
             obj = event.get("object", {})
@@ -223,70 +211,69 @@ class BaseVKChannel(BaseChannel):
                 logger.warning("message_event missing peer_id")
                 return
 
-            payload = obj.get("payload", {})
-            if isinstance(payload, str):
-                payload = json.loads(payload)
-            payload = payload or {}
+            async with self._lock_chat_for_generating(peer_id):
+                payload = obj.get("payload", {})
+                if isinstance(payload, str):
+                    payload = json.loads(payload)
+                payload = payload or {}
 
-            confirmation_id_str = payload.get("id")
-            approved = payload.get("approved") == "yes"
-            if not confirmation_id_str:
-                logger.warning("message_event missing confirmation id")
-                return
+                session_id_str = payload.get("session_id")
+                approved = payload.get("approved") == "yes"
+                if not session_id_str:
+                    logger.warning("message_event missing session_id")
+                    return
 
-            user = await self._get_or_create_user(peer_id)
-            session_id = await self._get_or_create_session(user, peer_id)
-
-            key = f"{self.CONFIRMATION_PREFIX}:{session_id}:{confirmation_id_str}"
-            record = await self._syncer.get(key)
-            if not record:
-                logger.warning("VK confirmation not found: %s", key)
-                return
-
-            _session_id = uuid.UUID(record["session_id"])
-            agent = await self.get_agent_for_user(user) or self._agent
-            printer = self._printer(peer_id, _session_id, agent)
-            saver = AgentMessageSaver(
-                sessions_storage=self._sessions_storage,
-                session_id=_session_id,
-            )
-
-            async with (printer, saver):
-                async for msg in agent.handle_confirmation(
+                user = await self._get_or_create_user(peer_id)
+                _session_id = uuid.UUID(session_id_str)
+                agent = await self.get_agent_for_user(user) or self._agent
+                printer = self._printer(peer_id, _session_id, agent)
+                saver = AgentMessageSaver(
+                    sessions_storage=self._sessions_storage,
                     session_id=_session_id,
-                    decision=DecisionEnum.APPROVE if approved else DecisionEnum.REJECT,
-                ):
-                    await saver.register_new_message(msg)
-                    await printer.register_new_message(msg)
-
-            record["status"] = "resolved"
-            await self._syncer.set(key, record)
-
-            status_text = "✅ Confirmed" if approved else "❌ Rejected"
-            event_id = obj.get("event_id")
-            user_id = obj.get("user_id")
-
-            try:
-                await self._bot.api.messages.send_message_event_answer(
-                    event_id=event_id,
-                    user_id=user_id,
-                    peer_id=peer_id,
-                    event_data=json.dumps({"type": "show_snackbar", "text": status_text}),
                 )
-            except Exception:
-                logger.exception("send_message_event_answer failed")
 
+                async with printer, saver:
+                    async for msg in agent.resume_after_confirmation(
+                        session_id=_session_id,
+                        decision=DecisionEnum.APPROVE
+                        if approved
+                        else DecisionEnum.REJECT,
+                        channel=self,
+                    ):
+                        await saver.register_new_message(msg)
+                        await printer.register_new_message(msg)
+
+                status_text = "✅ Confirmed" if approved else "❌ Rejected"
+                event_id = obj.get("event_id")
+                user_id = obj.get("user_id")
+
+                try:
+                    await self._bot.api.messages.send_message_event_answer(
+                        event_id=event_id,
+                        user_id=user_id,
+                        peer_id=peer_id,
+                        event_data=json.dumps(
+                            {"type": "show_snackbar", "text": status_text}
+                        ),
+                    )
+                except Exception:
+                    logger.exception("send_message_event_answer failed")
 
     async def _generate_and_send_answer(
-            self,
-            peer_id: int,
-            session_id: uuid.UUID,
-            agent: Agent,
-            messages: list[AgentMessage] | None = None,
+        self,
+        peer_id: int,
+        session_id: uuid.UUID,
+        agent: Agent,
+        new_messages: Sequence[AgentMessage] = (),
     ):
         request_id = uuid.uuid4()
         with self.set_current_request_id(request_id):
             logger.info(f"[{request_id}] gen start session={session_id} peer={peer_id}")
+            for message in new_messages:
+                await self._sessions_storage.add_message(
+                    session_id=session_id, message=message
+                )
+
             saver = AgentMessageSaver(
                 sessions_storage=self._sessions_storage,
                 session_id=session_id,
@@ -297,89 +284,78 @@ class BaseVKChannel(BaseChannel):
                 message_generator = self._sessions_storage.get_messages(
                     filter=MessageFilter(session_id=session_id)
                 )
-                messages = [_message async for _message in message_generator]
+                history = [_message async for _message in message_generator]
 
                 with (
                     self.set_current_channel(),
                     self.set_current_chat_id(peer_id),
                     self.set_current_session_id(session_id),
                 ):
-                    async with (printer, saver):
-                        async for new_message in agent.ask(messages=messages, channel=self):
+                    async with printer, saver:
+                        msg_generator = (
+                            agent.resume_after_confirmation(
+                                session_id=session_id,
+                                decision=DecisionEnum.REJECT,
+                                new_messages=new_messages,
+                                channel=self,
+                            )
+                            if await agent.has_pending_interrupt(session_id=session_id)
+                            else agent.ask(messages=history, channel=self)
+                        )
+                        async for new_message in msg_generator:
                             if new_message.role == "request_confirmation":
                                 entries = json.loads(new_message.text)
                                 for entry in entries:
-                                    await self._send_confirmation(entry, peer_id, session_id)
-                            else:
-                                await saver.register_new_message(new_message)
-                                await printer.register_new_message(new_message)
+                                    await self._send_confirmation(
+                                        entry, peer_id, session_id
+                                    )
+                                continue
+                            await saver.register_new_message(new_message)
+                            await printer.register_new_message(new_message)
 
                     if (
-                        await self.summarize_dialog_if_needed(agent=agent, session_id=session_id)
+                        await self.summarize_dialog_if_needed(
+                            agent=agent, session_id=session_id
+                        )
                         and self._settings.debug
                     ):
                         await printer.print(text="Dialog summarized")
 
             logger.info(f"[{request_id}] gen end session={session_id} peer={peer_id}")
 
-
-    async def request_confirmation(self, question: str) -> uuid.UUID:
-        confirmation_id = uuid.uuid4()
-        peer_id = self.get_current_chat_id()
-        if peer_id is None:
-            raise RuntimeError("chat_id not set in context")
-
+    async def _send_confirmation(
+        self, entry: dict, peer_id: int, session_id: uuid.UUID
+    ):
         keyboard = Keyboard(inline=True)
-        keyboard.add(Callback(
-            "✅ Confirm",
-            payload={"id": str(confirmation_id), "approved": "yes"},
-        ))
-        keyboard.row()
-        keyboard.add(Callback(
-            "❌ Cancel",
-            payload={"id": str(confirmation_id), "approved": "no"},
-        ))
-
-        await self._bot.api.messages.send(
-            peer_id=peer_id,
-            message=question,
-            keyboard=keyboard.get_json(),
-            random_id=random.randint(-2147483648, 2147483647),
+        keyboard.add(
+            Callback(
+                "✅ Confirm",
+                payload={"session_id": str(session_id), "approved": "yes"},
+            )
         )
-        return confirmation_id
-
-    async def _send_confirmation(self, entry: dict, peer_id: int, session_id: uuid.UUID):
-        confirmation_id = uuid.uuid4()
-        keyboard = Keyboard(inline=True)
-        keyboard.add(Callback(
-            "✅ Confirm",
-            payload={"id": str(confirmation_id), "approved": "yes"},
-        ))
         keyboard.row()
-        keyboard.add(Callback(
-            "❌ Cancel",
-            payload={"id": str(confirmation_id), "approved": "no"},
-        ))
+        keyboard.add(
+            Callback(
+                "❌ Cancel",
+                payload={"session_id": str(session_id), "approved": "no"},
+            )
+        )
         await self._bot.api.messages.send(
             peer_id=peer_id,
             message=entry.get("description", ""),
             keyboard=keyboard.get_json(),
             random_id=random.randint(-2147483648, 2147483647),
         )
-        await self._syncer.set(
-            f"{self.CONFIRMATION_PREFIX}:{session_id}:{confirmation_id}",
-            {
-                "session_id": str(session_id),
-                "interrupt_id": entry.get("id"),
-                "status": "pending",
-                "created_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
-            },
-        )
 
     def _is_auth_disabled(self, message: Message) -> bool:
         if not self._settings.allow_from:
             return False
-        user_set = {message.from_id, str(message.from_id), message.peer_id, str(message.peer_id)}
+        user_set = {
+            message.from_id,
+            str(message.from_id),
+            message.peer_id,
+            str(message.peer_id),
+        }
         return not (user_set & set(self._settings.allow_from))
 
     def _get_audio_message_attachments(self, message: Message) -> list:
@@ -391,7 +367,9 @@ class BaseVKChannel(BaseChannel):
             if att.type == "audio_message" and att.audio_message
         ]
 
-    def _printer(self, peer_id: int, session_id: uuid.UUID, agent: Agent) -> VKAgentMessagePrinter:
+    def _printer(
+        self, peer_id: int, session_id: uuid.UUID, agent: Agent
+    ) -> VKAgentMessagePrinter:
         return VKAgentMessagePrinter(
             bot=self._bot,
             peer_id=peer_id,
@@ -409,29 +387,31 @@ class BaseVKChannel(BaseChannel):
                 return await response.read()
 
     def _format_text_context(self, message: Message) -> str:
-        return f"""{self._get_message_context(message)}
-
-## User message:
-{message.text}"""
+        return (
+            f"{self._get_message_context(message)}\n\n## User message:\n{message.text}"
+        )
 
     def _format_voice_context(self, message: Message, transcribed: str) -> str:
-        return f"""{self._get_message_context(message)}
-IMPORTANT: It is voice message
-
-## User message:
-{transcribed}"""
+        return (
+            f"{self._get_message_context(message)}\n"
+            "IMPORTANT: It is voice message\n"
+            "\n"
+            "## User message:\n"
+            f"{transcribed}"
+        )
 
     def _get_message_context(self, message: Message) -> str:
-        return f"""## Chat Info
-Peer ID: {message.peer_id}
-
-## User Info
-ID: {message.from_id}
-
-## Message Info
-ID: {message.message_id}
-Date: {message.date.isoformat() if getattr(message, 'date', None) else None}"""
-
+        return (
+            "## Chat Info\n"
+            f"Peer ID: {message.peer_id}\n"
+            "\n"
+            "## User Info\n"
+            f"ID: {message.from_id}\n"
+            "\n"
+            "## Message Info\n"
+            f"ID: {message.message_id}\n"
+            f"Date: {message.date.isoformat() if getattr(message, 'date', None) else None}\n"
+        )
 
     @contextlib.asynccontextmanager
     async def _lock_chat_for_generating(self, peer_id: int):
@@ -443,7 +423,6 @@ Date: {message.date.isoformat() if getattr(message, 'date', None) else None}"""
             yield
         finally:
             await self._syncer.delete(lock_key)
-
 
     async def _get_or_create_user(self, peer_id: int):
         user = await self._users_storage.get_user_by_channel(
@@ -475,4 +454,7 @@ Date: {message.date.isoformat() if getattr(message, 'date', None) else None}"""
         return f"{ChannelTypeEnum.VK.value}:{self._channel_key}:generation_lock:chat:{peer_id}"
 
     async def _is_chat_generation_in_progress(self, peer_id: int) -> bool:
-        return await self._syncer.get(self._get_chat_generation_lock_key(peer_id)) is not None
+        return (
+            await self._syncer.get(self._get_chat_generation_lock_key(peer_id))
+            is not None
+        )

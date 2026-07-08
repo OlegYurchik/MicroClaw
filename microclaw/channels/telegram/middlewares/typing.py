@@ -9,12 +9,12 @@ class TypingMiddleware(aiogram.BaseMiddleware):
     def __init__(self, delay: float = 3):
         super().__init__()
         self._delay = delay
-    
+
     async def __call__(
-            self,
-            handler: Callable,
-            event: aiogram.types.Message,
-            data: dict,
+        self,
+        handler: Callable,
+        event: aiogram.types.Message,
+        data: dict,
     ) -> Awaitable:
         typing_manager = TypingManager(
             bot=event.bot,

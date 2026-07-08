@@ -6,7 +6,14 @@ from loguru import logger
 from pydantic import AnyHttpUrl
 from skillnet_ai.downloader import SkillDownloader
 
-from .agents import Agent, AgentSettings, InputTypeEnum, MCPRemoteSettings, MCPSettings, SkillSettings
+from .agents import (
+    Agent,
+    AgentSettings,
+    InputTypeEnum,
+    MCPRemoteSettings,
+    MCPSettings,
+    SkillSettings,
+)
 from .channels import BaseChannel, get_channel
 from .cron import BaseCronTask, CronTaskSettings, get_cron_task
 from .sessions_storages import (
@@ -17,7 +24,11 @@ from .sessions_storages import (
 from .toolkits import BaseToolKit, get_toolkit
 from .stt import STT, STTSettings
 from .syncers import SyncerInterface, get_syncer
-from .users_storages import UsersStorageInterface, UsersStorageSettingsType, get_users_storage
+from .users_storages import (
+    UsersStorageInterface,
+    UsersStorageSettingsType,
+    get_users_storage,
+)
 from .settings import MicroclawSettings
 from .utils import get_by_key_or_first
 
@@ -46,9 +57,9 @@ class DependencyResolver:
         return self._channels
 
     async def resolve_channel(
-            self,
-            channel_key: str,
-            channel_settings: BaseChannel,
+        self,
+        channel_key: str,
+        channel_settings: BaseChannel,
     ) -> BaseChannel:
         sessions_storage_key_or_settings = channel_settings.sessions_storage
         if isinstance(sessions_storage_key_or_settings, str):
@@ -57,9 +68,13 @@ class DependencyResolver:
                 key=sessions_storage_key_or_settings,
             )
             if sessions_storage is None:
-                raise RuntimeError(f"Have no sessions storage with name '{sessions_storage_key_or_settings}'")
+                raise RuntimeError(
+                    f"Have no sessions storage with name '{sessions_storage_key_or_settings}'"
+                )
         elif isinstance(sessions_storage_key_or_settings, SessionsStorageSettingsType):
-            sessions_storage = get_sessions_storage(settings=sessions_storage_key_or_settings)
+            sessions_storage = get_sessions_storage(
+                settings=sessions_storage_key_or_settings
+            )
         else:
             sessions_storage = get_by_key_or_first(
                 storage=await self.resolve_sessions_storages(),
@@ -68,7 +83,9 @@ class DependencyResolver:
 
         agent_key_or_settings = channel_settings.agent
         if isinstance(agent_key_or_settings, str):
-            agent = get_by_key_or_first(storage=await self.resolve_agents(), key=agent_key_or_settings)
+            agent = get_by_key_or_first(
+                storage=await self.resolve_agents(), key=agent_key_or_settings
+            )
             if agent is None:
                 raise RuntimeError(f"Have no agent with name '{agent_key_or_settings}'")
         elif isinstance(agent_key_or_settings, AgentSettings):
@@ -78,7 +95,9 @@ class DependencyResolver:
 
         stt_key_or_settings = channel_settings.stt
         if isinstance(stt_key_or_settings, str):
-            stt = get_by_key_or_first(storage=await self.resolve_stts(), key=stt_key_or_settings)
+            stt = get_by_key_or_first(
+                storage=await self.resolve_stts(), key=stt_key_or_settings
+            )
         elif isinstance(stt_key_or_settings, STTSettings):
             stt = await self.resolve_stt(stt_settings=stt_key_or_settings)
         else:
@@ -91,7 +110,9 @@ class DependencyResolver:
                 key=users_storage_key_or_settings,
             )
             if users_storage is None:
-                raise RuntimeError(f"Have no users storage with name \'{users_storage_key_or_settings}\'")
+                raise RuntimeError(
+                    f"Have no users storage with name '{users_storage_key_or_settings}'"
+                )
         elif isinstance(users_storage_key_or_settings, UsersStorageSettingsType):
             users_storage = get_users_storage(settings=users_storage_key_or_settings)
         else:
@@ -129,9 +150,11 @@ class DependencyResolver:
     async def resolve_agent(self, agent_settings: AgentSettings) -> Agent:
         model_settings = agent_settings.model
         if isinstance(model_settings, (str, NoneType)):
-            model_settings = get_by_key_or_first(storage=self._settings.models, key=model_settings)
+            model_settings = get_by_key_or_first(
+                storage=self._settings.models, key=model_settings
+            )
         if model_settings is None:
-            raise RuntimeError(f"Have no model with name \'{agent_settings.model}\'")
+            raise RuntimeError(f"Have no model with name '{agent_settings.model}'")
 
         provider_settings = model_settings.provider
         if isinstance(provider_settings, (str, NoneType)):
@@ -140,7 +163,9 @@ class DependencyResolver:
                 key=provider_settings,
             )
         if provider_settings is None:
-            raise RuntimeError(f"Have no provider with name '{model_settings.provider}'")
+            raise RuntimeError(
+                f"Have no provider with name '{model_settings.provider}'"
+            )
 
         if InputTypeEnum.TEXT not in model_settings.input_types:
             raise RuntimeError(
@@ -177,8 +202,11 @@ class DependencyResolver:
                 agent_mcps_settings[mcp_settings_or_name] = mcps[mcp_settings_or_name]
             elif isinstance(mcp_settings_or_name, MCPSettings):
                 name = mcp_settings_or_name.name or (
-                    mcp_settings_or_name.url if isinstance(mcp_settings_or_name, MCPRemoteSettings)
-                    else " ".join((mcp_settings_or_name.command, *mcp_settings_or_name.args))
+                    mcp_settings_or_name.url
+                    if isinstance(mcp_settings_or_name, MCPRemoteSettings)
+                    else " ".join(
+                        (mcp_settings_or_name.command, *mcp_settings_or_name.args)
+                    )
                 )
                 agent_mcps_settings[name] = mcp_settings_or_name
             else:
@@ -224,7 +252,9 @@ class DependencyResolver:
             if downloaded_path:
                 return downloaded_path
 
-        logger.warning("Skill '%s' not found locally and could not be downloaded", skill.name)
+        logger.warning(
+            "Skill '%s' not found locally and could not be downloaded", skill.name
+        )
         return None
 
     def _normalize_skill(self, skill: SkillSettings | str) -> SkillSettings:
@@ -264,9 +294,9 @@ class DependencyResolver:
         return path_parts[-1] if path_parts else str(url)
 
     async def resolve_subagents_for_agent(
-            self,
-            agent: Agent,
-            subagents_settings: list[str | AgentSettings] | None,
+        self,
+        agent: Agent,
+        subagents_settings: list[str | AgentSettings] | None,
     ):
         if not subagents_settings:
             return
@@ -280,11 +310,17 @@ class DependencyResolver:
                     )
                 subagent = self._agents.get(subagent_settings_or_key)
                 if subagent is None:
-                    raise ValueError(f"Agent for subagent '{subagent_settings_or_key}' not resolved")
+                    raise ValueError(
+                        f"Agent for subagent '{subagent_settings_or_key}' not resolved"
+                    )
             elif isinstance(subagent_settings_or_key, AgentSettings):
-                subagent = await self.resolve_agent(agent_settings=subagent_settings_or_key)
+                subagent = await self.resolve_agent(
+                    agent_settings=subagent_settings_or_key
+                )
             else:
-                raise ValueError(f"Invalid subagent settings type: {type(subagent_settings_or_key)}")
+                raise ValueError(
+                    f"Invalid subagent settings type: {type(subagent_settings_or_key)}"
+                )
 
             subagents.append(subagent)
 
@@ -301,13 +337,15 @@ class DependencyResolver:
     async def resolve_toolkits(self) -> dict[str, BaseToolKit]:
         if self._toolkits is None:
             self._toolkits = {}
-            for toolkit_key, toolkit_settings_or_path in self._settings.toolkits.items():
+            for (
+                toolkit_key,
+                toolkit_settings_or_path,
+            ) in self._settings.toolkits.items():
                 self._toolkits[toolkit_key] = get_toolkit(
                     toolkit_settings_or_path=toolkit_settings_or_path,
                     key=toolkit_key,
                 )
         return self._toolkits
-
 
     async def resolve_stts(self) -> dict[str, STT]:
         if self._stt is None:
@@ -320,7 +358,9 @@ class DependencyResolver:
     async def resolve_stt(self, stt_settings: STTSettings) -> STT:
         model_settings = stt_settings.model
         if isinstance(model_settings, (str, NoneType)):
-            model_settings = get_by_key_or_first(storage=self._settings.models, key=model_settings)
+            model_settings = get_by_key_or_first(
+                storage=self._settings.models, key=model_settings
+            )
         if model_settings is None:
             raise RuntimeError(f"Have no model with name '{stt_settings.model}'")
 
@@ -331,7 +371,9 @@ class DependencyResolver:
                 key=provider_settings,
             )
         if provider_settings is None:
-            raise RuntimeError(f"Have no provider with name '{model_settings.provider}'")
+            raise RuntimeError(
+                f"Have no provider with name '{model_settings.provider}'"
+            )
 
         if InputTypeEnum.AUDIO not in model_settings.input_types:
             raise RuntimeError(
@@ -369,7 +411,7 @@ class DependencyResolver:
                     settings=cron_settings,
                     resolver=self,
                 )
-            
+
             users_storages = await self.resolve_users_storages()
             for storage_key, users_storage in users_storages.items():
                 async for user in users_storage.get_users():

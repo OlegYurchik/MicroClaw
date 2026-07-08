@@ -20,12 +20,12 @@ class EmptySettings(BaseModel):
 class BaseCronTask(facet.AsyncioServiceMixin, Generic[SettingsType]):
     _scheduler: AsyncIOScheduler | None = None
     _tasks: dict[str, "BaseCronTask"] = {}
-    
+
     def __init__(
-            self,
-            key: str,
-            settings: CronTaskSettings,
-            resolver: "DependencyResolver",  # noqa: F821
+        self,
+        key: str,
+        settings: CronTaskSettings,
+        resolver: "DependencyResolver",  # noqa: F821
     ):
         self._key = key
         self._cron = settings.cron
@@ -39,7 +39,7 @@ class BaseCronTask(facet.AsyncioServiceMixin, Generic[SettingsType]):
             if isinstance(origin, type) and issubclass(origin, BaseCronTask):
                 return base.__args__[0]
         return EmptySettings
-    
+
     async def start(self):
         scheduler = self.get_scheduler()
         if not scheduler.running:
@@ -71,7 +71,7 @@ class BaseCronTask(facet.AsyncioServiceMixin, Generic[SettingsType]):
 
     async def do_before(self):
         pass
-    
+
     async def stop(self):
         scheduler = self.get_scheduler()
         if scheduler.get_job(self._key):
@@ -93,7 +93,7 @@ class BaseCronTask(facet.AsyncioServiceMixin, Generic[SettingsType]):
                 f"Expected format: 'minute hour day month day_of_week'"
             )
         minute, hour, day, month, day_of_week = parts
-        
+
         return {
             "minute": minute,
             "hour": hour,

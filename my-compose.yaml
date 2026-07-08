@@ -1,0 +1,15 @@
+version: "3.8"
+
+services:
+  mcp-websearch:
+    image: ghcr.io/aas-ee/open-web-search:v2.1.6
+    ports:
+      - 3000:3000
+
+  mcp-travelpayouts:
+    image: node:25.9.0
+    command: npx -y mcp-proxy --port 3000 -- npx -y @theyahia/travelpayouts-mcp
+    environment:
+      TRAVELPAYOUTS_TOKEN: 7a015b92da4777206828de588676390e
+    ports:
+      - 3001:3000

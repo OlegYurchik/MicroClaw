@@ -14,4 +14,6 @@ def get_sessions_storage(settings: SessionsStorageSettings) -> SessionsStorageIn
         case SessionsStorageTypeEnum.DATABASE:
             return DatabaseSessionsStorage(settings=settings)
         case _:
-            raise ValueError(f"Unsupported sessions storage type: {settings.type.value}")
+            raise ValueError(
+                f"Unsupported sessions storage type: {settings.type.value}"
+            )

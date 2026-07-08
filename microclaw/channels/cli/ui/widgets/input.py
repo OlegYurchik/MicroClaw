@@ -6,10 +6,10 @@ from microclaw.channels.cli.ui.enums import RoleEnum
 
 class UserInput(TextArea):
     def __init__(
-            self,
-            channel: "CLIChannel",  # noqa: F821
-            chat,  # noqa: F821
-            **kwargs,
+        self,
+        channel: "CLIChannel",  # noqa: F821
+        chat,  # noqa: F821
+        **kwargs,
     ):
         super().__init__(**kwargs)
         self._channel = channel

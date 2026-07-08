@@ -4,7 +4,7 @@ import json
 import pathlib
 import traceback
 import uuid
-from typing import Any, AsyncGenerator
+from typing import Any, AsyncGenerator, Sequence
 
 import deepagents.graph
 import tiktoken
@@ -30,10 +30,9 @@ from langchain.agents.middleware import (
 from langchain.agents.middleware.types import (
     AgentMiddleware,
     ModelRequest,
-    ModelResponse,
 )
 from langchain.messages import ToolMessage
-from langgraph.types import Command, Interrupt
+from langgraph.types import Command
 from loguru import logger
 
 from microclaw.agents.settings import (
@@ -46,10 +45,17 @@ from microclaw.agents.settings import (
     MCPSettings,
 )
 from microclaw.dto import AgentMessage, DecisionEnum, InterruptEntry, Spending
+from microclaw.syncers import SyncerInterface
 from microclaw.toolkits import BaseToolKit
 from microclaw.toolkits.memory import MemoryToolKit
 from .checkpointer import SyncerCheckpointer
-from .dto import SummaryValues, SummaryMemoryValues, AgentPromptValues, SystemValues, MCPInfo
+from .dto import (
+    SummaryValues,
+    SummaryMemoryValues,
+    AgentPromptValues,
+    SystemValues,
+    MCPInfo,
+)
 
 
 class _NoOpMiddleware(AgentMiddleware):
@@ -59,7 +65,9 @@ class _NoOpMiddleware(AgentMiddleware):
 @contextlib.contextmanager
 def _patched_summarization_middleware():
     original = deepagents.graph.create_summarization_middleware
-    deepagents.graph.create_summarization_middleware = lambda *args, **kwargs: _NoOpMiddleware()
+    deepagents.graph.create_summarization_middleware = lambda *args, **kwargs: (
+        _NoOpMiddleware()
+    )
     try:
         yield
     finally:
@@ -70,16 +78,16 @@ class Agent:
     TEMPLATES_DIR = pathlib.Path(__file__).parent / "templates"
 
     def __init__(
-            self,
-            settings: AgentSettings,
-            model_settings: ModelSettings,
-            provider_settings: ProviderSettings,
-            toolkits: dict[str, BaseToolKit],
-            syncer: SyncerInterface,
-            mcp_settings: dict[str, MCPSettings] | None = None,
-            subagents: list["Agent"] | None = None,
-            client=None,
-            skills: list[str] | None = None,
+        self,
+        settings: AgentSettings,
+        model_settings: ModelSettings,
+        provider_settings: ProviderSettings,
+        toolkits: dict[str, BaseToolKit],
+        syncer: SyncerInterface,
+        mcp_settings: dict[str, MCPSettings] | None = None,
+        subagents: list["Agent"] | None = None,
+        client=None,
+        skills: list[str] | None = None,
     ):
         self._settings = settings
         self._model_settings = model_settings
@@ -98,11 +106,10 @@ class Agent:
         self._mcp = self._create_mcp_client()
         self._subagents = subagents.copy() if subagents else []
         self._tools = [
-            tool
-            for toolkit in self._toolkits.values()
-            for tool in toolkit.get_tools()
+            tool for toolkit in self._toolkits.values() for tool in toolkit.get_tools()
         ]
         self._client = client or self.get_client()
+        self._compiled_agent_cache: dict[tuple, Any] = {}
 
     def _create_mcp_client(self) -> MultiServerMCPClient:
         servers = {}
@@ -119,7 +126,9 @@ class Agent:
                 mcp_data["url"] = settings.url
                 mcp_data["headers"] = settings.headers or {}
             elif isinstance(settings, MCPLocalSettings):
-                server_name = settings.name or " ".join((settings.command, *settings.args))
+                server_name = settings.name or " ".join(
+                    (settings.command, *settings.args)
+                )
                 mcp_data = {
                     "transport": "stdio",
                     "command": settings.command,
@@ -182,7 +191,9 @@ class Agent:
         api_key = self._model_settings.api_key or self._provider_settings.api_key
         base_url = str(self._provider_settings.base_url)
         default_headers = self._provider_settings.headers | self._model_settings.headers
-        temperature = self._settings.temperature or self._model_settings.temperature or 1
+        temperature = (
+            self._settings.temperature or self._model_settings.temperature or 1
+        )
 
         match api_type:
             case APITypeEnum.OPENAI:
@@ -191,7 +202,9 @@ class Agent:
                 return ChatOpenAI(
                     model=self._model_settings.id,
                     api_key=api_key,
-                    base_url=base_url if base_url != "https://api.openai.com/v1" else None,
+                    base_url=base_url
+                    if base_url != "https://api.openai.com/v1"
+                    else None,
                     default_headers=default_headers,
                     temperature=temperature,
                 )
@@ -220,21 +233,24 @@ class Agent:
                 raise ValueError(f"Unsupported API type: '{api_type.value}'")
 
     async def ask(
-            self,
-            messages: list[AgentMessage],
-            channel: "BaseChannel | None" = None,  # noqa: F821
-            stream: bool = False,
+        self,
+        messages: list[AgentMessage],
+        channel: "BaseChannel | None" = None,  # noqa: F821
+        stream: bool = False,
     ) -> AsyncGenerator[AgentMessage, None]:
         from microclaw.channels import BaseChannel
 
         session_id = BaseChannel.get_current_session_id()
         request_id = BaseChannel.get_current_request_id()
-        langchain_messages: list[BaseMessage] = self._convert_to_langchain_messages(messages)
+        bound_logger = logger.bind(request_id=request_id, session_id=session_id)
+        langchain_messages: list[BaseMessage] = self._convert_to_langchain_messages(
+            messages
+        )
         system_prompt = await self._get_agent_prompt(channel=channel)
 
-        logger.info(
-            "[%s] Agent ask started session=%s messages_count=%s tools_count=%s",
-            request_id, session_id, len(messages), len(self._tools),
+        bound_logger.info(
+            "Agent ask started",
+            extra={"messages_count": len(messages), "tools_count": len(self._tools)},
         )
 
         if session_id is not None:
@@ -256,27 +272,32 @@ class Agent:
             version="v2",
         )
 
-        async for msg in self._process_events(events_generator, request_id, stream, messages=messages):
+        async for msg in self._process_events(
+            events_generator, bound_logger, stream, messages=messages
+        ):
             yield msg
 
-        logger.info("[%s] Agent ask finished", request_id)
+        bound_logger.info("Agent ask finished")
 
-    async def handle_confirmation(
-            self,
-            session_id: uuid.UUID,
-            decision: DecisionEnum,
+    async def resume_after_confirmation(
+        self,
+        session_id: uuid.UUID,
+        decision: DecisionEnum,
+        new_messages: Sequence[AgentMessage] = (),
+        channel: "BaseChannel | None" = None,  # noqa: F821
     ) -> AsyncGenerator[AgentMessage, None]:
         from microclaw.channels import BaseChannel
 
         request_id = BaseChannel.get_current_request_id()
-        logger.info(
-            "[%s] Agent handle_confirmation started session=%s decision=%s",
-            request_id, session_id, decision,
+        bound_logger = logger.bind(request_id=request_id, session_id=session_id)
+        bound_logger.info(
+            "Agent resume_after_confirmation started",
+            extra={"decision": decision.value},
         )
 
-        system_prompt = await self._get_agent_prompt(channel=None)
+        system_prompt = await self._get_agent_prompt(channel=channel)
         agent = await self._create_agent(
-            channel=None,
+            channel=channel,
             system_prompt=system_prompt,
         )
 
@@ -285,22 +306,50 @@ class Agent:
             "configurable": {"thread_id": str(session_id)},
         }
 
+        langchain_messages = self._convert_to_langchain_messages(new_messages)
+        input_data = Command(
+            resume=decision.value,
+            update={"messages": langchain_messages},
+        )
+
         events_generator = agent.astream_events(
-            Command(resume=decision.value),
+            input_data,
             config=config,
             version="v2",
         )
 
-        async for msg in self._process_events(events_generator, request_id, stream=False):
+        async for msg in self._process_events(
+            events_generator, bound_logger, stream=False, messages=new_messages
+        ):
             yield msg
 
-        logger.info("[%s] Agent handle_confirmation finished", request_id)
+        bound_logger.info("Agent resume_after_confirmation finished")
+
+    async def has_pending_interrupt(self, session_id: uuid.UUID) -> bool:
+        config = {
+            "recursion_limit": 1000,
+            "configurable": {"thread_id": str(session_id)},
+        }
+        system_prompt = await self._get_agent_prompt(channel=None)
+        agent = await self._create_agent(
+            channel=None,
+            system_prompt=system_prompt,
+        )
+        try:
+            snapshot = await agent.aget_state(config)
+            return bool(snapshot.interrupts)
+        except (KeyError, ValueError, TypeError):
+            return False
 
     async def _create_agent(
-            self,
-            channel: "BaseChannel | None",
-            system_prompt: str,
+        self,
+        channel: "BaseChannel | None",  # noqa: F821
+        system_prompt: str,
     ):
+        cache_key = (id(channel), system_prompt)
+        if cache_key in self._compiled_agent_cache:
+            return self._compiled_agent_cache[cache_key]
+
         mcp_tools = []
         try:
             mcp_tools = list(await self._mcp.get_tools())
@@ -333,19 +382,26 @@ class Agent:
                 tools=tools,
                 system_prompt=system_prompt,
                 subagents=subagent_specs,
-                middleware=[_handle_tool_errors, _disable_parallel_tool_calls, model_retry, tool_call_limiter, model_call_limiter],
+                middleware=[
+                    _handle_tool_errors,
+                    _disable_parallel_tool_calls,
+                    model_retry,
+                    tool_call_limiter,
+                    model_call_limiter,
+                ],
                 skills=self._skills,
                 checkpointer=self._checkpointer,
             )
 
+        self._compiled_agent_cache[cache_key] = agent
         return agent
 
     async def _process_events(
-            self,
-            events_generator,
-            request_id: uuid.UUID,
-            stream: bool,
-            messages: list[AgentMessage] | None = None,
+        self,
+        events_generator,
+        bound_logger,
+        stream: bool,
+        messages: list[AgentMessage] | None = None,
     ) -> AsyncGenerator[AgentMessage, None]:
         from microclaw.channels import BaseChannel
 
@@ -384,7 +440,9 @@ class Agent:
                     if stream:
                         yield message
                     else:
-                        accumulated_message.text = (accumulated_message.text or "") + message.text
+                        accumulated_message.text = (
+                            accumulated_message.text or ""
+                        ) + message.text
                 case "on_chain_stream":
                     chunk = event["data"].get("chunk", {})
                     if isinstance(chunk, dict) and "__interrupt__" in chunk:
@@ -407,20 +465,36 @@ class Agent:
                             )
                         yield AgentMessage(
                             role="request_confirmation",
-                            text=json.dumps([entry.model_dump() for entry in entries], default=str),
+                            text=json.dumps(
+                                [entry.model_dump() for entry in entries], default=str
+                            ),
                         )
                         return
                 case "on_chat_model_end":
                     output = event["data"]["output"]
-                    if False and (usage_metadata := getattr(output, "usage_metadata", None)):
-                        spending.input_tokens = usage_metadata.get("input_tokens", spending.input_tokens)
-                        spending.output_tokens = usage_metadata.get("output_tokens", spending.output_tokens)
-                        spending.cache_read_tokens = usage_metadata.get("cache_read_tokens", spending.cache_read_tokens)
-                        spending.cache_write_tokens = usage_metadata.get("cache_write_tokens", spending.cache_write_tokens)
+                    if False and (
+                        usage_metadata := getattr(output, "usage_metadata", None)
+                    ):
+                        spending.input_tokens = usage_metadata.get(
+                            "input_tokens", spending.input_tokens
+                        )
+                        spending.output_tokens = usage_metadata.get(
+                            "output_tokens", spending.output_tokens
+                        )
+                        spending.cache_read_tokens = usage_metadata.get(
+                            "cache_read_tokens", spending.cache_read_tokens
+                        )
+                        spending.cache_write_tokens = usage_metadata.get(
+                            "cache_write_tokens", spending.cache_write_tokens
+                        )
                     elif (
-                            False and
-                            (response_metadata := getattr(output, "response_metadata", None)) and
-                            (token_usage := response_metadata.get("token_usage"))
+                        False
+                        and (
+                            response_metadata := getattr(
+                                output, "response_metadata", None
+                            )
+                        )
+                        and (token_usage := response_metadata.get("token_usage"))
                     ):
                         spending.input_tokens = token_usage.get("prompt_tokens", 0)
                         spending.output_tokens = token_usage.get("completion_tokens", 0)
@@ -441,7 +515,7 @@ class Agent:
                     spending = self._get_empty_spending()
                 case "on_tool_start":
                     tool_name = event["name"]
-                    logger.info("[%s] Tool call started tool=%s", request_id, tool_name)
+                    bound_logger.info("Tool call started", extra={"tool": tool_name})
                     tool_input = event["data"].get("input", {})
                     compact_input = self._compact_tool_output(tool_input)
                     text = f"Tool name: {tool_name};\nTool input: {compact_input}"
@@ -453,7 +527,7 @@ class Agent:
                     )
                 case "on_tool_end":
                     tool_name = event["name"]
-                    logger.info("[%s] Tool call finished tool=%s", request_id, tool_name)
+                    bound_logger.info("Tool call finished", extra={"tool": tool_name})
                     tool_output = event["data"].get("output")
                     compact_output = self._compact_tool_output(tool_output)
                     text = f"Tool name: {tool_name};\nTool output: {compact_output}"
@@ -465,9 +539,11 @@ class Agent:
                     )
                 case "on_tool_error":
                     tool_name = event["name"]
-                    logger.error("[%s] Tool call error tool=%s", request_id, tool_name)
+                    bound_logger.error("Tool call error", extra={"tool": tool_name})
                     error_data = event["data"]
-                    error_message = self._compact_tool_output(error_data.get("error", "Unknown error"))
+                    error_message = self._compact_tool_output(
+                        error_data.get("error", "Unknown error")
+                    )
                     text = f"Tool name: {tool_name};\nError: {error_message}"
                     spending.input_tokens += self._get_tokens_count(text=text)
 
@@ -477,11 +553,11 @@ class Agent:
                     )
 
     async def summarize_memory(
-            self,
-            new_context: str,
-            old_context: str,
-            max_tokens: int = 300,
-            is_daily: bool = False,
+        self,
+        new_context: str,
+        old_context: str,
+        max_tokens: int = 300,
+        is_daily: bool = False,
     ) -> AgentMessage:
         summary_prompt = self._get_summary_memory_prompt(
             old_context=old_context,
@@ -497,13 +573,12 @@ class Agent:
 
         spending = self._get_empty_spending()
         spending.input_tokens = sum(
-            self._get_tokens_count(text=message.content)
-            for message in summary_messages
+            self._get_tokens_count(text=message.content) for message in summary_messages
         )
         spending.output_tokens = self._get_tokens_count(text=response.content)
         if self._model_settings.costs is not None:
             spending.calculate_cost(model_costs=self._model_settings.costs)
-        
+
         return AgentMessage(
             role="system",
             text=response.content,
@@ -512,9 +587,9 @@ class Agent:
         )
 
     async def summarize_dialogue(
-            self, 
-            messages: list[AgentMessage], 
-            max_tokens: int = 300,
+        self,
+        messages: list[AgentMessage],
+        max_tokens: int = 300,
     ) -> AgentMessage:
         if not messages:
             return AgentMessage(
@@ -531,38 +606,34 @@ class Agent:
             SystemMessage(content="You are an expert in dialogue summarization."),
             HumanMessage(content=summary_prompt),
         ]
-        
+
         response = await self._client.ainvoke(summary_messages)
-        
+
         spending = self._get_empty_spending()
         spending.input_tokens = sum(
-            self._get_tokens_count(text=message.content)
-            for message in summary_messages
+            self._get_tokens_count(text=message.content) for message in summary_messages
         )
         spending.output_tokens = self._get_tokens_count(text=response.content)
         if self._model_settings.costs is not None:
             spending.calculate_cost(model_costs=self._model_settings.costs)
-        
+
         return AgentMessage(
             role="system",
-            text=(
-                "Summary of the previous dialogue:\n"
-                f"{response.content}"
-            ),
+            text=(f"Summary of the previous dialogue:\n{response.content}"),
             is_summary=True,
             spending=spending,
         )
 
     async def extract_important_info(
-            self,
-            messages: list[AgentMessage],
-            max_tokens: int = 300,
-            is_daily: bool = False,
+        self,
+        messages: list[AgentMessage],
+        max_tokens: int = 300,
+        is_daily: bool = False,
     ) -> str:
         system_prompt = (
             "You are an expert at extracting current context information from dialogues."
-            if is_daily else
-            "You are an expert at extracting long-term important information from dialogues."
+            if is_daily
+            else "You are an expert at extracting long-term important information from dialogues."
         )
         user_prompt = self._get_extract_dialogue_info_prompt(
             messages=messages,
@@ -587,7 +658,9 @@ class Agent:
             if max_input_tokens:
                 return max_input_tokens
 
-        model_name = getattr(self._client, "model_name", None) or self._model_settings.id
+        model_name = (
+            getattr(self._client, "model_name", None) or self._model_settings.id
+        )
 
         if hasattr(self._client, "modelname_to_contextsize"):
             return self._client.modelname_to_contextsize(model_name)
@@ -693,16 +766,16 @@ class Agent:
         return memories
 
     def _get_summary_memory_prompt(
-            self,
-            old_context: str,
-            new_context: str, 
-            max_tokens: int = 300,
-            is_daily: bool = False,
+        self,
+        old_context: str,
+        new_context: str,
+        max_tokens: int = 300,
+        is_daily: bool = False,
     ) -> str:
         template_path = (
             self.TEMPLATES_DIR / "summarize_memory_daily_prompt.j2"
-            if is_daily else
-            self.TEMPLATES_DIR / "summarize_memory_prompt.j2"
+            if is_daily
+            else self.TEMPLATES_DIR / "summarize_memory_prompt.j2"
         )
         template_content = template_path.read_text()
         template = Template(template_content)
@@ -717,9 +790,9 @@ class Agent:
         return prompt
 
     def _get_summary_dialogue_prompt(
-            self,
-            messages: list[AgentMessage],
-            max_tokens: int = 300,
+        self,
+        messages: list[AgentMessage],
+        max_tokens: int = 300,
     ) -> str:
         template_path = self.TEMPLATES_DIR / "summarize_dialogue_prompt.j2"
         template_content = template_path.read_text()
@@ -739,15 +812,15 @@ class Agent:
         return prompt
 
     def _get_extract_dialogue_info_prompt(
-            self,
-            messages: list[AgentMessage],
-            max_tokens: int = 300,
-            is_daily: bool = False,
+        self,
+        messages: list[AgentMessage],
+        max_tokens: int = 300,
+        is_daily: bool = False,
     ) -> str:
         template_path = (
             self.TEMPLATES_DIR / "extract_dialogue_info_daily_prompt.j2"
-            if is_daily else
-            self.TEMPLATES_DIR / "extract_dialogue_info_prompt.j2"
+            if is_daily
+            else self.TEMPLATES_DIR / "extract_dialogue_info_prompt.j2"
         )
         template_content = template_path.read_text()
         template = Template(template_content)
@@ -760,7 +833,7 @@ class Agent:
         data = SummaryValues(
             context=context,
             max_tokens=max_tokens,
-        ) 
+        )
 
         prompt = template.render(data=data)
         return prompt
@@ -803,11 +876,11 @@ class Agent:
         for message in tool_output:
             if not isinstance(message, dict):
                 continue
-            
+
             spending_data = message.get("spending")
             if not spending_data:
                 continue
-            
+
             try:
                 message_spending = Spending(**spending_data)
                 if total_spending is None:
@@ -819,7 +892,9 @@ class Agent:
 
         return total_spending
 
-    def _convert_to_langchain_messages(self, messages: list[AgentMessage]) -> list[BaseMessage]:
+    def _convert_to_langchain_messages(
+        self, messages: Sequence[AgentMessage]
+    ) -> list[BaseMessage]:
         langchain_messages = []
         for agent_message in messages:
             if agent_message.text is None:
@@ -844,7 +919,9 @@ async def _handle_tool_errors(request, handler) -> Any:
         return await handler(request)
     except BaseException as exception:
         tb = "".join(
-            traceback.format_exception(type(exception), exception, exception.__traceback__),
+            traceback.format_exception(
+                type(exception), exception, exception.__traceback__
+            ),
         )
         return ToolMessage(
             content=f"Tool error: {exception}\n\nTraceback:\n{tb}",

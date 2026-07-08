@@ -12,7 +12,9 @@ from tests.factories import AssistantReply, AssistantToolCall, FakeChatModel
 
 @pytest.mark.asyncio
 async def test_ask_returns_accumulated_message_when_stream_false(make_agent, toolkit):
-    client = FakeChatModel(steps=[AssistantReply(text="Hello "), AssistantReply(text="world")])
+    client = FakeChatModel(
+        steps=[AssistantReply(text="Hello "), AssistantReply(text="world")]
+    )
     agent = make_agent(toolkits={"tools": toolkit}, client=client)
 
     messages = [AgentMessage(role="user", text="Hi")]
@@ -26,7 +28,9 @@ async def test_ask_returns_accumulated_message_when_stream_false(make_agent, too
 
 @pytest.mark.asyncio
 async def test_ask_returns_stream_chunks_when_stream_true(make_agent, toolkit):
-    client = FakeChatModel(steps=[AssistantReply(text="chunk1"), AssistantReply(text="chunk2")])
+    client = FakeChatModel(
+        steps=[AssistantReply(text="chunk1"), AssistantReply(text="chunk2")]
+    )
     agent = make_agent(toolkits={"tools": toolkit}, client=client)
 
     messages = [AgentMessage(role="user", text="Hi")]
@@ -47,7 +51,12 @@ async def test_ask_yields_tool_messages(make_agent):
     toolkit = MagicMock(spec=BaseToolKit)
     toolkit.get_tools.return_value = [calc]
 
-    client = FakeChatModel(steps=[AssistantToolCall(id="1", name="calc", args='{"a": 1}'), AssistantReply(text="Done")])
+    client = FakeChatModel(
+        steps=[
+            AssistantToolCall(id="1", name="calc", args='{"a": 1}'),
+            AssistantReply(text="Done"),
+        ]
+    )
     agent = make_agent(toolkits={"tools": toolkit}, client=client)
 
     messages = [AgentMessage(role="user", text="calculate")]
@@ -60,7 +69,9 @@ async def test_ask_yields_tool_messages(make_agent):
     assert "Tool name: calc" in tool_msgs[1].text
     assert "Tool output" in tool_msgs[1].text
 
-    assistant_texts = [msg.text for msg in result if msg.role == "assistant" and msg.text]
+    assistant_texts = [
+        msg.text for msg in result if msg.role == "assistant" and msg.text
+    ]
     assert "Done" in assistant_texts
 
 
@@ -74,7 +85,12 @@ async def test_ask_yields_tool_error(make_agent):
     toolkit = MagicMock(spec=BaseToolKit)
     toolkit.get_tools.return_value = [broken_tool]
 
-    client = FakeChatModel(steps=[AssistantToolCall(id="1", name="broken_tool", args="{}"), AssistantReply(text="Oops")])
+    client = FakeChatModel(
+        steps=[
+            AssistantToolCall(id="1", name="broken_tool", args="{}"),
+            AssistantReply(text="Oops"),
+        ]
+    )
     agent = make_agent(toolkits={"tools": toolkit}, client=client)
 
     messages = [AgentMessage(role="user", text="break")]
@@ -91,17 +107,23 @@ async def test_ask_yields_tool_error(make_agent):
 @pytest.mark.asyncio
 async def test_ask_uses_channel_tools(make_agent, channel):
     tool_func = MagicMock(return_value="channel result")
+
     def _channel_tool_func(query: str) -> str:
         """Channel tool."""
         return tool_func(query)
-    
+
     channel_tool = StructuredTool.from_function(_channel_tool_func, name="channel_tool")
     channel.get_toolkit.return_value.get_tools.return_value = [channel_tool]
 
     toolkit = MagicMock(spec=BaseToolKit)
     toolkit.get_tools.return_value = []
 
-    client = FakeChatModel(steps=[AssistantToolCall(id="1", name="channel_tool", args='{"query": "hi"}'), AssistantReply(text="Done")])
+    client = FakeChatModel(
+        steps=[
+            AssistantToolCall(id="1", name="channel_tool", args='{"query": "hi"}'),
+            AssistantReply(text="Done"),
+        ]
+    )
     agent = make_agent(toolkits={"tools": toolkit}, client=client)
 
     messages = [AgentMessage(role="user", text="use channel")]
@@ -119,9 +141,7 @@ async def test_ask_uses_channel_tools(make_agent, channel):
 
 @pytest.mark.asyncio
 async def test_summarize_memory(agent, client):
-    client.ainvoke = AsyncMock(
-        return_value=SimpleNamespace(content="memory summary")
-    )
+    client.ainvoke = AsyncMock(return_value=SimpleNamespace(content="memory summary"))
     result = await agent.summarize_memory("new context", "old context")
     assert isinstance(result, AgentMessage)
     assert result.role == "system"
@@ -132,9 +152,7 @@ async def test_summarize_memory(agent, client):
 
 @pytest.mark.asyncio
 async def test_summarize_memory_daily(agent, client):
-    client.ainvoke = AsyncMock(
-        return_value=SimpleNamespace(content="daily summary")
-    )
+    client.ainvoke = AsyncMock(return_value=SimpleNamespace(content="daily summary"))
     result = await agent.summarize_memory("new", "old", is_daily=True)
     assert result.text == "daily summary"
     assert result.is_summary is True
@@ -157,9 +175,7 @@ async def test_summarize_dialogue_empty_messages(agent):
 
 @pytest.mark.asyncio
 async def test_summarize_dialogue(agent, client):
-    client.ainvoke = AsyncMock(
-        return_value=SimpleNamespace(content="dialogue summary")
-    )
+    client.ainvoke = AsyncMock(return_value=SimpleNamespace(content="dialogue summary"))
     messages = [
         AgentMessage(role="user", text="hello"),
         AgentMessage(role="assistant", text="hi"),
@@ -190,9 +206,7 @@ async def test_extract_important_info(agent, client):
 
 @pytest.mark.asyncio
 async def test_extract_important_info_daily(agent, client):
-    client.ainvoke = AsyncMock(
-        return_value=SimpleNamespace(content="daily info")
-    )
+    client.ainvoke = AsyncMock(return_value=SimpleNamespace(content="daily info"))
     result = await agent.extract_important_info([], is_daily=True)
     assert result == "daily info"
 
@@ -246,7 +260,10 @@ def test_get_model_context_window_size_returns_none_when_unknown(agent):
 
 
 def test_get_context_threshold_size(agent):
-    assert agent.get_context_threshold_size() == agent._model_settings.context_threshold_size
+    assert (
+        agent.get_context_threshold_size()
+        == agent._model_settings.context_threshold_size
+    )
 
 
 def test_is_summarization_enabled(agent):
@@ -258,7 +275,9 @@ def test_is_memory_flush_enabled(agent):
 
 
 def test_get_max_memory_flush_tokens(agent):
-    assert agent.get_max_memory_flush_tokens() == agent._settings.max_memory_flush_tokens
+    assert (
+        agent.get_max_memory_flush_tokens() == agent._settings.max_memory_flush_tokens
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -270,13 +289,16 @@ def test_get_memory_toolkit(agent, memory_toolkit):
     assert agent.get_memory_toolkit() is memory_toolkit
 
 
-def test_get_memory_toolkit_none(agent_settings, model_settings, provider_settings, toolkit):
+def test_get_memory_toolkit_none(
+    agent_settings, model_settings, provider_settings, toolkit, syncer
+):
     toolkits = {"tools": toolkit}
     instance = Agent(
         settings=agent_settings,
         model_settings=model_settings,
         provider_settings=provider_settings,
         toolkits=toolkits,
+        syncer=syncer,
         mcp_settings={},
         client=MagicMock(),
     )

@@ -29,15 +29,17 @@ class Spending(BaseModel):
     currency: str = "$"
 
     def __bool__(self) -> bool:
-        return any((
-            self.input_tokens,
-            self.output_tokens,
-            self.cache_read_tokens,
-            self.cache_write_tokens,
-            self.audio_input_seconds,
-            self.audio_output_seconds,
-            self.cost,
-        ))
+        return any(
+            (
+                self.input_tokens,
+                self.output_tokens,
+                self.cache_read_tokens,
+                self.cache_write_tokens,
+                self.audio_input_seconds,
+                self.audio_output_seconds,
+                self.cost,
+            )
+        )
 
     def __add__(self, spending: Self):
         if self.currency != spending.currency:
@@ -52,31 +54,38 @@ class Spending(BaseModel):
             cache_read_tokens=self.cache_read_tokens + spending.cache_read_tokens,
             cache_write_tokens=self.cache_write_tokens + spending.cache_write_tokens,
             audio_input_seconds=self.audio_input_seconds + spending.audio_input_seconds,
-            audio_output_seconds=self.audio_output_seconds + spending.audio_output_seconds,
+            audio_output_seconds=self.audio_output_seconds
+            + spending.audio_output_seconds,
             cost=self.cost + spending.cost,
             currency=spending.currency,
         )
 
     def calculate_cost(
-            self,
-            model_costs: "ModelCosts",  # noqa: F821
+        self,
+        model_costs: "ModelCosts",  # noqa: F821
     ):
         self.cost = (
-            self.input_tokens * model_costs.input / model_costs.per_tokens +
-            self.output_tokens * model_costs.output / model_costs.per_tokens +
-            self.cache_read_tokens * model_costs.cache_read / model_costs.per_tokens +
-            self.cache_write_tokens * model_costs.cache_write / model_costs.per_tokens +
-            self.audio_input_seconds * model_costs.audio_input / model_costs.per_audio_seconds +
-            self.audio_output_seconds * model_costs.audio_output / model_costs.per_audio_seconds
+            self.input_tokens * model_costs.input / model_costs.per_tokens
+            + self.output_tokens * model_costs.output / model_costs.per_tokens
+            + self.cache_read_tokens * model_costs.cache_read / model_costs.per_tokens
+            + self.cache_write_tokens * model_costs.cache_write / model_costs.per_tokens
+            + self.audio_input_seconds
+            * model_costs.audio_input
+            / model_costs.per_audio_seconds
+            + self.audio_output_seconds
+            * model_costs.audio_output
+            / model_costs.per_audio_seconds
         )
 
     def get_total_tokens(self) -> int:
-        return sum((
-            self.input_tokens,
-            self.output_tokens,
-            self.cache_read_tokens,
-            self.cache_write_tokens,
-        ))
+        return sum(
+            (
+                self.input_tokens,
+                self.output_tokens,
+                self.cache_read_tokens,
+                self.cache_write_tokens,
+            )
+        )
 
 
 class AgentMessage(BaseModel):

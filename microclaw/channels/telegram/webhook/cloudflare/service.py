@@ -1,5 +1,4 @@
 import asyncio
-import logging
 import os
 import platform
 import re
@@ -48,14 +47,7 @@ class CloudflareTunnelService(facet.AsyncioServiceMixin):
             logger.warning("Tunnel already running")
             return
 
-        cmd = [
-            self._binary_path,
-            "tunnel",
-            "--url",
-            self._local_url,
-            "--log",
-            "info"
-        ]
+        cmd = [self._binary_path, "tunnel", "--url", self._local_url, "--log", "info"]
 
         logger.info(f"Starting Cloudflare tunnel to {self._local_url}: {' '.join(cmd)}")
 
@@ -116,10 +108,12 @@ class CloudflareTunnelService(facet.AsyncioServiceMixin):
             logger.error(f"Error reading tunnel logs: {e}")
 
     def _process_log_line(self, log_line: str):
-        if ("Your quick Tunnel" in log_line or "https://" in log_line) and not self._public_url:
+        if (
+            "Your quick Tunnel" in log_line or "https://" in log_line
+        ) and not self._public_url:
             logger.info(f"Cloudflare tunnel: {log_line}")
             try:
-                url_match = re.search(r'https://[^\s]+', log_line)
+                url_match = re.search(r"https://[^\s]+", log_line)
                 if url_match:
                     self._public_url = url_match.group(0)
             except Exception as e:
@@ -137,8 +131,10 @@ class CloudflareTunnelService(facet.AsyncioServiceMixin):
                 logger.info(f"Using cloudflared at {self._settings.path}")
                 self._binary_path = self._settings.path
                 return
-            logger.warning(f"Specified cloudflared path not found: {self._settings.path}")
-        
+            logger.warning(
+                f"Specified cloudflared path not found: {self._settings.path}"
+            )
+
         self._use_bundled_binary()
 
     def _use_bundled_binary(self) -> None:
@@ -154,16 +150,14 @@ class CloudflareTunnelService(facet.AsyncioServiceMixin):
         arch = arch_map.get(machine, "amd64")
 
         binary_name = f"cloudflared-{system}-{arch}-v{self._settings.version}"
-        
+
         module_dir = os.path.dirname(os.path.abspath(__file__))
         bin_dir = os.path.join(module_dir, "bin")
         binary_path = os.path.join(bin_dir, binary_name)
-        
+
         if os.path.exists(binary_path):
             self._binary_path = binary_path
             logger.info(f"Using bundled cloudflared binary: {self._binary_path}")
             return
-        
-        raise RuntimeError(
-            f"Cloudflared binary not found. Expected: {binary_path}"
-        )
+
+        raise RuntimeError(f"Cloudflared binary not found. Expected: {binary_path}")

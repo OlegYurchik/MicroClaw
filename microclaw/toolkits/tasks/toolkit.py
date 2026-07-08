@@ -1,3 +1,5 @@
+from microclaw.dto import DecisionEnum
+from langgraph.types import interrupt
 from datetime import datetime, date
 
 from caldav.aio import AsyncDAVClient, AsyncPrincipal, AsyncCalendar, AsyncTodo
@@ -42,7 +44,10 @@ class TasksToolKit(BaseToolKit[TasksSettings]):
         task_lists = []
         for calendar in calendars:
             task_list = await self._convert_calendar_to_dto(calendar=calendar)
-            if self.settings.allowed_task_lists is None or task_list.name in self.settings.allowed_task_lists:
+            if (
+                self.settings.allowed_task_lists is None
+                or task_list.name in self.settings.allowed_task_lists
+            ):
                 task_lists.append(task_list)
         return task_lists
 
@@ -62,7 +67,8 @@ class TasksToolKit(BaseToolKit[TasksSettings]):
             raise PermissionError("Write operations denied")
         if self.settings.write_mode is PermissionModeEnum.REQUEST:
             confirmation_request_text = f"Create task list '{name}'?"
-            if not await self.request_confirmation(confirmation_request_text):
+            decision = interrupt({"description": confirmation_request_text})
+            if decision == DecisionEnum.REJECT.value:
                 raise UserDeniedAction()
 
         principal = await self.get_principal()
@@ -106,7 +112,8 @@ class TasksToolKit(BaseToolKit[TasksSettings]):
         if self.settings.write_mode is PermissionModeEnum.REQUEST:
             task_list_name = await calendar.get_property(dav.DisplayName())
             confirmation_request_text = f"Delete task list '{task_list_name}'?"
-            if not await self.request_confirmation(confirmation_request_text):
+            decision = interrupt({"description": confirmation_request_text})
+            if decision == DecisionEnum.REJECT.value:
                 raise UserDeniedAction()
 
         await calendar.delete()
@@ -135,18 +142,15 @@ class TasksToolKit(BaseToolKit[TasksSettings]):
         todos = [await self._convert_todo_to_dto(todo=todo) for todo in todos]
 
         if completed is not None:
-            todos = [
-                todo
-                for todo in todos
-                if todo.completed == completed
-            ]
+            todos = [todo for todo in todos if todo.completed == completed]
         if overdue:
             today = date.today()
             todos = [
                 todo
                 for todo in todos
                 if todo.due is not None
-                and (todo.due.date() if isinstance(todo.due, datetime) else todo.due) < today
+                and (todo.due.date() if isinstance(todo.due, datetime) else todo.due)
+                < today
                 and not todo.completed
             ]
 
@@ -210,7 +214,8 @@ class TasksToolKit(BaseToolKit[TasksSettings]):
                 confirmation_request_text += f"\nStart: {start}"
             if priority is not None:
                 confirmation_request_text += f"\nPriority: {priority}"
-            if not await self.request_confirmation(confirmation_request_text):
+            decision = interrupt({"description": confirmation_request_text})
+            if decision == DecisionEnum.REJECT.value:
                 raise UserDeniedAction()
 
         todo_data = {"summary": summary}
@@ -228,15 +233,15 @@ class TasksToolKit(BaseToolKit[TasksSettings]):
 
     @tool
     async def update_task(
-            self,
-            task_uid: str,
-            task_list_url: str,
-            summary: str | None = None,
-            description: str | None = None,
-            due: datetime | date | None = None,
-            start: datetime | date | None = None,
-            priority: int | None = None,
-            completed: bool | None = None,
+        self,
+        task_uid: str,
+        task_list_url: str,
+        summary: str | None = None,
+        description: str | None = None,
+        due: datetime | date | None = None,
+        start: datetime | date | None = None,
+        priority: int | None = None,
+        completed: bool | None = None,
     ) -> Task:
         """
         Update an existing task. Use this tool when user wants to modify a task.
@@ -258,7 +263,7 @@ class TasksToolKit(BaseToolKit[TasksSettings]):
         todo = await calendar.todo_by_uid(task_uid)
         if not todo:
             raise ValueError(f"Task with UID {task_uid} not found")
-        
+
         if self.settings.write_mode is PermissionModeEnum.DENY:
             raise PermissionError("Write operations denied")
         if self.settings.write_mode is PermissionModeEnum.REQUEST:
@@ -279,10 +284,10 @@ class TasksToolKit(BaseToolKit[TasksSettings]):
 
             changes_text = "\n".join(changes)
             confirmation_request_text = (
-                f"Update task '{task_data.summary}'?\n"
-                f"{changes_text}"
+                f"Update task '{task_data.summary}'?\n{changes_text}"
             )
-            if not await self.request_confirmation(confirmation_request_text):
+            decision = interrupt({"description": confirmation_request_text})
+            if decision == DecisionEnum.REJECT.value:
                 raise UserDeniedAction()
 
         if summary is not None:
@@ -330,13 +335,14 @@ class TasksToolKit(BaseToolKit[TasksSettings]):
         todo = await calendar.todo_by_uid(task_uid)
         if not todo:
             raise ValueError(f"Task with UID {task_uid} not found")
-        
+
         if self.settings.write_mode is PermissionModeEnum.DENY:
             raise PermissionError("Write operations denied")
         if self.settings.write_mode is PermissionModeEnum.REQUEST:
             task_data = await self._convert_todo_to_dto(todo=todo)
             confirmation_request_text = f"Delete task '{task_data.summary}'?"
-            if not await self.request_confirmation(confirmation_request_text):
+            decision = interrupt({"description": confirmation_request_text})
+            if decision == DecisionEnum.REJECT.value:
                 raise UserDeniedAction()
 
         await todo.delete()

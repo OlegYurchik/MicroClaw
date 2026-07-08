@@ -13,10 +13,10 @@ class UsersMixin:
         raise NotImplementedError
 
     async def create_user(
-            self,
-            user_id: uuid.UUID | None = None,
-            role: UserRoleEnum = UserRoleEnum.USER,
-            agent_settings: "AgentSettings | None" = None,  # noqa: F821
+        self,
+        user_id: uuid.UUID | None = None,
+        role: UserRoleEnum = UserRoleEnum.USER,
+        agent_settings: "AgentSettings | None" = None,  # noqa: F821
     ) -> User:
         raise NotImplementedError
 
@@ -24,10 +24,10 @@ class UsersMixin:
         raise NotImplementedError
 
     async def update_user(
-            self,
-            user_id: uuid.UUID,
-            role: UserRoleEnum | None | Empty = Empty,
-            agent_settings: "AgentSettings | None | Empty" = Empty,  # noqa: F821
+        self,
+        user_id: uuid.UUID,
+        role: UserRoleEnum | None | Empty = Empty,
+        agent_settings: "AgentSettings | None | Empty" = Empty,  # noqa: F821
     ) -> User | None:
         raise NotImplementedError
 
@@ -35,9 +35,9 @@ class UsersMixin:
         raise NotImplementedError
 
     async def get_user_by_channel(
-            self,
-            channel_key: str,
-            channel_internal_id: str,
+        self,
+        channel_key: str,
+        channel_internal_id: str,
     ) -> User | None:
         raise NotImplementedError
 
@@ -50,27 +50,27 @@ class UsersMixin:
 
 class SessionsMixin:
     async def get_actual_session(
-            self,
-            user_id: uuid.UUID,
-            channel_key: str,
-            channel_internal_id: str,
+        self,
+        user_id: uuid.UUID,
+        channel_key: str,
+        channel_internal_id: str,
     ) -> uuid.UUID | None:
         raise NotImplementedError
 
     async def get_user_sessions(
-            self,
-            user_id: uuid.UUID,
-            channel_key: str,
-            channel_internal_id: str,
+        self,
+        user_id: uuid.UUID,
+        channel_key: str,
+        channel_internal_id: str,
     ) -> list[uuid.UUID]:
         raise NotImplementedError
 
     async def attach_session_to_user(
-            self,
-            user_id: uuid.UUID,
-            session_id: uuid.UUID,
-            channel_key: str,
-            channel_internal_id: str,
+        self,
+        user_id: uuid.UUID,
+        session_id: uuid.UUID,
+        channel_key: str,
+        channel_internal_id: str,
     ) -> None:
         raise NotImplementedError
 
@@ -80,9 +80,9 @@ class CronsMixin:
         raise NotImplementedError
 
     async def create_cron(
-            self,
-            user_id: uuid.UUID,
-            cron_task: CronTask,
+        self,
+        user_id: uuid.UUID,
+        cron_task: CronTask,
     ) -> None:
         raise NotImplementedError
 
@@ -92,9 +92,9 @@ class CronsMixin:
 
 class TokensMixin:
     async def create_token_for_user(
-            self,
-            user_id: uuid.UUID,
-            ttl: datetime.timedelta | None = datetime.timedelta(days=30),
+        self,
+        user_id: uuid.UUID,
+        ttl: datetime.timedelta | None = datetime.timedelta(days=30),
     ) -> str:
         raise NotImplementedError
 
@@ -103,10 +103,10 @@ class TokensMixin:
 
 
 class UsersStorageInterface(
-        facet.AsyncioServiceMixin,
-        UsersMixin,
-        SessionsMixin,
-        CronsMixin,
-        TokensMixin,
+    facet.AsyncioServiceMixin,
+    UsersMixin,
+    SessionsMixin,
+    CronsMixin,
+    TokensMixin,
 ):
-    pass    
+    pass

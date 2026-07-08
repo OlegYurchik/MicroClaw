@@ -1,5 +1,4 @@
 import uuid
-from datetime import date
 from typing import AsyncGenerator
 
 from pydantic_filters import BaseSort
@@ -29,7 +28,9 @@ class SessionsRepository(BaseRepository[SessionData, SessionFilter]):
         pagination: BasePagination | None = None,
         sort: BaseSort | None = None,
     ) -> AsyncGenerator[uuid.UUID]:
-        async for item in self.get_items(filter_=date_filter, pagination=pagination, sort=sort):
+        async for item in self.get_items(
+            filter_=date_filter, pagination=pagination, sort=sort
+        ):
             yield item.id
 
     async def create_session(self, session_id: uuid.UUID) -> SessionData:
@@ -60,7 +61,9 @@ class MessagesRepository(BaseRepository[AgentMessage, MessageFilter]):
     def get_db_table(self) -> type[BaseTable]:
         return MessageTable
 
-    async def add_message(self, session_id: uuid.UUID, message: AgentMessage) -> AgentMessage:
+    async def add_message(
+        self, session_id: uuid.UUID, message: AgentMessage
+    ) -> AgentMessage:
         message_table = MessageTable.from_item(message, session_id)
         return await self.create_item(message_table)
 

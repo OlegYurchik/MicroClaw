@@ -19,7 +19,9 @@ class LangChainToolkitAdapter(BaseToolKit[LangChainToolkitAdapterSettings]):
     def get_tools(self) -> list[BaseTool]:
         toolkit_cls = self._import_class(self._settings.toolkit_class)
 
-        if not isinstance(toolkit_cls, type) or not issubclass(toolkit_cls, BaseToolkit):
+        if not isinstance(toolkit_cls, type) or not issubclass(
+            toolkit_cls, BaseToolkit
+        ):
             raise TypeError(
                 f"Class '{self._settings.toolkit_class}' must be a subclass of "
                 f"langchain_core.tools.BaseToolkit"

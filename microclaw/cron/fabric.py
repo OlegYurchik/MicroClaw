@@ -5,9 +5,9 @@ from microclaw.cron.settings import CronTaskSettings
 
 
 async def get_cron_task(
-        key: str,
-        settings: CronTaskSettings,
-        resolver: "DependencyResolver",  # noqa: F821
+    key: str,
+    settings: CronTaskSettings,
+    resolver: "DependencyResolver",  # noqa: F821
 ) -> BaseCronTask:
     module_path, class_name = settings.path.rsplit(".", 1)
 

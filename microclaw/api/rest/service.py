@@ -4,7 +4,10 @@ import uvicorn
 import fastapi
 
 from microclaw.resolver import DependencyResolver
-from microclaw.sessions_storages import SessionsStorageSettingsType, get_sessions_storage
+from microclaw.sessions_storages import (
+    SessionsStorageSettingsType,
+    get_sessions_storage,
+)
 from microclaw.users_storages import UsersStorageSettingsType, get_users_storage
 from microclaw.utils import get_by_key_or_first
 from . import sessions, users
@@ -18,9 +21,9 @@ class UvicornServer(uvicorn.Server):
 
 class RESTAPIService(facet.AsyncioServiceMixin):
     def __init__(
-            self,
-            settings: RESTAPISettings,
-            dependency_resolver: DependencyResolver,
+        self,
+        settings: RESTAPISettings,
+        dependency_resolver: DependencyResolver,
     ):
         self._settings = settings
         self._dependency_resolver = dependency_resolver
@@ -54,7 +57,9 @@ class RESTAPIService(facet.AsyncioServiceMixin):
                 key=self._settings.users_storage,
             )
         if isinstance(self._settings.sessions_storage, SessionsStorageSettingsType):
-            app.sessions_storage = get_sessions_storage(settings=self._settings.sessions_storage)
+            app.sessions_storage = get_sessions_storage(
+                settings=self._settings.sessions_storage
+            )
         else:
             app.sessions_storage = get_by_key_or_first(
                 storage=await self._dependency_resolver.resolve_sessions_storages(),

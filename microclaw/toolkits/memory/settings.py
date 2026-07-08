@@ -1,4 +1,3 @@
-
 from pydantic import BaseModel, Field
 
 from .drivers import MemoryDriverSettingsType
@@ -15,5 +14,5 @@ class MemoryToolKitSettings(BaseModel):
         default=2000,
         ge=500,
         le=10000,
-        description="Maximum tokens for memory file (applies to both general and daily)"
+        description="Maximum tokens for memory file (applies to both general and daily)",
     )

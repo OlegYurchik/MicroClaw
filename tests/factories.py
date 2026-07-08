@@ -4,6 +4,12 @@ from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import AIMessageChunk, BaseMessage
 from langchain_core.outputs import ChatGeneration, ChatGenerationChunk, ChatResult
 from pydantic import BaseModel, Field, PrivateAttr
+import uuid
+
+from microclaw.agents import Agent
+from microclaw.channels.base import BaseChannel
+from microclaw.dto import AgentMessage, DecisionEnum
+from microclaw.sessions_storages.filters import MessageFilter
 
 
 class AssistantReply(BaseModel):
@@ -21,18 +27,18 @@ class FakeChatModel(BaseChatModel):
     _index: int = PrivateAttr(default=0)
 
     def _generate(
-            self,
-            messages: list[BaseMessage],
-            stop=None,
-            run_manager=None,
-            **kwargs: Any,
+        self,
+        messages: list[BaseMessage],
+        stop=None,
+        run_manager=None,
+        **kwargs: Any,
     ) -> ChatResult:
         text_steps = self._consume_text_steps()
         if text_steps:
             return ChatResult(
-                generations=[ChatGeneration(
-                    message=AIMessageChunk(content="".join(text_steps))
-                )]
+                generations=[
+                    ChatGeneration(message=AIMessageChunk(content="".join(text_steps)))
+                ]
             )
         if self._index < len(self.steps):
             return ChatResult(
@@ -43,22 +49,24 @@ class FakeChatModel(BaseChatModel):
         )
 
     async def _agenerate(
-            self,
-            messages: list[BaseMessage],
-            stop=None,
-            run_manager=None,
-            **kwargs: Any,
+        self,
+        messages: list[BaseMessage],
+        stop=None,
+        run_manager=None,
+        **kwargs: Any,
     ) -> ChatResult:
         return self._generate(messages, stop, run_manager, **kwargs)
 
     async def _astream(
-            self,
-            messages: list[BaseMessage],
-            stop=None,
-            run_manager=None,
-            **kwargs: Any,
+        self,
+        messages: list[BaseMessage],
+        stop=None,
+        run_manager=None,
+        **kwargs: Any,
     ) -> AsyncIterator[ChatGenerationChunk]:
-        if self._index < len(self.steps) and isinstance(self.steps[self._index], AssistantReply):
+        if self._index < len(self.steps) and isinstance(
+            self.steps[self._index], AssistantReply
+        ):
             for text in self._consume_text_steps():
                 yield ChatGenerationChunk(message=AIMessageChunk(content=text))
         elif self._index < len(self.steps):
@@ -79,7 +87,9 @@ class FakeChatModel(BaseChatModel):
 
     def _consume_text_steps(self) -> list[str]:
         text_steps = []
-        while self._index < len(self.steps) and isinstance(self.steps[self._index], AssistantReply):
+        while self._index < len(self.steps) and isinstance(
+            self.steps[self._index], AssistantReply
+        ):
             text_steps.append(self.steps[self._index].text)
             self._index += 1
         return text_steps
@@ -89,19 +99,15 @@ class FakeChatModel(BaseChatModel):
         self._index += 1
         return AIMessageChunk(
             content="",
-            tool_call_chunks=[{
-                "id": item.id,
-                "name": item.name,
-                "args": item.args,
-                "index": 0,
-            }],
+            tool_call_chunks=[
+                {
+                    "id": item.id,
+                    "name": item.name,
+                    "args": item.args,
+                    "index": 0,
+                }
+            ],
         )
-
-
-import uuid
-from microclaw.agents import Agent
-from microclaw.channels.base import BaseChannel
-from microclaw.dto import AgentMessage
 
 
 class FakeChannel(BaseChannel):
@@ -112,4 +118,39 @@ class FakeChannel(BaseChannel):
         new_messages: list[AgentMessage] | None = None,
         agent: Agent | None = None,
     ):
-        pass
+        await self._generate_and_send_answer(
+            session_id=session_id,
+            agent=agent,
+            new_messages=new_messages or [],
+        )
+
+    async def _generate_and_send_answer(
+        self,
+        session_id: uuid.UUID,
+        agent: Agent | None = None,
+        new_messages: tuple = (),
+    ):
+        agent = agent or self._agent
+
+        for msg in new_messages:
+            await self._sessions_storage.add_message(
+                session_id=session_id,
+                message=msg,
+            )
+
+        message_generator = self._sessions_storage.get_messages(
+            filter=MessageFilter(session_id=session_id)
+        )
+        history = [msg async for msg in message_generator]
+
+        with self.set_current_channel():
+            if await agent.has_pending_interrupt(session_id=session_id):
+                async for _ in agent.resume_after_confirmation(
+                    session_id=session_id,
+                    decision=DecisionEnum.REJECT,
+                    new_messages=new_messages,
+                ):
+                    pass
+            else:
+                async for _ in agent.ask(messages=history):
+                    pass

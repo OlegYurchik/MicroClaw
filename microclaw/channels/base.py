@@ -1,15 +1,12 @@
-import asyncio
 import contextlib
 import contextvars
 import datetime
 import uuid
-import warnings
-
 import facet
 from typing import Self
 
 from microclaw.agents import Agent, AgentSettings
-from microclaw.dto import AgentMessage, DecisionEnum, InterruptEntry, User
+from microclaw.dto import AgentMessage, User
 from microclaw.sessions_storages.filters import MessageFilter
 from microclaw.sessions_storages.interfaces import SessionsStorageInterface
 from microclaw.stt import STT
@@ -20,76 +17,21 @@ from microclaw.toolkits.memory.toolkit import MemorySizeExceeded
 from .settings import ChannelSettings
 
 
-class ConfirmationMixin:
-    CONFIRMATION_POLL_INTERVAL = 0.1
-    CONFIRMATION_PREFIX = "confirmation"
-
-    async def request_confirmation(self, question: str) -> uuid.UUID:
-        warnings.warn(
-            "request_confirmation is deprecated; use interrupt() in tools instead",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        raise NotImplementedError
-
-    async def resolve_confirmation(
-            self,
-            session_id: uuid.UUID,
-            confirmation_id: uuid.UUID,
-            approved: bool,
-    ) -> None:
-        warnings.warn(
-            "resolve_confirmation is deprecated; use syncer + agent.handle_confirmation() instead",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        await self._syncer.set(f"confirm:{session_id}:{confirmation_id}", approved)
-
-    async def wait_for_confirmation(
-            self,
-            session_id: uuid.UUID,
-            confirmation_id: uuid.UUID,
-    ) -> bool:
-        raise NotImplementedError(
-            "wait_for_confirmation is removed; use interrupt() + handle_confirmation() instead"
-        )
-
-    async def reject_all_pending_confirmations(self, session_id: uuid.UUID) -> None:
-        pattern = f"{self.CONFIRMATION_PREFIX}:{session_id}:*"
-        keys = await self._syncer.scan_keys(pattern)
-        for key in keys:
-            data = await self._syncer.get(key)
-            if data and data.get("status") == "pending":
-                data["status"] = "rejected"
-                await self._syncer.set(key, data)
-                _session_id = data.get("session_id")
-                if _session_id and hasattr(self, "_agent"):
-                    try:
-                        agent = self._agent
-                        async for _ in agent.handle_confirmation(
-                            session_id=_session_id,
-                            decision=DecisionEnum.REJECT,
-                        ):
-                            pass
-                    except Exception:
-                        pass  # best effort
-
-
-class BaseChannel(facet.AsyncioServiceMixin, ConfirmationMixin):
+class BaseChannel(facet.AsyncioServiceMixin):
     CHANNEL_CONTEXT = contextvars.ContextVar("channel_context", default=None)
     SESSION_ID_CONTEXT = contextvars.ContextVar("session_id", default=None)
     REQUEST_ID_CONTEXT = contextvars.ContextVar("request_id", default=None)
 
     def __init__(
-            self,
-            settings: ChannelSettings,
-            agent: Agent,
-            sessions_storage: SessionsStorageInterface,
-            syncer: SyncerInterface,
-            users_storage: UsersStorageInterface,
-            resolver: "DependencyResolver",  # noqa: F821
-            stt: STT | None = None,
-            channel_key: str = "default",
+        self,
+        settings: ChannelSettings,
+        agent: Agent,
+        sessions_storage: SessionsStorageInterface,
+        syncer: SyncerInterface,
+        users_storage: UsersStorageInterface,
+        resolver: "DependencyResolver",  # noqa: F821
+        stt: STT | None = None,
+        channel_key: str = "default",
     ):
         self._settings = settings
         self._agent = agent
@@ -104,13 +46,13 @@ class BaseChannel(facet.AsyncioServiceMixin, ConfirmationMixin):
     @property
     def description(self) -> str | None:
         return self.__doc__
-    
+
     def get_toolkit(self) -> BaseToolKit | None:
         return None
-    
+
     def get_sessions_storage(self) -> SessionsStorageInterface:
         return self._sessions_storage
-    
+
     def get_users_storage(self) -> UsersStorageInterface:
         return self._users_storage
 
@@ -162,25 +104,25 @@ class BaseChannel(facet.AsyncioServiceMixin, ConfirmationMixin):
         return agent
 
     async def start_conversation(
-            self,
-            session_id: uuid.UUID,
-            channel_internal_id: int,
-            new_messages: list[AgentMessage] | None = None,
-            agent: Agent | None = None,
+        self,
+        session_id: uuid.UUID,
+        channel_internal_id: int,
+        new_messages: list[AgentMessage] | None = None,
+        agent: Agent | None = None,
     ):
         raise NotImplementedError
 
     async def summarize_dialog_if_needed(
-            self,
-            agent: Agent,
-            session_id: uuid.UUID,
+        self,
+        agent: Agent,
+        session_id: uuid.UUID,
     ) -> bool:
         if (
-                not agent.is_summarization_enabled() or
-                not await self.is_context_went_across_threshold(
-                    agent=agent,
-                    session_id=session_id,
-                )
+            not agent.is_summarization_enabled()
+            or not await self.is_context_went_across_threshold(
+                agent=agent,
+                session_id=session_id,
+            )
         ):
             return False
 
@@ -223,24 +165,26 @@ class BaseChannel(facet.AsyncioServiceMixin, ConfirmationMixin):
         return True
 
     async def is_context_went_across_threshold(
-            self,
-            agent: Agent,
-            session_id: uuid.UUID,
+        self,
+        agent: Agent,
+        session_id: uuid.UUID,
     ) -> bool:
         context_window_size = agent.get_model_context_window_size()
         context_threshold = agent.get_context_threshold_size()
         if context_window_size is None or context_threshold is None:
             return False
 
-        context_size = await self._sessions_storage.get_context_size(session_id=session_id)
+        context_size = await self._sessions_storage.get_context_size(
+            session_id=session_id
+        )
         threshold_tokens = int(context_window_size * context_threshold)
         return context_size > threshold_tokens
 
     async def _append_to_memory(
-            self,
-            agent: Agent,
-            new_content: str,
-            date: datetime.date | None = None,
+        self,
+        agent: Agent,
+        new_content: str,
+        date: datetime.date | None = None,
     ):
         memory_toolkit = agent.get_memory_toolkit()
         try:

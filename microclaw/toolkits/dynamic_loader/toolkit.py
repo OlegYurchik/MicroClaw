@@ -91,9 +91,13 @@ class DynamicLoaderToolKit(BaseToolKit[DynamicLoaderToolKitSettings]):
             List of ToolInfo objects for all tools in the toolkit
         """
         if toolkit_name not in self._settings.toolkits:
-            raise ValueError(f"Toolkit '{toolkit_name}' not found in available toolkits")
+            raise ValueError(
+                f"Toolkit '{toolkit_name}' not found in available toolkits"
+            )
 
-        toolkit = self._load_toolkit(toolkit_name, self._settings.toolkits[toolkit_name])
+        toolkit = self._load_toolkit(
+            toolkit_name, self._settings.toolkits[toolkit_name]
+        )
         tools = toolkit.get_tools()
 
         return [
@@ -106,10 +110,10 @@ class DynamicLoaderToolKit(BaseToolKit[DynamicLoaderToolKitSettings]):
 
     @tool
     async def call_tool(
-            self,
-            toolkit_name: str,
-            tool_name: str,
-            **kwargs: Any,
+        self,
+        toolkit_name: str,
+        tool_name: str,
+        **kwargs: Any,
     ) -> str:
         """
         Call a specific tool from a loaded toolkit.
@@ -123,9 +127,13 @@ class DynamicLoaderToolKit(BaseToolKit[DynamicLoaderToolKitSettings]):
             Result of the tool call as a string
         """
         if toolkit_name not in self._settings.toolkits:
-            raise ValueError(f"Toolkit '{toolkit_name}' not found in available toolkits")
+            raise ValueError(
+                f"Toolkit '{toolkit_name}' not found in available toolkits"
+            )
 
-        toolkit = self._load_toolkit(toolkit_name, self._settings.toolkits[toolkit_name])
+        toolkit = self._load_toolkit(
+            toolkit_name, self._settings.toolkits[toolkit_name]
+        )
 
         expected_tool_name = f"{toolkit_name}_{tool_name}"
         tool = None
@@ -135,7 +143,9 @@ class DynamicLoaderToolKit(BaseToolKit[DynamicLoaderToolKitSettings]):
                 break
 
         if tool is None:
-            raise ValueError(f"Tool '{tool_name}' not found in toolkit '{toolkit_name}'")
+            raise ValueError(
+                f"Tool '{tool_name}' not found in toolkit '{toolkit_name}'"
+            )
 
         return await tool.ainvoke(input=kwargs)
 

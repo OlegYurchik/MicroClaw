@@ -7,7 +7,7 @@ class MessageInfo(BaseModel):
     role: str
     content: str
     timestamp: datetime
-    
+
 
 class SessionInfo(BaseModel):
     session_id: UUID

@@ -8,9 +8,9 @@ from .settings import MemoryToolKitSettings
 
 class MemorySizeExceeded(Exception):
     def __init__(
-            self,
-            max_tokens: int,
-            date: datetime.date | None = None,
+        self,
+        max_tokens: int,
+        date: datetime.date | None = None,
     ):
         memory_type = "general" if date is None else f"daily ({date})"
         super().__init__(
@@ -46,7 +46,9 @@ class MemoryToolKit(BaseToolKit[MemoryToolKitSettings]):
         return await self._driver.get_memory(date)
 
     @tool
-    async def append_to_memory(self, content: str, date: datetime.date | None = None) -> None:
+    async def append_to_memory(
+        self, content: str, date: datetime.date | None = None
+    ) -> None:
         """
         Append content to memory for a specific date or general memory.
 
@@ -87,7 +89,9 @@ class MemoryToolKit(BaseToolKit[MemoryToolKitSettings]):
         return await self._driver.memory_search(query, limit)
 
     @tool
-    async def rewrite_memory(self, content: str, date: datetime.date | None = None) -> None:
+    async def rewrite_memory(
+        self, content: str, date: datetime.date | None = None
+    ) -> None:
         """
         Rewrite memory content for a specific date or general memory.
 

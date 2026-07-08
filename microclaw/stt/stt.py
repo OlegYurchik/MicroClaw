@@ -11,10 +11,10 @@ from microclaw.stt.settings import STTSettings
 
 class STT:
     def __init__(
-            self,
-            settings: STTSettings,
-            model_settings: ModelSettings,
-            provider_settings: ProviderSettings,
+        self,
+        settings: STTSettings,
+        model_settings: ModelSettings,
+        provider_settings: ProviderSettings,
     ) -> None:
         self._settings = settings
         self._model_settings = model_settings
@@ -32,7 +32,9 @@ class STT:
             case APITypeEnum.OPENAI:
                 return AsyncOpenAI(
                     api_key=api_key,
-                    base_url=base_url if base_url != "https://api.openai.com/v1" else None,
+                    base_url=base_url
+                    if base_url != "https://api.openai.com/v1"
+                    else None,
                 )
             case _:
                 raise ValueError(f"Unsupported API type: '{api_type.value}'")
@@ -54,7 +56,9 @@ class STT:
             audio_input_seconds = int(response.usage.seconds)
         spending = Spending(
             audio_input_seconds=audio_input_seconds,
-            currency=self._model_settings.costs.currency if self._model_settings.costs else "$",
+            currency=self._model_settings.costs.currency
+            if self._model_settings.costs
+            else "$",
         )
         if self._model_settings.costs:
             spending.calculate_cost(model_costs=self._model_settings.costs)
@@ -65,7 +69,9 @@ class STT:
             spending=spending,
         )
 
-    async def transcribe_bytes(self, audio_data: bytes, format: str = "wav") -> AgentMessage:
+    async def transcribe_bytes(
+        self, audio_data: bytes, format: str = "wav"
+    ) -> AgentMessage:
         audio_file = BytesIO(audio_data)
         audio_file.name = f"audio.{format}"
 
@@ -80,7 +86,9 @@ class STT:
             audio_input_seconds = int(response.usage.seconds)
         spending = Spending(
             audio_input_seconds=audio_input_seconds,
-            currency=self._model_settings.costs.currency if self._model_settings.costs else "$",
+            currency=self._model_settings.costs.currency
+            if self._model_settings.costs
+            else "$",
         )
         if self._model_settings.costs:
             spending.calculate_cost(model_costs=self._model_settings.costs)

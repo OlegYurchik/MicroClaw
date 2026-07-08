@@ -69,27 +69,6 @@ class BaseToolKit(Generic[SettingsType]):
             for tool_function in tool_functions
         ]
 
-    async def request_confirmation(self, question: str) -> bool:
-        from microclaw.channels import BaseChannel
-
-        channel = BaseChannel.get_current_channel()
-        if channel is None:
-            return False
-
-        session_id = BaseChannel.get_current_session_id()
-        if session_id is None:
-            return False
-
-        try:
-            confirmation_id = await channel.request_confirmation(question)
-        except NotImplementedError:
-            return False
-
-        return await channel.wait_for_confirmation(
-            session_id=session_id,
-            confirmation_id=confirmation_id,
-        )
-
 
 def tool(function: Callable) -> Callable:
     function._is_tool = True
@@ -97,8 +76,8 @@ def tool(function: Callable) -> Callable:
 
 
 def _get_random_string(
-        length: int = 8,
-        alphabet: str = string.ascii_lowercase + string.digits,
+    length: int = 8,
+    alphabet: str = string.ascii_lowercase + string.digits,
 ) -> str:
     return "".join(random.choice(alphabet) for _ in range(length))
 

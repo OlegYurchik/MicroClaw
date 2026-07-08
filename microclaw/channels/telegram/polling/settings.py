@@ -6,8 +6,6 @@ from microclaw.channels.telegram.settings import TelegramMethodEnum, TelegramSet
 
 
 class TelegramPollingSettings(TelegramSettings):
-    method: Literal[TelegramMethodEnum.POLLING] = (
-        TelegramMethodEnum.POLLING
-    )
+    method: Literal[TelegramMethodEnum.POLLING] = TelegramMethodEnum.POLLING
 
     timeout: PositiveInt = 10  # in seconds

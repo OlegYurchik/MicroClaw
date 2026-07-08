@@ -10,14 +10,14 @@ from .webhook import TelegramWebhookChannel
 
 
 def get_telegram_channel(
-        settings: TelegramSettings,
-        agent: Agent,
-        sessions_storage: SessionsStorageInterface,
-        syncer: SyncerInterface,
-        users_storage: UsersStorageInterface,
-        resolver: "DependencyResolver",  # noqa: F821
-        stt: STT | None = None,
-        channel_key: str = "default",
+    settings: TelegramSettings,
+    agent: Agent,
+    sessions_storage: SessionsStorageInterface,
+    syncer: SyncerInterface,
+    users_storage: UsersStorageInterface,
+    resolver: "DependencyResolver",  # noqa: F821
+    stt: STT | None = None,
+    channel_key: str = "default",
 ) -> BaseTelegramChannel:
     match settings.method:
         case TelegramMethodEnum.POLLING:
@@ -43,4 +43,6 @@ def get_telegram_channel(
                 resolver=resolver,
             )
         case _:
-            raise ValueError(f"Unsupported telegram service with method: '{settings.method}'")
+            raise ValueError(
+                f"Unsupported telegram service with method: '{settings.method}'"
+            )

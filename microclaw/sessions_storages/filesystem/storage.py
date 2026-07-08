@@ -31,19 +31,19 @@ class FilesystemSessionsStorage(SessionsStorageInterface):
         await self._write_session(session_id=session_id, data=SessionData())
 
     async def get_sessions(
-            self,
-            filter: SessionFilter | None = None,
-            pagination: BasePagination | None = None,
-            sort: BaseSort | None = None,
+        self,
+        filter: SessionFilter | None = None,
+        pagination: BasePagination | None = None,
+        sort: BaseSort | None = None,
     ) -> AsyncGenerator[uuid.UUID]:
         if not self._settings.path.exists():
             return
 
         page_offset = pagination.offset if pagination else 0
         page_limit = pagination.limit if pagination else None
-        
+
         session_ids = []
-        
+
         for session_file in self._settings.path.glob("*.json"):
             if filter is not None and filter.created_at is not None:
                 mtime = datetime.datetime.fromtimestamp(session_file.stat().st_mtime)
@@ -55,21 +55,21 @@ class FilesystemSessionsStorage(SessionsStorageInterface):
                 session_ids.append((session_id, session_file.stat().st_mtime))
             except ValueError:
                 continue
-        
+
         if sort is not None and sort.sort_by is not None:
             sort_field = sort.sort_by
             reverse = sort.sort_by_order == SortByOrder.desc
-            
+
             if sort_field in ["created_at", "updated_at", "mtime"]:
                 session_ids.sort(key=lambda x: x[1], reverse=reverse)
-        
+
         for i, (session_id, _) in enumerate(session_ids):
             if i < page_offset:
                 continue
-                
+
             if page_limit is not None and i >= page_offset + page_limit:
                 break
-                
+
             yield session_id
 
     async def add_message(self, session_id: uuid.UUID, message: AgentMessage):
@@ -90,43 +90,46 @@ class FilesystemSessionsStorage(SessionsStorageInterface):
             await self._write_session(session_id=session_id, data=session_data)
 
     async def get_messages(
-            self,
-            filter: MessageFilter | None = None,
-            pagination: BasePagination | None = None,
-            sort: BaseSort | None = None,
-            from_last_summarization: bool = True,
+        self,
+        filter: MessageFilter | None = None,
+        pagination: BasePagination | None = None,
+        sort: BaseSort | None = None,
+        from_last_summarization: bool = True,
     ) -> AsyncGenerator[AgentMessage]:
         if filter is None or filter.session_id is None:
             return
-            
+
         session_id = filter.session_id
         lock = await self._get_lock(session_id=session_id)
         async with lock:
             session_data = await self._read_session(session_id=session_id)
 
         messages = list(session_data.messages)
-        
+
         if filter.is_summary is not None:
             messages = [m for m in messages if m.is_summary == filter.is_summary]
         if filter.role is not None:
             messages = [m for m in messages if m.role == filter.role]
-        
+
         if sort is not None and sort.sort_by is not None:
             sort_field = sort.sort_by
             reverse = sort.sort_by_order == SortByOrder.desc
-            
 
-            if sort_field == 'role':
+            if sort_field == "role":
                 messages.sort(key=lambda m: m.role, reverse=reverse)
-            elif sort_field == 'is_summary':
+            elif sort_field == "is_summary":
                 messages.sort(key=lambda m: m.is_summary, reverse=reverse)
-        
+
         if pagination and pagination.limit is not None:
             page_offset = pagination.offset if pagination else 0
             page_limit = pagination.limit if pagination else None
-            end_index = min(page_offset + page_limit, len(messages)) if page_limit else len(messages)
+            end_index = (
+                min(page_offset + page_limit, len(messages))
+                if page_limit
+                else len(messages)
+            )
             messages = messages[page_offset:end_index]
-        
+
         if from_last_summarization:
             index = 0
             for i, message in enumerate(messages):
@@ -167,7 +170,7 @@ class FilesystemSessionsStorage(SessionsStorageInterface):
 
     async def _write_session(self, session_id: uuid.UUID, data: SessionData):
         session_file = self._get_session_file_path(session_id)
- 
+
         async with aiofiles.open(session_file, mode="w", encoding="utf-8") as f:
             await f.write(data.model_dump_json(indent=2))
 

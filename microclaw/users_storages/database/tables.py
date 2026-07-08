@@ -115,6 +115,4 @@ class TokenTable(BaseTable, table=True):
 
     user: UserTable = Relationship(back_populates="tokens")
 
-    __table_args__ = (
-        Index("ix_user_tokens_user_id", "user_id"),
-    )
+    __table_args__ = (Index("ix_user_tokens_user_id", "user_id"),)

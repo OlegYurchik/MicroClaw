@@ -1,12 +1,11 @@
 import uuid
 from difflib import SequenceMatcher
 
-from pydantic_filters.pagination import OffsetPagination as BasePagination
 
 from microclaw.toolkits.base import BaseToolKit, tool
 from microclaw.channels import BaseChannel
-from microclaw.sessions_storages.filters import SessionFilter, MessageFilter
-from .dto import SessionInfo, MessageInfo, SearchResult
+from microclaw.sessions_storages.filters import MessageFilter
+from .dto import SessionInfo, MessageInfo
 from .settings import SessionsToolKitSettings
 
 
@@ -63,8 +62,10 @@ class SessionsToolKit(BaseToolKit[SessionsToolKitSettings]):
                 continue
 
             content = ""
-            messages_gen = sessions_storage.get_messages(filter=MessageFilter(session_id=session_id))
-            
+            messages_gen = sessions_storage.get_messages(
+                filter=MessageFilter(session_id=session_id)
+            )
+
             async for message in messages_gen:
                 content += f"{message.role}: {message.content}\n\n"
 
@@ -103,15 +104,20 @@ class SessionsToolKit(BaseToolKit[SessionsToolKitSettings]):
             return None
 
         messages = []
-        messages_gen = sessions_storage.get_messages(filter=MessageFilter(session_id=session_id))
-        
+        messages_gen = sessions_storage.get_messages(
+            filter=MessageFilter(session_id=session_id)
+        )
+
         async for message in messages_gen:
             import datetime
-            messages.append(MessageInfo(
-                role=message.role,
-                content=message.content,
-                timestamp=datetime.datetime.now()
-            ))
+
+            messages.append(
+                MessageInfo(
+                    role=message.role,
+                    content=message.content,
+                    timestamp=datetime.datetime.now(),
+                )
+            )
 
         if not messages:
             return None
@@ -121,7 +127,7 @@ class SessionsToolKit(BaseToolKit[SessionsToolKitSettings]):
             messages=messages,
             message_count=len(messages),
             created_at=None,
-            last_activity=None
+            last_activity=None,
         )
 
     @tool
@@ -153,24 +159,31 @@ class SessionsToolKit(BaseToolKit[SessionsToolKitSettings]):
                 continue
 
             messages = []
-            messages_gen = sessions_storage.get_messages(filter=MessageFilter(session_id=session_id))
-            
+            messages_gen = sessions_storage.get_messages(
+                filter=MessageFilter(session_id=session_id)
+            )
+
             async for message in messages_gen:
                 import datetime
-                messages.append(MessageInfo(
-                    role=message.role,
-                    content=message.content,
-                    timestamp=datetime.datetime.now()
-                ))
+
+                messages.append(
+                    MessageInfo(
+                        role=message.role,
+                        content=message.content,
+                        timestamp=datetime.datetime.now(),
+                    )
+                )
 
             if messages:
-                sessions.append(SessionInfo(
-                    session_id=session_id,
-                    messages=messages,
-                    message_count=len(messages),
-                    created_at=None,
-                    last_activity=None
-                ))
+                sessions.append(
+                    SessionInfo(
+                        session_id=session_id,
+                        messages=messages,
+                        message_count=len(messages),
+                        created_at=None,
+                        last_activity=None,
+                    )
+                )
 
             if len(sessions) >= limit:
                 break

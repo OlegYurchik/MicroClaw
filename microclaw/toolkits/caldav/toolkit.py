@@ -1,3 +1,5 @@
+from microclaw.dto import DecisionEnum
+from langgraph.types import interrupt
 from datetime import date, datetime
 
 from caldav.aio import AsyncDAVClient, AsyncPrincipal, AsyncCalendar, AsyncEvent
@@ -69,7 +71,7 @@ class CalDAVToolKit(BaseToolKit[CalDAVSettings]):
 
         Args:
             name: Calendar name
-        
+
         Returns:
             Calendar object with url and name
         """
@@ -78,7 +80,8 @@ class CalDAVToolKit(BaseToolKit[CalDAVSettings]):
             raise PermissionError("Write operations denied")
         if self.settings.write_mode is PermissionModeEnum.REQUEST:
             confirmation_request_text = f"Create calendar '{name}'?"
-            if not await self.request_confirmation(confirmation_request_text):
+            decision = interrupt({"description": confirmation_request_text})
+            if decision == DecisionEnum.REJECT.value:
                 raise UserDeniedAction()
 
         principal = await self.get_principal()
@@ -99,7 +102,7 @@ class CalDAVToolKit(BaseToolKit[CalDAVSettings]):
 
         Args:
             url: Calendar full url (obtained from get_calendars or previous interactions)
-        
+
         Returns:
             Calendar object with url and name
         """
@@ -126,18 +129,19 @@ class CalDAVToolKit(BaseToolKit[CalDAVSettings]):
         if self.settings.write_mode is PermissionModeEnum.REQUEST:
             calendar_name = await dav_calendar.get_property(dav.DisplayName())
             confirmation_request_text = f"Delete calendar '{calendar_name}'?"
-            if not await self.request_confirmation(confirmation_request_text):
+            decision = interrupt({"description": confirmation_request_text})
+            if decision == DecisionEnum.REJECT.value:
                 raise UserDeniedAction()
 
         await dav_calendar.delete()
 
     @tool
     async def get_events(
-            self,
-            calendar_url: str | None = None,
-            start: str | None = None,
-            end: str | None = None,
-            max_results: int = 20,
+        self,
+        calendar_url: str | None = None,
+        start: str | None = None,
+        end: str | None = None,
+        max_results: int = 20,
     ) -> list[Event]:
         """
         Get a list of events in a calendar or all calendars.
@@ -147,7 +151,7 @@ class CalDAVToolKit(BaseToolKit[CalDAVSettings]):
             start: Start of the period in ISO 8601 format with timezone (optional)
             end: End of the period in ISO 8601 format with timezone (optional)
             max_results: Maximum number of results (optional, default: 20)
-        
+
         Returns:
             List of Event objects
         """
@@ -191,14 +195,14 @@ class CalDAVToolKit(BaseToolKit[CalDAVSettings]):
 
     @tool
     async def create_event(
-            self,
-            calendar_url: str,
-            summary: str,
-            start: datetime | date,
-            end: datetime | date,
-            description: str | None = None,
-            location: str | None = None,
-            all_day: bool = False,
+        self,
+        calendar_url: str,
+        summary: str,
+        start: datetime | date,
+        end: datetime | date,
+        description: str | None = None,
+        location: str | None = None,
+        all_day: bool = False,
     ) -> Event:
         """
         Create a new event. Use this tool only when user explicitly requests event creation.
@@ -211,7 +215,7 @@ class CalDAVToolKit(BaseToolKit[CalDAVSettings]):
             description: Event description (optional)
             location: Event location (optional)
             all_day: Whether this is an all-day event (optional, default: False)
-        
+
         Returns:
             Created Event object
         """
@@ -231,7 +235,8 @@ class CalDAVToolKit(BaseToolKit[CalDAVSettings]):
                 confirmation_request_text += f"\nDescription: {description}"
             if location is not None:
                 confirmation_request_text += f"\nLocation: {location}"
-            if not await self.request_confirmation(confirmation_request_text):
+            decision = interrupt({"description": confirmation_request_text})
+            if decision == DecisionEnum.REJECT.value:
                 raise UserDeniedAction()
 
         if all_day:
@@ -241,14 +246,18 @@ class CalDAVToolKit(BaseToolKit[CalDAVSettings]):
             if isinstance(start, datetime):
                 start_str = start.strftime(self.DATETIME_FORMAT)
             else:
-                start_str = datetime.combine(start, datetime.min.time()).strftime(self.DATETIME_FORMAT)
+                start_str = datetime.combine(start, datetime.min.time()).strftime(
+                    self.DATETIME_FORMAT
+                )
             if isinstance(end, datetime):
                 end_str = end.strftime(self.DATETIME_FORMAT)
             else:
-                end_str = datetime.combine(end, datetime.min.time()).strftime(self.DATETIME_FORMAT)
+                end_str = datetime.combine(end, datetime.min.time()).strftime(
+                    self.DATETIME_FORMAT
+                )
             dtstart_line = f"DTSTART:{start_str}\n"
             dtend_line = f"DTEND:{end_str}\n"
-        
+
         event_data = (
             "BEGIN:VCALENDAR\n"
             "VERSION:2.0\n"
@@ -262,10 +271,7 @@ class CalDAVToolKit(BaseToolKit[CalDAVSettings]):
             event_data += f"DESCRIPTION:{description}\n"
         if location:
             event_data += f"LOCATION:{location}\n"
-        event_data += (
-            "END:VEVENT\n"
-            "END:VCALENDAR\n"
-        )
+        event_data += "END:VEVENT\nEND:VCALENDAR\n"
 
         dav_event = await dav_calendar.add_event(event_data)
         return await self._convert_event_to_dto(dav_event)
@@ -288,18 +294,18 @@ class CalDAVToolKit(BaseToolKit[CalDAVSettings]):
 
     @tool
     async def update_event(
-            self,
-            url: str,
-            summary: str | None = None,
-            start: datetime | date | None = None,
-            end: datetime | date | None = None,
-            description: str | None = None,
-            location: str | None = None,
-            all_day: bool | None = None,
+        self,
+        url: str,
+        summary: str | None = None,
+        start: datetime | date | None = None,
+        end: datetime | date | None = None,
+        description: str | None = None,
+        location: str | None = None,
+        all_day: bool | None = None,
     ) -> Event | None:
         """
         Update a calendar event. Use this tool only when user explicitly requests event update.
-        
+
         Args:
             url: Event full URL (obtained from get_events or previous interactions)
             summary: New event title/summary (optional)
@@ -308,14 +314,14 @@ class CalDAVToolKit(BaseToolKit[CalDAVSettings]):
             description: New event description (optional)
             location: New event location (optional)
             all_day: Whether this is an all-day event (optional)
-        
+
         Returns:
             Updated Event object if successful, None otherwise
         """
 
         dav_event = AsyncEvent(client=self._client, url=url)
         await dav_event.load()
-        
+
         if self.settings.write_mode is PermissionModeEnum.DENY:
             raise PermissionError("Write operations denied")
         if self.settings.write_mode is PermissionModeEnum.REQUEST:
@@ -336,10 +342,10 @@ class CalDAVToolKit(BaseToolKit[CalDAVSettings]):
 
             changes_text = "\n".join(changes)
             confirmation_request_text = (
-                f"Update event '{event_data.summary}'?\n"
-                f"{changes_text}"
+                f"Update event '{event_data.summary}'?\n{changes_text}"
             )
-            if not await self.request_confirmation(confirmation_request_text):
+            decision = interrupt({"description": confirmation_request_text})
+            if decision == DecisionEnum.REJECT.value:
                 raise UserDeniedAction()
 
         event_url_str = str(dav_event.url)
@@ -366,7 +372,9 @@ class CalDAVToolKit(BaseToolKit[CalDAVSettings]):
                     if isinstance(start, datetime):
                         component["DTSTART"] = start.strftime(self.DATETIME_FORMAT)
                     else:
-                        component["DTSTART"] = datetime.combine(start, datetime.min.time()).strftime(self.DATETIME_FORMAT)
+                        component["DTSTART"] = datetime.combine(
+                            start, datetime.min.time()
+                        ).strftime(self.DATETIME_FORMAT)
             if end is not None:
                 if all_day:
                     component["DTEND"] = end.strftime(self.DATE_FORMAT)
@@ -375,10 +383,14 @@ class CalDAVToolKit(BaseToolKit[CalDAVSettings]):
                     if isinstance(end, datetime):
                         component["DTEND"] = end.strftime(self.DATETIME_FORMAT)
                     else:
-                        component["DTEND"] = datetime.combine(end, datetime.min.time()).strftime(self.DATETIME_FORMAT)
+                        component["DTEND"] = datetime.combine(
+                            end, datetime.min.time()
+                        ).strftime(self.DATETIME_FORMAT)
 
         dav_event.data = event_instance.to_ical()
-        await self._client.put(url, dav_event.data, {"Content-Type": "text/calendar; charset=utf-8"})
+        await self._client.put(
+            url, dav_event.data, {"Content-Type": "text/calendar; charset=utf-8"}
+        )
         return await self._convert_event_to_dto(dav_event)
 
     @tool
@@ -402,7 +414,8 @@ class CalDAVToolKit(BaseToolKit[CalDAVSettings]):
             await dav_event.load()
             event_data = await self._convert_event_to_dto(dav_event)
             confirmation_request_text = f"Delete event '{event_data.summary}'?"
-            if not await self.request_confirmation(confirmation_request_text):
+            decision = interrupt({"description": confirmation_request_text})
+            if decision == DecisionEnum.REJECT.value:
                 raise UserDeniedAction()
 
         dav_event = AsyncEvent(client=self._client, url=url)

@@ -34,7 +34,7 @@ class DatabaseSessionsStorage(SessionsStorageInterface):
             session = await self._sessions_repository.get_session(session_id)
             if session is None:
                 session = await self._sessions_repository.create_session(session_id)
-        
+
         return session_id
 
     async def add_message(self, session_id: uuid.UUID, message: AgentMessage):
@@ -66,11 +66,11 @@ class DatabaseSessionsStorage(SessionsStorageInterface):
             )
 
     async def get_messages(
-            self,
-            filter: MessageFilter | None = None,
-            pagination: BasePagination | None = None,
-            sort: BaseSort | None = None,
-            from_last_summarization: bool = True,
+        self,
+        filter: MessageFilter | None = None,
+        pagination: BasePagination | None = None,
+        sort: BaseSort | None = None,
+        from_last_summarization: bool = True,
     ) -> AsyncGenerator[AgentMessage]:
         messages = []
         async for message in self._messages_repository.get_messages(
@@ -105,10 +105,10 @@ class DatabaseSessionsStorage(SessionsStorageInterface):
             return session.context
 
     async def get_sessions(
-            self,
-            filter: SessionFilter | None = None,
-            pagination: BasePagination | None = None,
-            sort: BaseSort | None = None,
+        self,
+        filter: SessionFilter | None = None,
+        pagination: BasePagination | None = None,
+        sort: BaseSort | None = None,
     ) -> AsyncGenerator[uuid.UUID]:
         async for session_id in self._sessions_repository.get_sessions(
             date_filter=filter,

@@ -1,3 +1,5 @@
+from microclaw.dto import DecisionEnum
+from langgraph.types import interrupt
 import asyncio
 import shutil
 from typing import Iterable
@@ -14,29 +16,36 @@ class CommandToolKit(BaseToolKit[CommandToolKitSettings]):
 
     def __init__(self, key: str, settings: CommandToolKitSettings):
         super().__init__(key=key, settings=settings)
-        self._allowed_commands_set = set(self._settings.allowed_commands) if self._settings.allowed_commands else None
+        self._allowed_commands_set = (
+            set(self._settings.allowed_commands)
+            if self._settings.allowed_commands
+            else None
+        )
 
     def _validate_command(self, command: str) -> str:
         base_command = command.split()[0] if command else ""
-        
-        if self._allowed_commands_set is not None and base_command not in self._allowed_commands_set:
+
+        if (
+            self._allowed_commands_set is not None
+            and base_command not in self._allowed_commands_set
+        ):
             raise PermissionError(
                 f"Command '{base_command}' is not allowed. "
                 f"Allowed commands: {self._settings.allowed_commands}"
             )
-        
+
         command_path = shutil.which(base_command)
         if command_path is None:
             raise RuntimeError(f"Command '{base_command}' not found in system PATH")
-        
+
         return command_path
 
     @tool
     async def execute_command(
-            self,
-            command: str,
-            args: Iterable[str] = (),
-            timeout: int = 30,
+        self,
+        command: str,
+        args: Iterable[str] = (),
+        timeout: int = 30,
     ) -> CommandResult:
         """
         Execute a shell command with the given arguments.
@@ -55,7 +64,8 @@ class CommandToolKit(BaseToolKit[CommandToolKitSettings]):
         if self.settings.execute_mode is PermissionModeEnum.REQUEST:
             full_command = f"{command} {' '.join(args)}" if args else command
             confirmation_request_text = f"Execute command: {full_command}?"
-            if not await self.request_confirmation(confirmation_request_text):
+            decision = interrupt({"description": confirmation_request_text})
+            if decision == DecisionEnum.REJECT.value:
                 raise UserDeniedAction()
 
         command_path = self._validate_command(command)

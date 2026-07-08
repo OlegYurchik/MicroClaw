@@ -5,7 +5,7 @@ from microclaw.toolkits.enums import PermissionModeEnum
 
 class CardDAVSettings(BaseModel):
     """Settings for connecting to a CardDAV server."""
-    
+
     url: str
     username: str
     password: str

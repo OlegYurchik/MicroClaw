@@ -13,15 +13,15 @@ class VKAgentMessagePrinter(AgentMessageCollector):
     MAX_MESSAGE_LENGTH = 4096
 
     def __init__(
-            self,
-            bot: Bot,
-            peer_id: int,
-            session_id: uuid.UUID,
-            sessions_storage: SessionsStorageInterface,
-            agent: Agent,
-            show_context_usage: bool = False,
-            show_costs: bool = False,
-            debug: bool = False,
+        self,
+        bot: Bot,
+        peer_id: int,
+        session_id: uuid.UUID,
+        sessions_storage: SessionsStorageInterface,
+        agent: Agent,
+        show_context_usage: bool = False,
+        show_costs: bool = False,
+        debug: bool = False,
     ):
         super().__init__()
         self._bot = bot
@@ -66,7 +66,7 @@ class VKAgentMessagePrinter(AgentMessageCollector):
 
     async def print(self, text: str):
         text_chunks = [
-            text[i:i + self.MAX_MESSAGE_LENGTH].strip()
+            text[i : i + self.MAX_MESSAGE_LENGTH].strip()
             for i in range(0, len(text), self.MAX_MESSAGE_LENGTH)
         ]
 

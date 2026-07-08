@@ -14,8 +14,8 @@ from .stats import StatsWidget
 
 class ChatWidget(Vertical):
     def __init__(
-            self,
-            channel: "CLIChannel",  # noqa: F821
+        self,
+        channel: "CLIChannel",  # noqa: F821
     ):
         super().__init__()
         self._channel = channel
@@ -64,21 +64,29 @@ class ChatWidget(Vertical):
             await self._messages_container.remove_children()
             await self.update_mode(mode="chat")
             return
-        
+
             if event.button.id and event.button.id.startswith("session_"):
-                session_id = getattr(event.button, '_session_id', None)
+                session_id = getattr(event.button, "_session_id", None)
                 if session_id:
                     self._channel._session_id = session_id
-                    
+
                     await self._messages_container.remove_children()
                     messages = []
-                    async for message in self._channel._sessions_storage.get_messages(filter=MessageFilter(session_id=session_id)):
+                    async for message in self._channel._sessions_storage.get_messages(
+                        filter=MessageFilter(session_id=session_id)
+                    ):
                         messages.append(message)
-                
+
                 for message in messages:
-                    role = RoleEnum.USER if message.role == "user" else (RoleEnum.SYSTEM if message.role == "system" else RoleEnum.AI)
+                    role = (
+                        RoleEnum.USER
+                        if message.role == "user"
+                        else (
+                            RoleEnum.SYSTEM if message.role == "system" else RoleEnum.AI
+                        )
+                    )
                     await self.add_message(role=role, text=message.text)
-                
+
                 await self.update_mode(mode="chat")
 
     async def update_mode(self, mode: str) -> None:
@@ -90,7 +98,6 @@ class ChatWidget(Vertical):
         if mode == "home":
             self._sessions_container.remove_children()
 
-            sessions = []
             sessions_storage = self._channel.get_sessions_storage()
             sessions_ids = []
             async for session_id in sessions_storage.get_sessions():
@@ -110,7 +117,11 @@ class ChatWidget(Vertical):
             for session_id, message in sessions_messages.items():
                 if message.text is None:
                     continue
-                button_text = message.text[:50] + "..." if len(message.text) > 50 else message.text
+                button_text = (
+                    message.text[:50] + "..."
+                    if len(message.text) > 50
+                    else message.text
+                )
                 button_id = f"session_{session_id.hex}"
                 button = Button(button_text, id=button_id)
                 button._session_id = session_id
@@ -123,7 +134,9 @@ class ChatWidget(Vertical):
             await self._last_message.remove()
             self._last_message = None
 
-    async def add_message(self, role: RoleEnum, text: str | None = None) -> MessageBox | None:
+    async def add_message(
+        self, role: RoleEnum, text: str | None = None
+    ) -> MessageBox | None:
         await self._remove_old_message_if_needed()
         message_box = MessageBox(role=role, text=text)
         await self._messages_container.mount(message_box)
@@ -139,16 +152,14 @@ class ChatWidget(Vertical):
         self._messages_container.scroll_end()
 
     async def add_confirmation_message(
-            self,
-            question: str,
-            session_id: uuid.UUID,
-            confirmation_id: uuid.UUID,
+        self,
+        question: str,
+        session_id: uuid.UUID,
     ) -> ActionMessageBox | None:
         await self._remove_old_message_if_needed()
         action_box = ActionMessageBox(
             question=question,
             session_id=session_id,
-            confirmation_id=confirmation_id,
             channel=self._channel,
         )
         await self._messages_container.mount(action_box)
@@ -156,4 +167,3 @@ class ChatWidget(Vertical):
         self._messages_container.scroll_end()
 
         return action_box
-

@@ -3,7 +3,12 @@ from unittest.mock import AsyncMock
 import pytest
 
 from microclaw.agents.agent import Agent
-from microclaw.agents.settings import AgentSettings, ModelSettings, ProviderSettings, APITypeEnum
+from microclaw.agents.settings import (
+    AgentSettings,
+    ModelSettings,
+    ProviderSettings,
+    APITypeEnum,
+)
 from microclaw.channels.telegram.base import BaseTelegramChannel
 from microclaw.channels.telegram.settings import TelegramSettings
 from microclaw.channels.telegram.toolkit import TelegramToolKit
@@ -33,6 +38,7 @@ def telegram_agent() -> Agent:
             api_type=APITypeEnum.OLLAMA,
         ),
         toolkits={},
+        syncer=MemorySyncer(settings=MemorySyncerSettings()),
         mcp_settings={},
         client=AsyncMock(),
     )
@@ -43,7 +49,9 @@ def telegram_channel(telegram_settings, telegram_agent) -> BaseTelegramChannel:
     return BaseTelegramChannel(
         settings=telegram_settings,
         agent=telegram_agent,
-        sessions_storage=MemorySessionsStorage(settings=MemorySessionsStorageSettings()),
+        sessions_storage=MemorySessionsStorage(
+            settings=MemorySessionsStorageSettings()
+        ),
         syncer=MemorySyncer(settings=MemorySyncerSettings()),
         users_storage=MemoryUsersStorage(settings=MemoryUsersStorageSettings()),
         resolver=AsyncMock(),

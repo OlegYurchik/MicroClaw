@@ -1,8 +1,7 @@
 import uuid
 from datetime import datetime
 
-from pydantic_filters import BaseFilter, BaseSort, SortByOrder
-from pydantic_filters.pagination import OffsetPagination as BasePagination
+from pydantic_filters import BaseFilter
 
 
 class SessionFilter(BaseFilter):

@@ -16,21 +16,20 @@ async def sessions_storage(request: fastapi.Request) -> SessionsStorageInterface
 
 
 async def token(
-        credentials: HTTPAuthorizationCredentials | None = fastapi.Depends(
-            HTTPBearer(auto_error=False),
-        ),
+    credentials: HTTPAuthorizationCredentials | None = fastapi.Depends(
+        HTTPBearer(auto_error=False),
+    ),
 ) -> str | None:
     if credentials is not None:
         return credentials.credentials
 
 
 async def user(
-        users_storage: UsersStorageInterface = fastapi.Depends(users_storage),
-        token: str | None = fastapi.Depends(token),
+    users_storage: UsersStorageInterface = fastapi.Depends(users_storage),
+    token: str | None = fastapi.Depends(token),
 ) -> User | None:
     if token is not None:
         return await users_storage.get_user_by_token(token=token)
-
 
 
 async def auth(user: User | None = fastapi.Depends(user)) -> User:

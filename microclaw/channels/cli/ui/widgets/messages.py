@@ -1,9 +1,9 @@
 import uuid
+from microclaw.channels.cli.ui.enums import RoleEnum
 
 from textual.app import ComposeResult
 from textual.containers import Horizontal
 from textual.widgets import Button, Static
-from ..enums import RoleEnum
 
 
 class BaseMessageBox(Static):
@@ -81,15 +81,13 @@ class ActionMessageBox(BaseMessageBox):
     DECLINE_BUTTON_ID = "decline_button"
 
     def __init__(
-            self,
-            question: str,
-            session_id: uuid.UUID,
-            confirmation_id: uuid.UUID,
-            channel: "CLIChannel",  # noqa: F821
+        self,
+        question: str,
+        session_id: uuid.UUID,
+        channel: "CLIChannel",  # noqa: F821
     ):
         super().__init__(text=question, remove_allowed=False)
         self._session_id = session_id
-        self._confirmation_id = confirmation_id
         self._channel = channel
 
     def _get_status_label(self, status_text: str, status_color: str) -> Static:
@@ -109,9 +107,7 @@ class ActionMessageBox(BaseMessageBox):
             variant="error",
         )
         buttons_container = Horizontal(
-            confirm_button,
-            decline_button,
-            id="action_buttons"
+            confirm_button, decline_button, id="action_buttons"
         )
         self.update_panel([buttons_container])
 
@@ -120,7 +116,6 @@ class ActionMessageBox(BaseMessageBox):
 
         await self._channel._handle_confirmation_callback(
             session_id=self._session_id,
-            confirmation_id=self._confirmation_id,
             approved=approved,
         )
 

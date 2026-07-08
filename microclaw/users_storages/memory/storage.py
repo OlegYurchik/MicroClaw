@@ -15,7 +15,9 @@ class MemoryUsersStorage(UsersStorageInterface):
         self._settings = settings
         self._users: dict[uuid.UUID, User] = {}
         self._channels_users: dict[UserChannelID, uuid.UUID] = {}
-        self._channel_sessions: defaultdict[UserChannelID, list[uuid.UUID]] = defaultdict(list)
+        self._channel_sessions: defaultdict[UserChannelID, list[uuid.UUID]] = (
+            defaultdict(list)
+        )
         self._user_crons: dict[uuid.UUID, list[CronTask]] = defaultdict(list)
         self._tokens: dict[str, tuple[uuid.UUID, datetime.datetime | None]] = {}
 
@@ -24,10 +26,10 @@ class MemoryUsersStorage(UsersStorageInterface):
             yield user
 
     async def create_user(
-            self,
-            user_id: uuid.UUID | None = None,
-            role: UserRoleEnum = UserRoleEnum.USER,
-            agent_settings: "AgentSettings | None" = None,  # noqa: F821
+        self,
+        user_id: uuid.UUID | None = None,
+        role: UserRoleEnum = UserRoleEnum.USER,
+        agent_settings: "AgentSettings | None" = None,  # noqa: F821
     ) -> User:
         if user_id is None:
             user_id = uuid.uuid4()
@@ -40,10 +42,10 @@ class MemoryUsersStorage(UsersStorageInterface):
         return self._users.get(user_id)
 
     async def update_user(
-            self,
-            user_id: uuid.UUID,
-            role: UserRoleEnum | Empty = Empty,
-            agent_settings: "AgentSettings | None | Empty" = Empty,  # noqa: F821
+        self,
+        user_id: uuid.UUID,
+        role: UserRoleEnum | Empty = Empty,
+        agent_settings: "AgentSettings | None | Empty" = Empty,  # noqa: F821
     ) -> User | None:
         user = self._users.get(user_id)
         if user is None:
@@ -62,7 +64,8 @@ class MemoryUsersStorage(UsersStorageInterface):
 
         del self._users[user_id]
         to_delete = [
-            channel_id for channel_id, uid in self._channels_users.items()
+            channel_id
+            for channel_id, uid in self._channels_users.items()
             if uid == user_id
         ]
         for channel_id in to_delete:
@@ -74,16 +77,15 @@ class MemoryUsersStorage(UsersStorageInterface):
             del self._user_crons[user_id]
 
         to_delete_tokens = [
-            token for token, (uid, _) in self._tokens.items()
-            if uid == user_id
+            token for token, (uid, _) in self._tokens.items() if uid == user_id
         ]
         for token in to_delete_tokens:
             del self._tokens[token]
 
     async def get_user_by_channel(
-            self,
-            channel_key: str,
-            channel_internal_id: str,
+        self,
+        channel_key: str,
+        channel_internal_id: str,
     ) -> User | None:
         user_channel_id = UserChannelID(
             channel_key=channel_key,
@@ -106,10 +108,10 @@ class MemoryUsersStorage(UsersStorageInterface):
         return None
 
     async def get_actual_session(
-            self,
-            user_id: uuid.UUID,
-            channel_key: str,
-            channel_internal_id: str,
+        self,
+        user_id: uuid.UUID,
+        channel_key: str,
+        channel_internal_id: str,
     ) -> uuid.UUID | None:
         user_channel_id = UserChannelID(
             channel_key=channel_key,
@@ -121,11 +123,11 @@ class MemoryUsersStorage(UsersStorageInterface):
         return None
 
     async def attach_session_to_user(
-            self,
-            user_id: uuid.UUID,
-            session_id: uuid.UUID,
-            channel_key: str,
-            channel_internal_id: str,
+        self,
+        user_id: uuid.UUID,
+        session_id: uuid.UUID,
+        channel_key: str,
+        channel_internal_id: str,
     ) -> None:
         user_channel_id = UserChannelID(
             channel_key=channel_key,
@@ -140,29 +142,25 @@ class MemoryUsersStorage(UsersStorageInterface):
         return self._user_crons.get(user_id, []).copy()
 
     async def create_cron(
-            self,
-            user_id: uuid.UUID,
-            cron_task: CronTask,
+        self,
+        user_id: uuid.UUID,
+        cron_task: CronTask,
     ) -> None:
         self._user_crons[user_id].append(cron_task)
 
     async def remove_cron(self, cron_id: uuid.UUID) -> None:
         for user_id, crons in self._user_crons.items():
-            self._user_crons[user_id] = [
-                cron
-                for cron in crons
-                if cron.id != cron_id
-            ]
+            self._user_crons[user_id] = [cron for cron in crons if cron.id != cron_id]
 
     async def create_token_for_user(
-            self,
-            user_id: uuid.UUID,
-            ttl: datetime.timedelta | None = datetime.timedelta(days=30),
+        self,
+        user_id: uuid.UUID,
+        ttl: datetime.timedelta | None = datetime.timedelta(days=30),
     ) -> str:
         expires_at = None
         if ttl is not None:
             expires_at = datetime.datetime.now(datetime.timezone.utc) + ttl
-        
+
         while True:
             token = secrets.token_urlsafe(32)
             if token not in self._tokens:

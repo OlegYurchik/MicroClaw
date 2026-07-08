@@ -143,7 +143,7 @@ class HomeAssistantToolKit(BaseToolKit[HomeAssistantSettings]):
         )
 
         states = []
-        
+
         async for ha_history_item in ha_history:
             for ha_state in ha_history_item.states:
                 states.append(self._convert_state(ha_state))
@@ -156,7 +156,9 @@ class HomeAssistantToolKit(BaseToolKit[HomeAssistantSettings]):
         )
 
     @tool
-    async def search_entities(self, pattern: str, domain: str | None = None) -> list[Entity]:
+    async def search_entities(
+        self, pattern: str, domain: str | None = None
+    ) -> list[Entity]:
         """
         Search for entities by name pattern.
 
@@ -179,8 +181,9 @@ class HomeAssistantToolKit(BaseToolKit[HomeAssistantSettings]):
                 entity_id = ha_entity.entity_id
                 if domain is not None and not entity_id.startswith(f"{domain}."):
                     continue
-                if (pattern_lower in entity_id.lower() or
-                    (ha_entity.slug and pattern_lower in ha_entity.slug.lower())):
+                if pattern_lower in entity_id.lower() or (
+                    ha_entity.slug and pattern_lower in ha_entity.slug.lower()
+                ):
                     entities.append(self._convert_entity(ha_entity=ha_entity))
         return entities
 
@@ -245,11 +248,11 @@ class HomeAssistantToolKit(BaseToolKit[HomeAssistantSettings]):
 
     @tool
     async def call_service(
-            self,
-            domain: str,
-            service: str,
-            service_data: dict[str, Any] | None = None,
-            entity_id: str | None = None,
+        self,
+        domain: str,
+        service: str,
+        service_data: dict[str, Any] | None = None,
+        entity_id: str | None = None,
     ) -> None:
         """
         Call a Home Assistant service.
@@ -290,7 +293,9 @@ class HomeAssistantToolKit(BaseToolKit[HomeAssistantSettings]):
             last_changed=ha_state.last_changed,
             last_updated=ha_state.last_updated,
             last_reported=ha_state.last_reported,
-            context=self._convert_context(ha_state.context) if ha_state.context else None,
+            context=self._convert_context(ha_state.context)
+            if ha_state.context
+            else None,
         )
 
     def _convert_context(self, ha_context: HAContext) -> Context:
@@ -306,9 +311,15 @@ class HomeAssistantToolKit(BaseToolKit[HomeAssistantSettings]):
             service_id=ha_service.service_id,
             name=ha_service.name,
             description=ha_service.description,
-            fields=self._convert_service_fields(ha_service.fields) if ha_service.fields else {},
-            target=self._convert_service_target(ha_service.target) if ha_service.target else None,
-            response=self._convert_service_response(ha_service.response) if ha_service.response else None,
+            fields=self._convert_service_fields(ha_service.fields)
+            if ha_service.fields
+            else {},
+            target=self._convert_service_target(ha_service.target)
+            if ha_service.target
+            else None,
+            response=self._convert_service_response(ha_service.response)
+            if ha_service.response
+            else None,
         )
 
     def _convert_service_fields(self, ha_fields: dict[str, Any]) -> dict[str, Any]:

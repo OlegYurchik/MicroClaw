@@ -9,16 +9,16 @@ from microclaw.utils import get_by_key_or_first
 
 
 def run(
-        ctx: typer.Context,
-        agent_name: str | None = typer.Argument(default=None, metavar="name"),
-        show_loader: bool = typer.Option(False, "-l", "--loader", metavar="loader"),
-        show_costs: bool = typer.Option(False, "-c", "--costs", metavar="costs"),
-        show_context_usage: bool = typer.Option(
-            False,
-            "--context-usage",
-            metavar="context_usage",
-        ),
-        debug: bool = typer.Option(False, "-d", "--debug", metavar="debug"),
+    ctx: typer.Context,
+    agent_name: str | None = typer.Argument(default=None, metavar="name"),
+    show_loader: bool = typer.Option(False, "-l", "--loader", metavar="loader"),
+    show_costs: bool = typer.Option(False, "-c", "--costs", metavar="costs"),
+    show_context_usage: bool = typer.Option(
+        False,
+        "--context-usage",
+        metavar="context_usage",
+    ),
+    debug: bool = typer.Option(False, "-d", "--debug", metavar="debug"),
 ):
     from microclaw.channels.cli import CLIChannel, CLIChannelSettings
     from microclaw.resolver import DependencyResolver

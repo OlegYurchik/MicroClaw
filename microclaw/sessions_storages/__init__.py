@@ -7,9 +7,9 @@ from .database import DatabaseSessionsStorageSettings
 
 
 SessionsStorageSettingsType = (
-    MemorySessionsStorageSettings |
-    FilesystemSessionsStorageSettings |
-    DatabaseSessionsStorageSettings
+    MemorySessionsStorageSettings
+    | FilesystemSessionsStorageSettings
+    | DatabaseSessionsStorageSettings
 )
 
 

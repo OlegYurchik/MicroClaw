@@ -27,15 +27,17 @@ class UsersRepository(BaseRepository[UserData, UserFilter]):
         async for item in self.get_items():
             yield item
 
-    async def create_user(self, user_id: uuid.UUID, role: UserRoleEnum = UserRoleEnum.USER) -> UserData:
+    async def create_user(
+        self, user_id: uuid.UUID, role: UserRoleEnum = UserRoleEnum.USER
+    ) -> UserData:
         user_data = UserData(id=user_id, role=role, agent=None)
         return await self.create_item(user_data)
 
     async def update_user(
-            self,
-            user_id: uuid.UUID,
-            role: UserRoleEnum | Empty = Empty,
-            agent: dict | None | Empty = Empty,
+        self,
+        user_id: uuid.UUID,
+        role: UserRoleEnum | Empty = Empty,
+        agent: dict | None | Empty = Empty,
     ) -> UserData | None:
         values = {}
         if not isinstance(role, Empty):
@@ -112,7 +114,9 @@ class SessionsRepository(BaseRepository[SessionData, SessionFilter]):
             channel_key=channel_key,
             channel_internal_id=channel_internal_id,
         )
-        async for item in self.get_items(filter_=filter_, pagination=BasePagination(limit=1, offset=0)):
+        async for item in self.get_items(
+            filter_=filter_, pagination=BasePagination(limit=1, offset=0)
+        ):
             return item
         return None
 
@@ -153,10 +157,10 @@ class TokensRepository(BaseRepository[TokenData, TokenFilter]):
         return None
 
     async def create_token(
-            self,
-            token: str,
-            user_id: uuid.UUID,
-            expires_at: datetime.datetime | None = None,
+        self,
+        token: str,
+        user_id: uuid.UUID,
+        expires_at: datetime.datetime | None = None,
     ) -> TokenData:
         token_data = TokenData(token=token, user_id=user_id, expires_at=expires_at)
         return await self.create_item(token_data)

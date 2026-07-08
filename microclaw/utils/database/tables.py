@@ -13,4 +13,6 @@ class BaseTable(SQLModel):
         raise NotImplementedError
 
     def to_values(self) -> dict[str, Any]:
-        return {column.name: getattr(self, column.name) for column in self.__table__.columns}
+        return {
+            column.name: getattr(self, column.name) for column in self.__table__.columns
+        }

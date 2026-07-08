@@ -21,5 +21,7 @@ class TelegramWebhookSettings(TelegramSettings):
     @classmethod
     def validate_cloudflare_compatibility(cls, v: CloudflareTunnelSettings, info):
         if v.enabled and info.data.get("root_url") is not None:
-            raise ValueError("root_url cannot be set when cloudflare_tunnel.enabled is true")
+            raise ValueError(
+                "root_url cannot be set when cloudflare_tunnel.enabled is true"
+            )
         return v

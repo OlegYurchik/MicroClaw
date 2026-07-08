@@ -9,8 +9,8 @@ from microclaw.users_storages import UsersStorageInterface
 
 
 async def user(
-        users_storage: UsersStorageInterface = fastapi.Depends(users_storage),
-        user_id: uuid.UUID = fastapi.Path(),
+    users_storage: UsersStorageInterface = fastapi.Depends(users_storage),
+    user_id: uuid.UUID = fastapi.Path(),
 ) -> User:
     user = await users_storage.get_user(user_id=user_id)
     if user is None:

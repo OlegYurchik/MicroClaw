@@ -1,3 +1,5 @@
+from microclaw.dto import DecisionEnum
+from langgraph.types import interrupt
 from typing import Any
 import datetime
 import xml.etree.ElementTree as ET
@@ -17,52 +19,52 @@ class XMLBuilder:
         return (
             '<?xml version="1.0"?>'
             '<d:propfind xmlns:d="DAV:" xmlns:card="urn:ietf:params:xml:ns:carddav">'
-            '<d:prop>'
-            '<card:addressbook-home-set/>'
-            '</d:prop>'
-            '</d:propfind>'
+            "<d:prop>"
+            "<card:addressbook-home-set/>"
+            "</d:prop>"
+            "</d:propfind>"
         )
 
     def address_books_list(self) -> str:
         return (
             '<?xml version="1.0"?>'
             '<d:propfind xmlns:d="DAV:" xmlns:card="urn:ietf:params:xml:ns:carddav">'
-            '<d:prop>'
-            '<d:displayname/>'
-            '<d:resourcetype/>'
-            '</d:prop>'
-            '</d:propfind>'
+            "<d:prop>"
+            "<d:displayname/>"
+            "<d:resourcetype/>"
+            "</d:prop>"
+            "</d:propfind>"
         )
 
     def address_book(self) -> str:
         return (
             '<?xml version="1.0"?>'
             '<d:propfind xmlns:d="DAV:" xmlns:card="urn:ietf:params:xml:ns:carddav">'
-            '<d:prop>'
-            '<d:displayname/>'
-            '</d:prop>'
-            '</d:propfind>'
+            "<d:prop>"
+            "<d:displayname/>"
+            "</d:prop>"
+            "</d:propfind>"
         )
 
     def contacts_report(self) -> str:
         return (
             '<?xml version="1.0"?>'
             '<card:addressbook-query xmlns:d="DAV:" xmlns:card="urn:ietf:params:xml:ns:carddav">'
-            '<d:prop>'
-            '<d:getetag/>'
-            '<card:address-data/>'
-            '</d:prop>'
-            '</card:addressbook-query>'
+            "<d:prop>"
+            "<d:getetag/>"
+            "<card:address-data/>"
+            "</d:prop>"
+            "</card:addressbook-query>"
         )
 
     def principal(self) -> str:
         return (
             '<?xml version="1.0"?>'
             '<d:propfind xmlns:d="DAV:">'
-            '<d:prop>'
-            '<d:current-user-principal/>'
-            '</d:prop>'
-            '</d:propfind>'
+            "<d:prop>"
+            "<d:current-user-principal/>"
+            "</d:prop>"
+            "</d:propfind>"
         )
 
 
@@ -86,7 +88,7 @@ class CardDAVToolKit(BaseToolKit[CardDAVSettings]):
 
         address_books = []
         principal_url = await self._get_principal_url()
-        
+
         async with self._create_session() as session:
             async with session.request(
                 method="PROPFIND",
@@ -117,7 +119,10 @@ class CardDAVToolKit(BaseToolKit[CardDAVSettings]):
             all_address_books = self._parse_address_books(content, address_book_url)
             # Filter by allowed address books
             for address_book in all_address_books:
-                if self.settings.allowed_address_books is None or address_book.name in self.settings.allowed_address_books:
+                if (
+                    self.settings.allowed_address_books is None
+                    or address_book.name in self.settings.allowed_address_books
+                ):
                     address_books.append(address_book)
 
         return address_books
@@ -150,9 +155,9 @@ class CardDAVToolKit(BaseToolKit[CardDAVSettings]):
 
     @tool
     async def get_contacts(
-            self,
-            address_book_url: str | None = None,
-            max_results: int = 50,
+        self,
+        address_book_url: str | None = None,
+        max_results: int = 50,
     ) -> list[Contact]:
         """
         Get a list of contacts from an address book or all address books.
@@ -216,17 +221,17 @@ class CardDAVToolKit(BaseToolKit[CardDAVSettings]):
 
     @tool
     async def create_contact(
-            self,
-            address_book_url: str,
-            display_name: str,
-            first_name: str | None = None,
-            last_name: str | None = None,
-            email: str | None = None,
-            phone: str | None = None,
-            organization: str | None = None,
-            title: str | None = None,
-            note: str | None = None,
-            birthday: str | None = None,
+        self,
+        address_book_url: str,
+        display_name: str,
+        first_name: str | None = None,
+        last_name: str | None = None,
+        email: str | None = None,
+        phone: str | None = None,
+        organization: str | None = None,
+        title: str | None = None,
+        note: str | None = None,
+        birthday: str | None = None,
     ) -> Contact:
         """
         Create a new contact. Use this tool only when user explicitly requests contact creation.
@@ -253,7 +258,8 @@ class CardDAVToolKit(BaseToolKit[CardDAVSettings]):
             confirmation_request_text = (
                 f"Create contact '{display_name}' in address book '{address_book_url}'?"
             )
-            if not await self.request_confirmation(confirmation_request_text):
+            decision = interrupt({"description": confirmation_request_text})
+            if decision == DecisionEnum.REJECT.value:
                 raise UserDeniedAction()
 
         await self._get_address_book(address_book_url)
@@ -281,22 +287,24 @@ class CardDAVToolKit(BaseToolKit[CardDAVSettings]):
 
         if response.status in (201, 204):
             contact = self._parse_vcard_sync(vcard_data)
-            contact.url = f"{address_book_url.rstrip('/')}/{display_name.replace(' ', '_')}.vcf"
+            contact.url = (
+                f"{address_book_url.rstrip('/')}/{display_name.replace(' ', '_')}.vcf"
+            )
             return contact
 
     @tool
     async def update_contact(
-            self,
-            url: str,
-            display_name: str | None = None,
-            first_name: str | None = None,
-            last_name: str | None = None,
-            email: str | None = None,
-            phone: str | None = None,
-            organization: str | None = None,
-            title: str | None = None,
-            note: str | None = None,
-            birthday: str | None = None,
+        self,
+        url: str,
+        display_name: str | None = None,
+        first_name: str | None = None,
+        last_name: str | None = None,
+        email: str | None = None,
+        phone: str | None = None,
+        organization: str | None = None,
+        title: str | None = None,
+        note: str | None = None,
+        birthday: str | None = None,
     ) -> Contact | None:
         """
         Update a contact. Use this tool only when user explicitly requests contact update.
@@ -341,11 +349,9 @@ class CardDAVToolKit(BaseToolKit[CardDAVSettings]):
                 changes.append(f"birthday: {birthday}")
 
             changes_text = "\n".join(changes)
-            confirmation_request_text = (
-                f"Update contact '{url}'?\n"
-                f"{changes_text}"
-            )
-            if not await self.request_confirmation(confirmation_request_text):
+            confirmation_request_text = f"Update contact '{url}'?\n{changes_text}"
+            decision = interrupt({"description": confirmation_request_text})
+            if decision == DecisionEnum.REJECT.value:
                 raise UserDeniedAction()
 
         # Check if contact's address book is allowed
@@ -410,7 +416,8 @@ class CardDAVToolKit(BaseToolKit[CardDAVSettings]):
             raise PermissionError("Write operations denied")
         if self.settings.write_mode is PermissionModeEnum.REQUEST:
             confirmation_request_text = f"Delete contact '{url}'?"
-            if not await self.request_confirmation(confirmation_request_text):
+            decision = interrupt({"description": confirmation_request_text})
+            if decision == DecisionEnum.REJECT.value:
                 raise UserDeniedAction()
 
         # Check if contact's address book is allowed
@@ -431,16 +438,16 @@ class CardDAVToolKit(BaseToolKit[CardDAVSettings]):
         return f"{self.settings.url.rstrip('/')}/{relative_url}"
 
     def _create_vcard_data(
-            self,
-            display_name: str,
-            first_name: str | None = None,
-            last_name: str | None = None,
-            email: str | None = None,
-            phone: str | None = None,
-            organization: str | None = None,
-            title: str | None = None,
-            note: str | None = None,
-            birthday: str | None = None,
+        self,
+        display_name: str,
+        first_name: str | None = None,
+        last_name: str | None = None,
+        email: str | None = None,
+        phone: str | None = None,
+        organization: str | None = None,
+        title: str | None = None,
+        note: str | None = None,
+        birthday: str | None = None,
     ) -> str:
         """Create vCard data string from contact details."""
         vcard = vobject.vCard()
@@ -469,17 +476,17 @@ class CardDAVToolKit(BaseToolKit[CardDAVSettings]):
         return vcard.serialize()
 
     def _update_vcard_fields(
-            self,
-            vcard: Any,
-            display_name: str | None = None,
-            first_name: str | None = None,
-            last_name: str | None = None,
-            email: str | None = None,
-            phone: str | None = None,
-            organization: str | None = None,
-            title: str | None = None,
-            note: str | None = None,
-            birthday: str | None = None,
+        self,
+        vcard: Any,
+        display_name: str | None = None,
+        first_name: str | None = None,
+        last_name: str | None = None,
+        email: str | None = None,
+        phone: str | None = None,
+        organization: str | None = None,
+        title: str | None = None,
+        note: str | None = None,
+        birthday: str | None = None,
     ) -> None:
         """Update vCard fields with provided values."""
         if display_name:
@@ -553,7 +560,9 @@ class CardDAVToolKit(BaseToolKit[CardDAVSettings]):
                     )
         return address_book_url
 
-    def _update_vcard_name_field(self, vcard: Any, first_name: str | None, last_name: str | None) -> None:
+    def _update_vcard_name_field(
+        self, vcard: Any, first_name: str | None, last_name: str | None
+    ) -> None:
         if hasattr(vcard, "n") and vcard.n:
             vcard.n.value = vobject.vcard.Name(
                 family=last_name or "",
@@ -566,7 +575,9 @@ class CardDAVToolKit(BaseToolKit[CardDAVSettings]):
                 given=first_name or "",
             )
 
-    def _update_vcard_field(self, vcard: Any, field_name: str, value: str | list[str]) -> None:
+    def _update_vcard_field(
+        self, vcard: Any, field_name: str, value: str | list[str]
+    ) -> None:
         if hasattr(vcard, field_name) and getattr(vcard, field_name):
             getattr(vcard, field_name).value = value
         else:
@@ -576,7 +587,9 @@ class CardDAVToolKit(BaseToolKit[CardDAVSettings]):
         root = ET.fromstring(content)
         ns = {"d": "DAV:", "card": "urn:ietf:params:xml:ns:carddav"}
 
-        href_elem = root.find(".//d:response/d:propstat/d:prop/card:addressbook-home-set/d:href", ns)
+        href_elem = root.find(
+            ".//d:response/d:propstat/d:prop/card:addressbook-home-set/d:href", ns
+        )
         if href_elem is not None:
             return self._get_full_url(href_elem.text)
 
@@ -593,10 +606,10 @@ class CardDAVToolKit(BaseToolKit[CardDAVSettings]):
         return results
 
     def _extract_address_book_from_response(
-            self,
-            response: Any,
-            ns: dict[str, str],
-            base_url: str,
+        self,
+        response: Any,
+        ns: dict[str, str],
+        base_url: str,
     ) -> AddressBook | None:
         href_elem = response.find("d:href", ns)
         if href_elem is None:
@@ -607,21 +620,31 @@ class CardDAVToolKit(BaseToolKit[CardDAVSettings]):
         if href == base_url or href == base_url.rstrip("/") + "/":
             return None
 
-        resourcetype_elem = response.find(".//d:propstat/d:prop/d:resourcetype/card:addressbook", ns)
+        resourcetype_elem = response.find(
+            ".//d:propstat/d:prop/d:resourcetype/card:addressbook", ns
+        )
         if resourcetype_elem is None:
             return None
 
         display_name_elem = response.find(".//d:propstat/d:prop/d:displayname", ns)
-        display_name = display_name_elem.text if (display_name_elem is not None and display_name_elem.text) else "Address Book"
+        display_name = (
+            display_name_elem.text
+            if (display_name_elem is not None and display_name_elem.text)
+            else "Address Book"
+        )
         return AddressBook(url=self._get_full_url(href), name=display_name)
 
     def _parse_address_books(self, content: str, base_url: str) -> list[AddressBook]:
-        return self._parse_responses(content, base_url, self._extract_address_book_from_response)
+        return self._parse_responses(
+            content, base_url, self._extract_address_book_from_response
+        )
 
     def _parse_address_book(self, content: str) -> str:
         root = ET.fromstring(content)
         ns = {"d": "DAV:"}
-        display_name_elem = root.find(".//d:response/d:propstat/d:prop/d:displayname", ns)
+        display_name_elem = root.find(
+            ".//d:response/d:propstat/d:prop/d:displayname", ns
+        )
         if display_name_elem is not None and display_name_elem.text:
             return display_name_elem.text
         return "Address Book"
@@ -649,7 +672,9 @@ class CardDAVToolKit(BaseToolKit[CardDAVSettings]):
         return contact
 
     def _parse_contacts(self, content: str, base_url: str) -> list[Contact]:
-        return self._parse_responses(content, base_url, self._extract_contact_from_response)
+        return self._parse_responses(
+            content, base_url, self._extract_contact_from_response
+        )
 
     def _parse_vcard_sync(self, vcard_data: str) -> Contact | None:
         vcard = vobject.readOne(vcard_data)
@@ -682,12 +707,14 @@ class CardDAVToolKit(BaseToolKit[CardDAVSettings]):
         )
 
     def _get_name_part(self, vcard: Any, first: bool = True) -> str | None:
-        if hasattr(vcard, 'fn') and vcard.fn.value:
+        if hasattr(vcard, "fn") and vcard.fn.value:
             parts = vcard.fn.value.split()
             return parts[0] if first and parts else (parts[-1] if parts else None)
         return None
 
-    def _get_vcard_value(self, vcard: Any, field_name: str, default: Any = None, list_value: bool = False) -> Any:
+    def _get_vcard_value(
+        self, vcard: Any, field_name: str, default: Any = None, list_value: bool = False
+    ) -> Any:
         if hasattr(vcard, field_name) and getattr(vcard, field_name):
             value = getattr(vcard, field_name).value
             if list_value and value:

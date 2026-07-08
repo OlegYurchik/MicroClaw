@@ -13,10 +13,10 @@ class VKToolKit(BaseToolKit[VKToolKitSettings]):
 
     @tool
     async def add_reaction(
-            self,
-            peer_id: int,
-            conversation_message_id: int,
-            reaction_id: int,
+        self,
+        peer_id: int,
+        conversation_message_id: int,
+        reaction_id: int,
     ):
         """Add a reaction to a VK message.
 

@@ -1,3 +1,5 @@
+from microclaw.dto import DecisionEnum
+from langgraph.types import interrupt
 import pathlib
 
 from microclaw.toolkits.base import BaseToolKit, tool
@@ -57,7 +59,9 @@ class FileSystemToolKit(BaseToolKit[FileSystemToolKitSettings]):
             result.append(
                 DirectoryInfo(
                     name=item.name,
-                    type=FilesystemItemType.DIRECTORY if item.is_dir() else FilesystemItemType.FILE,
+                    type=FilesystemItemType.DIRECTORY
+                    if item.is_dir()
+                    else FilesystemItemType.FILE,
                     size=stat.st_size if item.is_file() else None,
                     modified=stat.st_mtime,
                 )
@@ -103,7 +107,8 @@ class FileSystemToolKit(BaseToolKit[FileSystemToolKitSettings]):
             raise PermissionError("File writing is not allowed")
         if self.settings.write_mode is PermissionModeEnum.REQUEST:
             confirmation_request_text = f"Write content to file '{path}'?"
-            if not await self.request_confirmation(confirmation_request_text):
+            decision = interrupt({"description": confirmation_request_text})
+            if decision == DecisionEnum.REJECT.value:
                 raise UserDeniedAction()
 
         validated_path = self._validate_path(path)

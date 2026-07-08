@@ -9,10 +9,10 @@ class TelegramToolKit(BaseToolKit[TelegramToolKitSettings]):
 
     @tool
     async def add_reaction(
-            self,
-            chat_id: int,
-            message_id: int,
-            emoji: str,
+        self,
+        chat_id: int,
+        message_id: int,
+        emoji: str,
     ):
         """Add a reaction emoji to a Telegram message.
 

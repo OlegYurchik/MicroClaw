@@ -10,14 +10,14 @@ from .webhook import VKWebhookChannel
 
 
 def get_vk_channel(
-        settings: VKSettings,
-        agent: Agent,
-        sessions_storage: SessionsStorageInterface,
-        syncer: SyncerInterface,
-        users_storage: UsersStorageInterface,
-        resolver: "DependencyResolver",  # noqa: F821
-        stt: STT | None = None,
-        channel_key: str = "default",
+    settings: VKSettings,
+    agent: Agent,
+    sessions_storage: SessionsStorageInterface,
+    syncer: SyncerInterface,
+    users_storage: UsersStorageInterface,
+    resolver: "DependencyResolver",  # noqa: F821
+    stt: STT | None = None,
+    channel_key: str = "default",
 ) -> BaseVKChannel:
     match settings.method:
         case VKMethodEnum.POLLING:

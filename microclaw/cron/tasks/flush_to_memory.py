@@ -3,7 +3,6 @@ import uuid
 
 from loguru import logger
 from pydantic import BaseModel
-from pydantic_filters.pagination import OffsetPagination as BasePagination
 
 from microclaw.channels.base import BaseChannel
 from microclaw.cron.base import BaseCronTask
@@ -20,34 +19,36 @@ class FlushToMemoryCronTaskSettings(BaseModel):
 
 class FlushToMemoryCronTask(BaseCronTask[FlushToMemoryCronTaskSettings]):
     def __init__(
-            self,
-            key: str,
-            settings: CronTaskSettings,
-            resolver: "DependencyResolver",  # noqa: F821
+        self,
+        key: str,
+        settings: CronTaskSettings,
+        resolver: "DependencyResolver",  # noqa: F821
     ):
         super().__init__(key=key, settings=settings, resolver=resolver)
         self._sessions_storage: SessionsStorageInterface | None = None
         self._channels: dict[str, BaseChannel] | None = None
-    
+
     async def do_before(self):
         sessions_storages = await self._resolver.resolve_sessions_storages()
         self._sessions_storage = get_by_key_or_first(storage=sessions_storages)
         if self._sessions_storage is None:
             raise RuntimeError(f"Sessions storage not found for task '{self._key}'")
-        
+
         self._channels = await self._resolver.resolve_channels()
         if not self._channels:
             raise RuntimeError(f"No channels found for task '{self._key}'")
-    
+
     async def execute(self):
         logger.info(f"Running daily task '{self._key}'")
         yesterday = datetime.date.today() - datetime.timedelta(days=1)
         await self._process_day(yesterday)
-    
+
     async def _process_day(self, date: datetime.date):
         all_extracted_info = []
-        
-        async for session_id in self._sessions_storage.get_sessions(filter=SessionFilter(created_at=date)):
+
+        async for session_id in self._sessions_storage.get_sessions(
+            filter=SessionFilter(created_at=date)
+        ):
             user = await self._get_user_by_session(session_id)
             if user is None:
                 logger.warning(f"User not found for session {session_id}")
@@ -69,10 +70,10 @@ class FlushToMemoryCronTask(BaseCronTask[FlushToMemoryCronTaskSettings]):
                 from_last_summarization=False,
             ):
                 messages.append(message)
-            
+
             if not messages:
                 continue
-            
+
             extracted_info = await agent.extract_important_info(
                 messages=messages,
                 max_tokens=agent.get_max_memory_flush_tokens(),
@@ -85,9 +86,9 @@ class FlushToMemoryCronTask(BaseCronTask[FlushToMemoryCronTaskSettings]):
         if not all_extracted_info:
             logger.info(f"No sessions found for date {date}")
             return
-        
+
         combined_info = "\n\n".join(all_extracted_info)
-        
+
         agent = get_by_key_or_first(storage=await self._resolver.resolve_agents())
         if agent is None:
             logger.error("No agent available for memory summarization")
@@ -99,7 +100,7 @@ class FlushToMemoryCronTask(BaseCronTask[FlushToMemoryCronTaskSettings]):
             return
 
         old_memory = await memory_toolkit.get_memory(date=date) or ""
-        
+
         if old_memory:
             response = await agent.summarize_memory(
                 old_context=old_memory,
@@ -109,7 +110,7 @@ class FlushToMemoryCronTask(BaseCronTask[FlushToMemoryCronTaskSettings]):
             new_memory = response.content.strip()
         else:
             new_memory = combined_info
-        
+
         try:
             await memory_toolkit.append_to_memory(content=new_memory, date=date)
         except MemorySizeExceeded:
@@ -122,9 +123,9 @@ class FlushToMemoryCronTask(BaseCronTask[FlushToMemoryCronTaskSettings]):
                 content=response.content.strip(),
                 date=date,
             )
-        
+
         logger.info(f"Daily memory processing completed for date {date}")
-    
+
     async def _get_user_by_session(self, session_id: uuid.UUID):
         for channel in self._channels.values():
             users_storage = channel.get_users_storage()

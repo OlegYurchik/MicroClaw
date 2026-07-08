@@ -1,3 +1,5 @@
+from microclaw.dto import DecisionEnum
+from langgraph.types import interrupt
 import base64
 import pathlib
 from typing import Any
@@ -139,18 +141,17 @@ class AudioTagsToolKit(BaseToolKit[AudioTagsToolKitSettings]):
 
         if self._settings.write_mode is PermissionModeEnum.REQUEST:
             tags_text = "\n".join(f"{tag} = {value}" for tag, value in tags.items())
-            confirmation_request_text = (
-                f"Write tags to {path}?\n"
-                "\n"
-                f"{tags_text}\n"
-            )
-            if not await self.request_confirmation(confirmation_request_text):
+            confirmation_request_text = f"Write tags to {path}?\n\n{tags_text}\n"
+            decision = interrupt({"description": confirmation_request_text})
+            if decision == DecisionEnum.REJECT:
                 raise UserDeniedAction()
 
         audio.save()
 
     @tool
-    async def set_cover(self, path: str, image_data: str, mime_type: str = "image/jpeg") -> None:
+    async def set_cover(
+        self, path: str, image_data: str, mime_type: str = "image/jpeg"
+    ) -> None:
         """
         Set cover image for an audio file.
 
@@ -179,7 +180,8 @@ class AudioTagsToolKit(BaseToolKit[AudioTagsToolKitSettings]):
 
         if self._settings.write_mode is PermissionModeEnum.REQUEST:
             confirmation_request_text = f"Set cover to audio '{path}'?"
-            if not await self.request_confirmation(confirmation_request_text):
+            decision = interrupt({"description": confirmation_request_text})
+            if decision == DecisionEnum.REJECT.value:
                 raise UserDeniedAction()
 
         id3.save()
@@ -205,7 +207,8 @@ class AudioTagsToolKit(BaseToolKit[AudioTagsToolKitSettings]):
 
         if self._settings.allow_write is PermissionModeEnum.REQUEST:
             confirmation_request_text = f"Remove cover from audio '{path}'?"
-            if not await self.request_confirmation(confirmation_request_text):
+            decision = interrupt({"description": confirmation_request_text})
+            if decision == DecisionEnum.REJECT.value:
                 raise UserDeniedAction()
 
         del id3["APIC:"]
@@ -279,7 +282,11 @@ class AudioTagsToolKit(BaseToolKit[AudioTagsToolKitSettings]):
                 tags.custom_tags[key] = str(value)
 
         tags.length = audio.info.length if audio.info else None
-        tags.bitrate = int(audio.info.bitrate / 1000) if audio.info and audio.info.bitrate else None
+        tags.bitrate = (
+            int(audio.info.bitrate / 1000)
+            if audio.info and audio.info.bitrate
+            else None
+        )
         tags.sample_rate = audio.info.sample_rate if audio.info else None
         tags.channels = audio.info.channels if audio.info else None
 

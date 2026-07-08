@@ -14,17 +14,19 @@ from .settings import MicroclawSettings
 
 
 def callback(
-        ctx: typer.Context,
-        env_path: pathlib.Path | None = typer.Option(
-            None,
-            "--env", "-e",
-            help="Environment variables file location",
-        ),
-        config_path: pathlib.Path | None = typer.Option(
-            None,
-            "--config", "-c",
-            help="Config file location",
-        ),
+    ctx: typer.Context,
+    env_path: pathlib.Path | None = typer.Option(
+        None,
+        "--env",
+        "-e",
+        help="Environment variables file location",
+    ),
+    config_path: pathlib.Path | None = typer.Option(
+        None,
+        "--config",
+        "-c",
+        help="Config file location",
+    ),
 ):
     ctx.obj = {}
 

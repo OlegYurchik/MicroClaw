@@ -6,7 +6,6 @@ from fastapi import Request
 from fastapi.responses import PlainTextResponse
 from vkbottle.callback import BotCallback
 from vkbottle.bot import Bot
-from vkbottle_types.events import GroupEventType
 
 from microclaw.channels.vk.base import BaseVKChannel
 
@@ -18,25 +17,20 @@ class UvicornServer(uvicorn.Server):
 
 class VKWebhookChannel(BaseVKChannel):
     def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
         self._confirmation_code: str | None = None
         self._secret_access_key: str | None = None
+        super().__init__(*args, **kwargs)
 
+    def _create_bot(self) -> Bot:
         self._callback = BotCallback(
             url=str(self._settings.root_url),
             title=self._settings.title,
             secret_key=self._settings.secret_access_key,
         )
-
-        self._bot = Bot(
+        return Bot(
             token=self._settings.token,
             callback=self._callback,
         )
-        self._bot.on.message()(self._handle_message)
-        self._bot.on.raw_event(
-            GroupEventType.MESSAGE_EVENT,
-            dataclass=dict,
-        )(self._handle_confirmation_callback)
 
     async def listen_events(self):
         if not self._settings.root_url:
@@ -48,7 +42,10 @@ class VKWebhookChannel(BaseVKChannel):
         # Give uvicorn a moment to start listening before calling setup_webhook
         await asyncio.sleep(1)
 
-        self._confirmation_code, self._secret_access_key = await self._bot.setup_webhook()
+        (
+            self._confirmation_code,
+            self._secret_access_key,
+        ) = await self._bot.setup_webhook()
 
         await server_task
 
@@ -85,5 +82,5 @@ class VKWebhookChannel(BaseVKChannel):
                     detail="Forbidden.",
                 )
 
-        await self._bot.process_event(data)
+        self.add_task(self._bot.process_event(data))
         return PlainTextResponse("ok")

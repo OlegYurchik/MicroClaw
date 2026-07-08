@@ -6,8 +6,7 @@ class HomeAssistantSettings(BaseModel):
 
     url: str = Field(
         description=(
-            "URL of the Home Assistant instance "
-            "(e.g., http://homeassistant.local:8123)"
+            "URL of the Home Assistant instance (e.g., http://homeassistant.local:8123)"
         ),
     )
     token: str = Field(

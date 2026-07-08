@@ -23,13 +23,15 @@ class TelegramWebhookChannel(BaseTelegramChannel):
         super().__init__(*args, **kwargs)
         self._socket_path: str | None = None
         self._cloudflare_service: CloudflareTunnelService | None = None
-        
+
         if self._settings.cloudflare.enabled:
             temp_dir = tempfile.gettempdir()
-            self._socket_path = os.path.join(temp_dir, f"fcgi-socket-{os.getpid()}.sock")
-            
+            self._socket_path = os.path.join(
+                temp_dir, f"fcgi-socket-{os.getpid()}.sock"
+            )
+
             local_url = f"http+unix://{self._socket_path}"
-            
+
             self._cloudflare_service = CloudflareTunnelService(
                 settings=self._settings.cloudflare,
                 local_url=local_url,
@@ -39,7 +41,7 @@ class TelegramWebhookChannel(BaseTelegramChannel):
     @property
     def dependencies(self) -> list[facet.AsyncioServiceMixin]:
         dependencies = super().dependencies
-        
+
         if self._cloudflare_service:
             dependencies.append(self._cloudflare_service)
 
@@ -52,13 +54,13 @@ class TelegramWebhookChannel(BaseTelegramChannel):
             if not self._settings.root_url:
                 raise ValueError("root_url is required when cloudflare is disabled")
             base_url = yarl.URL(str(self._settings.root_url))
-        
+
         webhook_url = base_url / self._settings.root_path.lstrip("/")
         await self._bot.set_webhook(
             url=str(webhook_url),
             secret_token=self._settings.secret_access_key,
         )
-        
+
         await self.get_server().serve()
 
     def get_server(self) -> uvicorn.Server:
@@ -73,9 +75,9 @@ class TelegramWebhookChannel(BaseTelegramChannel):
             config = uvicorn.Config(app=app, uds=self._socket_path)
         else:
             config = uvicorn.Config(app=app, host="0.0.0.0", port=self._settings.port)
-        
+
         return UvicornServer(config)
-    
+
     def _ensure_socket_cleanup(self):
         if self._socket_path and os.path.exists(self._socket_path):
             try:
@@ -85,9 +87,9 @@ class TelegramWebhookChannel(BaseTelegramChannel):
                     raise
 
     async def handler(
-            self,
-            update: dict[str, Any],
-            x_telegram_bot_api_secret_token: str | None = fastapi.Header(None),
+        self,
+        update: dict[str, Any],
+        x_telegram_bot_api_secret_token: str | None = fastapi.Header(None),
     ):
         if x_telegram_bot_api_secret_token != self._settings.secret_access_key:
             raise fastapi.HTTPException(

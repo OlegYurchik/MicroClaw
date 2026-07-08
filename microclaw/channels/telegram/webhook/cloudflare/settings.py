@@ -1,4 +1,4 @@
-from pydantic import BaseModel, conint, field_validator, model_validator
+from pydantic import BaseModel, conint, model_validator
 
 
 class CloudflareTunnelSettings(BaseModel):

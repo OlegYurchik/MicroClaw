@@ -9,10 +9,10 @@ class StatsWidget(Static):
         self._currency = "$"
 
     def update_stats(
-            self,
-            usage: float | None = None,
-            cost: float | None = None,
-            currency: str = "$",
+        self,
+        usage: float | None = None,
+        cost: float | None = None,
+        currency: str = "$",
     ) -> None:
         self._context_usage = usage
         self._cost = cost

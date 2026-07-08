@@ -29,10 +29,10 @@ class AgentCronTaskSettings(BaseModel):
 
 class AgentCronTask(BaseCronTask[AgentCronTaskSettings]):
     def __init__(
-            self,
-            key: str,
-            settings: CronTaskSettings,
-            resolver: "DependencyResolver",  # noqa: F821
+        self,
+        key: str,
+        settings: CronTaskSettings,
+        resolver: "DependencyResolver",  # noqa: F821
     ):
         super().__init__(key=key, settings=settings, resolver=resolver)
         self._channel: BaseChannel | None = None
@@ -41,13 +41,17 @@ class AgentCronTask(BaseCronTask[AgentCronTaskSettings]):
     async def do_before(self):
         if self._settings.channel is not None:
             channels = await self._resolver.resolve_channels()
-            self._channel = get_by_key_or_first(storage=channels, key=self._settings.channel)
+            self._channel = get_by_key_or_first(
+                storage=channels, key=self._settings.channel
+            )
             if self._channel is None:
                 raise RuntimeError(f"Channel not found for task '{self._key}'")
 
         agents = await self._resolver.resolve_agents()
         if isinstance(self._settings.agent, AgentSettings):
-            self._agent = await self._resolver.resolve_agent(agent_settings=self._settings.agent)
+            self._agent = await self._resolver.resolve_agent(
+                agent_settings=self._settings.agent
+            )
         else:
             self._agent = get_by_key_or_first(storage=agents, key=self._settings.agent)
 

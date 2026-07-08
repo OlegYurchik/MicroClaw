@@ -24,11 +24,11 @@ class AgentMessageCollector:
 
     async def register_new_message(self, new_message: AgentMessage):
         self._is_new_message_chunk = (
-            new_message.chunked_message_id is None or
-            new_message.chunked_message_id != self._last_chunked_message_id
+            new_message.chunked_message_id is None
+            or new_message.chunked_message_id != self._last_chunked_message_id
         )
         self._last_chunked_message_id = new_message.chunked_message_id
-        
+
         await self.handle_new_message(new_message=new_message)
 
     async def handle_new_message(self, new_message: AgentMessage):
@@ -37,9 +37,9 @@ class AgentMessageCollector:
 
 class AgentMessageSaver(AgentMessageCollector):
     def __init__(
-            self,
-            sessions_storage: SessionsStorageInterface,
-            session_id: uuid.UUID,
+        self,
+        sessions_storage: SessionsStorageInterface,
+        session_id: uuid.UUID,
     ):
         super().__init__()
 

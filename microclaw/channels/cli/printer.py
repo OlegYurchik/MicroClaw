@@ -9,14 +9,14 @@ from .ui import RoleEnum
 
 class AgentMessagePrinter(AgentMessageCollector):
     def __init__(
-            self,
-            app,
-            session_id: uuid.UUID,
-            sessions_storage: SessionsStorageInterface,
-            agent: Agent,
-            show_context_usage: bool = False,
-            show_costs: bool = False,
-            debug: bool = False,
+        self,
+        app,
+        session_id: uuid.UUID,
+        sessions_storage: SessionsStorageInterface,
+        agent: Agent,
+        show_context_usage: bool = False,
+        show_costs: bool = False,
+        debug: bool = False,
     ):
         super().__init__()
         self._app = app
@@ -58,9 +58,9 @@ class AgentMessagePrinter(AgentMessageCollector):
         await self._app.add_message(role=role, text=text)
 
     async def _update_message_widget(
-            self,
-            role: RoleEnum,
-            text: str | None = None,
+        self,
+        role: RoleEnum,
+        text: str | None = None,
     ):
         await self._app.update_message(role=role, text=text)
 
@@ -78,7 +78,9 @@ class AgentMessagePrinter(AgentMessageCollector):
                 context_usage = actual_context_size * 100 / model_context_size
 
         if self._show_costs:
-            spending = await self._sessions_storage.get_spending(session_id=self._session_id)
+            spending = await self._sessions_storage.get_spending(
+                session_id=self._session_id
+            )
             cost = spending.cost
             currency = spending.currency
 

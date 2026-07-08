@@ -34,20 +34,20 @@ class SyncerCheckpointer(BaseCheckpointSaver):
         return f"{next_v:032}.{next_h:016}"
 
     def put(
-            self,
-            config: RunnableConfig,
-            checkpoint: Checkpoint,
-            metadata: CheckpointMetadata,
-            new_versions: ChannelVersions,
+        self,
+        config: RunnableConfig,
+        checkpoint: Checkpoint,
+        metadata: CheckpointMetadata,
+        new_versions: ChannelVersions,
     ) -> RunnableConfig:
         return self._run_sync(self.aput(config, checkpoint, metadata, new_versions))
 
     def put_writes(
-            self,
-            config: RunnableConfig,
-            writes: Sequence[tuple[str, Any]],
-            task_id: str,
-            task_path: str = "",
+        self,
+        config: RunnableConfig,
+        writes: Sequence[tuple[str, Any]],
+        task_id: str,
+        task_path: str = "",
     ) -> None:
         return self._run_sync(self.aput_writes(config, writes, task_id, task_path))
 
@@ -55,14 +55,18 @@ class SyncerCheckpointer(BaseCheckpointSaver):
         return self._run_sync(self.aget_tuple(config))
 
     def list(
-            self,
-            config: RunnableConfig | None,
-            *,
-            filter: dict[str, Any] | None = None,
-            before: RunnableConfig | None = None,
-            limit: int | None = None,
+        self,
+        config: RunnableConfig | None,
+        *,
+        filter: dict[str, Any] | None = None,
+        before: RunnableConfig | None = None,
+        limit: int | None = None,
     ) -> Iterator[CheckpointTuple]:
-        return iter(self._run_sync(self._collect_alist(config, filter=filter, before=before, limit=limit)))
+        return iter(
+            self._run_sync(
+                self._collect_alist(config, filter=filter, before=before, limit=limit)
+            )
+        )
 
     async def _collect_alist(self, config, **kwargs):
         result = []
@@ -79,12 +83,14 @@ class SyncerCheckpointer(BaseCheckpointSaver):
     def copy_thread(self, source_thread_id: str, target_thread_id: str) -> None:
         return self._run_sync(self.acopy_thread(source_thread_id, target_thread_id))
 
-    def prune(self, thread_ids: Sequence[str], *, strategy: str = "keep_latest") -> None:
+    def prune(
+        self, thread_ids: Sequence[str], *, strategy: str = "keep_latest"
+    ) -> None:
         return self._run_sync(self.aprune(thread_ids, strategy=strategy))
 
     @staticmethod
     def _run_sync(coro):
-        import asyncio
+
         try:
             loop = asyncio.get_running_loop()
         except RuntimeError:
@@ -92,11 +98,11 @@ class SyncerCheckpointer(BaseCheckpointSaver):
         return loop.run_until_complete(coro)
 
     async def aput(
-            self,
-            config: RunnableConfig,
-            checkpoint: Checkpoint,
-            metadata: CheckpointMetadata,
-            new_versions: ChannelVersions,
+        self,
+        config: RunnableConfig,
+        checkpoint: Checkpoint,
+        metadata: CheckpointMetadata,
+        new_versions: ChannelVersions,
     ) -> RunnableConfig:
         thread_id = config["configurable"]["thread_id"]
         checkpoint_ns = config["configurable"].get("checkpoint_ns", "")
@@ -119,11 +125,11 @@ class SyncerCheckpointer(BaseCheckpointSaver):
         }
 
     async def aput_writes(
-            self,
-            config: RunnableConfig,
-            writes: Sequence[tuple[str, Any]],
-            task_id: str,
-            task_path: str = "",
+        self,
+        config: RunnableConfig,
+        writes: Sequence[tuple[str, Any]],
+        task_id: str,
+        task_path: str = "",
     ) -> None:
         thread_id = config["configurable"]["thread_id"]
         checkpoint_ns = config["configurable"].get("checkpoint_ns", "")
@@ -143,7 +149,9 @@ class SyncerCheckpointer(BaseCheckpointSaver):
         checkpoint_id = config["configurable"].get("checkpoint_id")
 
         if checkpoint_id is None:
-            keys = await self._syncer.scan_keys(self._get_thread_prefix(thread_id, checkpoint_ns))
+            keys = await self._syncer.scan_keys(
+                self._get_thread_prefix(thread_id, checkpoint_ns)
+            )
             if not keys:
                 return None
             keys.sort()
@@ -178,19 +186,21 @@ class SyncerCheckpointer(BaseCheckpointSaver):
         )
 
     async def alist(
-            self,
-            config: RunnableConfig | None,
-            *,
-            filter: dict[str, Any] | None = None,
-            before: RunnableConfig | None = None,
-            limit: int | None = None,
+        self,
+        config: RunnableConfig | None,
+        *,
+        filter: dict[str, Any] | None = None,
+        before: RunnableConfig | None = None,
+        limit: int | None = None,
     ) -> AsyncIterator[CheckpointTuple]:
         if config is None:
             return
 
         thread_id = config["configurable"]["thread_id"]
         checkpoint_ns = config["configurable"].get("checkpoint_ns", "")
-        keys = await self._syncer.scan_keys(self._get_thread_prefix(thread_id, checkpoint_ns))
+        keys = await self._syncer.scan_keys(
+            self._get_thread_prefix(thread_id, checkpoint_ns)
+        )
         keys.sort()
 
         if before:
@@ -253,7 +263,9 @@ class SyncerCheckpointer(BaseCheckpointSaver):
                 new_key = key.replace(source_thread_id, target_thread_id, 1)
                 await self._syncer.set(new_key, value, ttl=self._ttl)
 
-    async def aprune(self, thread_ids: Sequence[str], *, strategy: str = "keep_latest") -> None:
+    async def aprune(
+        self, thread_ids: Sequence[str], *, strategy: str = "keep_latest"
+    ) -> None:
         pass
 
     @staticmethod
@@ -266,7 +278,9 @@ class SyncerCheckpointer(BaseCheckpointSaver):
 
     @staticmethod
     def _serialize(data: dict[str, Any]) -> str:
-        return base64.b64encode(pickle.dumps(data, protocol=pickle.HIGHEST_PROTOCOL)).decode("ascii")
+        return base64.b64encode(
+            pickle.dumps(data, protocol=pickle.HIGHEST_PROTOCOL)
+        ).decode("ascii")
 
     @staticmethod
     def _deserialize(data: str) -> dict[str, Any]:

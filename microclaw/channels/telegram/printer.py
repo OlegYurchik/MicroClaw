@@ -13,15 +13,15 @@ class AgentMessagePrinter(AgentMessageCollector):
     RESERVED_CHARS = r"_*\[\]()~`>#+-=|{}.!\\"
 
     def __init__(
-            self,
-            bot: aiogram.Bot,
-            chat_id: int,
-            session_id: uuid.UUID,
-            sessions_storage: SessionsStorageInterface,
-            agent: Agent,
-            show_context_usage: bool = False,
-            show_costs: bool = False,
-            debug: bool = False,
+        self,
+        bot: aiogram.Bot,
+        chat_id: int,
+        session_id: uuid.UUID,
+        sessions_storage: SessionsStorageInterface,
+        agent: Agent,
+        show_context_usage: bool = False,
+        show_costs: bool = False,
+        debug: bool = False,
     ):
         super().__init__()
         self._bot = bot
@@ -30,7 +30,7 @@ class AgentMessagePrinter(AgentMessageCollector):
         self._sessions_storage = sessions_storage
         self._agent = agent
         self._show_context_usage = show_context_usage
-        self._show_costs = show_costs 
+        self._show_costs = show_costs
         self._debug = debug
 
         self._messages: list[AgentMessage] = []
@@ -80,7 +80,9 @@ class AgentMessagePrinter(AgentMessageCollector):
                     )
                 )
         if self._show_costs:
-            spending = await self._sessions_storage.get_spending(session_id=self._session_id)
+            spending = await self._sessions_storage.get_spending(
+                session_id=self._session_id
+            )
             buttons.append(
                 aiogram.types.InlineKeyboardButton(
                     text=f"{spending.cost:.4f} {spending.currency}",
@@ -93,7 +95,7 @@ class AgentMessagePrinter(AgentMessageCollector):
             reply_markup = aiogram.types.InlineKeyboardMarkup(inline_keyboard=[buttons])
 
         text_list = [
-            text[i:i + self.MAX_MESSAGE_LENGTH].strip()
+            text[i : i + self.MAX_MESSAGE_LENGTH].strip()
             for i in range(0, len(text), self.MAX_MESSAGE_LENGTH)
         ]
 

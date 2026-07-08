@@ -80,29 +80,34 @@ def channel() -> MagicMock:
 
 
 @pytest.fixture
-def agent(agent_settings, model_settings, provider_settings, toolkits, client) -> Agent:
+def agent(
+    agent_settings, model_settings, provider_settings, toolkits, client, syncer
+) -> Agent:
     return Agent(
         settings=agent_settings,
         model_settings=model_settings,
         provider_settings=provider_settings,
         toolkits=toolkits,
+        syncer=syncer,
         mcp_settings={},
         client=client,
     )
 
 
 @pytest.fixture
-def make_agent(agent_settings, model_settings, provider_settings):
+def make_agent(agent_settings, model_settings, provider_settings, syncer):
     def _make(toolkits, client=None, **extra):
         return Agent(
             settings=agent_settings,
             model_settings=model_settings,
             provider_settings=provider_settings,
             toolkits=toolkits,
+            syncer=syncer,
             mcp_settings={},
             client=client,
             **extra,
         )
+
     return _make
 
 
@@ -132,8 +137,11 @@ def resolver() -> AsyncMock:
 
 
 @pytest.fixture
-def base_channel(channel_settings, agent, sessions_storage, syncer, users_storage, resolver):
+def base_channel(
+    channel_settings, agent, sessions_storage, syncer, users_storage, resolver
+):
     from tests.factories import FakeChannel
+
     return FakeChannel(
         settings=channel_settings,
         agent=agent,

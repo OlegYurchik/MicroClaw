@@ -50,7 +50,9 @@ class Entity(BaseModel):
 
     entity_id: str = Field(description="Entity identifier (e.g., light.living_room)")
     slug: str = Field(description="Entity slug (e.g., living_room)")
-    domain: str = Field(description="Domain of the entity (e.g., light, switch, sensor)")
+    domain: str = Field(
+        description="Domain of the entity (e.g., light, switch, sensor)"
+    )
     state: State | None = Field(default=None, description="Current state of the entity")
 
 

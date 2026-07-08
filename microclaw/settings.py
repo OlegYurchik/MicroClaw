@@ -86,7 +86,9 @@ class MicroclawSettings(BaseSettings):
         for name, model_settings in settings_copy.models.items():
             provider_value = model_settings.provider
             if isinstance(provider_value, (str, NoneType)):
-                provider_value = get_by_key_or_first(storage=settings_copy.providers, key=provider_value)
+                provider_value = get_by_key_or_first(
+                    storage=settings_copy.providers, key=provider_value
+                )
             if provider_value is None:
                 raise ValueError(f"Provider for model '{name}' not exists")
             model_settings.provider = provider_value
@@ -94,7 +96,9 @@ class MicroclawSettings(BaseSettings):
         for name, agent_settings in settings_copy.agents.items():
             model_value = agent_settings.model
             if isinstance(model_value, (str, NoneType)):
-                model_value = get_by_key_or_first(storage=settings_copy.models, key=model_value)
+                model_value = get_by_key_or_first(
+                    storage=settings_copy.models, key=model_value
+                )
             if model_value is None:
                 raise ValueError(f"Model for agent '{name}' not exists")
             if InputTypeEnum.TEXT not in model_value.input_types:
@@ -107,14 +111,20 @@ class MicroclawSettings(BaseSettings):
         for name, channel_settings in settings_copy.channels.items():
             agent_value = channel_settings.agent
             if isinstance(agent_value, str):
-                agent = get_by_key_or_first(storage=settings_copy.agents, key=agent_value)
+                agent = get_by_key_or_first(
+                    storage=settings_copy.agents, key=agent_value
+                )
                 if agent is None:
-                    raise ValueError(f"Agent '{agent_value}' for channel '{name}' not exists")
+                    raise ValueError(
+                        f"Agent '{agent_value}' for channel '{name}' not exists"
+                    )
             elif agent_value is None:
                 if not settings_copy.agents:
                     raise ValueError(f"No agents defined for channel '{name}'")
             elif not isinstance(agent_value, AgentSettings):
-                raise ValueError(f"Invalid agent type for channel '{name}': {type(agent_value)}")
+                raise ValueError(
+                    f"Invalid agent type for channel '{name}': {type(agent_value)}"
+                )
 
             sessions_storage_value = channel_settings.sessions_storage
             if isinstance(sessions_storage_value, str):
@@ -123,24 +133,36 @@ class MicroclawSettings(BaseSettings):
                     key=sessions_storage_value,
                 )
                 if sessions_storage is None:
-                    raise ValueError(f"Sessions storage '{sessions_storage_value}' for channel '{name}' not exists")
+                    raise ValueError(
+                        f"Sessions storage '{sessions_storage_value}' for channel '{name}' not exists"
+                    )
             elif sessions_storage_value is None:
                 if not settings_copy.sessions_storages:
-                    raise ValueError(f"No sessions storages defined for channel '{name}'")
+                    raise ValueError(
+                        f"No sessions storages defined for channel '{name}'"
+                    )
             elif not isinstance(sessions_storage_value, SessionsStorageSettingsType):
-                raise ValueError(f"Invalid sessions_storage type for channel '{name}': {type(sessions_storage_value)}")
+                raise ValueError(
+                    f"Invalid sessions_storage type for channel '{name}': {type(sessions_storage_value)}"
+                )
 
             stt_value = channel_settings.stt
             if isinstance(stt_value, str):
                 stt = get_by_key_or_first(storage=settings_copy.stt, key=stt_value)
                 if stt is None:
-                    raise ValueError(f"STT '{stt_value}' for channel '{name}' not exists")
+                    raise ValueError(
+                        f"STT '{stt_value}' for channel '{name}' not exists"
+                    )
             elif isinstance(stt_value, STTSettings):
                 model_value = stt_value.model
                 if isinstance(model_value, (str, NoneType)):
-                    model_value = get_by_key_or_first(storage=settings_copy.models, key=model_value)
+                    model_value = get_by_key_or_first(
+                        storage=settings_copy.models, key=model_value
+                    )
                 if model_value is None:
-                    raise ValueError(f"Model for inline STT in channel '{name}' not exists")
+                    raise ValueError(
+                        f"Model for inline STT in channel '{name}' not exists"
+                    )
                 if InputTypeEnum.AUDIO not in model_value.input_types:
                     raise ValueError(
                         f"Model '{model_value.id}' for inline STT in channel '{name}' does not support audio input. "
@@ -148,7 +170,9 @@ class MicroclawSettings(BaseSettings):
                     )
                 stt_value.model = model_value
             elif stt_value is not None:
-                raise ValueError(f"Invalid stt type for channel '{name}': {type(stt_value)}")
+                raise ValueError(
+                    f"Invalid stt type for channel '{name}': {type(stt_value)}"
+                )
 
             users_storage_value = channel_settings.users_storage
             if isinstance(users_storage_value, str):
@@ -157,17 +181,23 @@ class MicroclawSettings(BaseSettings):
                     key=users_storage_value,
                 )
                 if users_storage is None:
-                    raise ValueError(f"Users storage '{users_storage_value}' for channel '{name}' not exists")
+                    raise ValueError(
+                        f"Users storage '{users_storage_value}' for channel '{name}' not exists"
+                    )
             elif users_storage_value is None:
                 if not settings_copy.users_storages:
                     raise ValueError(f"No users storages defined for channel '{name}'")
             elif not isinstance(users_storage_value, UsersStorageSettingsType):
-                raise ValueError(f"Invalid users_storage type for channel '{name}': {type(users_storage_value)}")
+                raise ValueError(
+                    f"Invalid users_storage type for channel '{name}': {type(users_storage_value)}"
+                )
 
         for name, stt_settings in settings_copy.stt.items():
             model_value = stt_settings.model
             if isinstance(model_value, (str, NoneType)):
-                model_value = get_by_key_or_first(storage=settings_copy.models, key=model_value)
+                model_value = get_by_key_or_first(
+                    storage=settings_copy.models, key=model_value
+                )
             if model_value is None:
                 raise ValueError(f"Model for stt '{name}' not exists")
             if InputTypeEnum.AUDIO not in model_value.input_types:
@@ -202,10 +232,10 @@ class MicroclawSettings(BaseSettings):
 
     @classmethod
     def load(
-            cls,
-            env_prefix: str | None = None,
-            env_file: pathlib.Path | None = None,
-            config_file: pathlib.Path | None = None,
+        cls,
+        env_prefix: str | None = None,
+        env_file: pathlib.Path | None = None,
+        config_file: pathlib.Path | None = None,
     ) -> Self:
         data = {}
 

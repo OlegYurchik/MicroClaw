@@ -2,7 +2,15 @@ from __future__ import annotations
 
 import enum
 
-from pydantic import AnyHttpUrl, BaseModel, Field, NonNegativeInt, PositiveInt, confloat, conint
+from pydantic import (
+    AnyHttpUrl,
+    BaseModel,
+    Field,
+    NonNegativeInt,
+    PositiveInt,
+    confloat,
+    conint,
+)
 
 from microclaw.toolkits import ToolKitSettings
 

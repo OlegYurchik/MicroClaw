@@ -1,3 +1,5 @@
+from microclaw.dto import DecisionEnum
+from langgraph.types import interrupt
 import tempfile
 from contextlib import asynccontextmanager
 from email.utils import parsedate_to_datetime
@@ -14,7 +16,6 @@ from .settings import WebDAVSettings
 
 
 class WebDAVToolKit(BaseToolKit[WebDAVSettings]):
-
     @asynccontextmanager
     async def _create_client(self):
         """Создает новый клиент WebDAV."""
@@ -44,7 +45,7 @@ class WebDAVToolKit(BaseToolKit[WebDAVSettings]):
 
         async with self._create_client() as client:
             items = await client.list(path or "/", get_info=True)
-        
+
         return [
             self._parse_item_info(parent_path=path, item_info=item_info)
             for item_info in items[1:]
@@ -100,9 +101,10 @@ class WebDAVToolKit(BaseToolKit[WebDAVSettings]):
         if self.settings.write_mode is PermissionModeEnum.DENY:
             raise PermissionError("Write operations are disabled")
         if self.settings.write_mode is PermissionModeEnum.REQUEST:
-            if not await self.request_confirmation(
-                f"Upload file '{local_path}' to WebDAV path '{path}'?"
-            ):
+            decision = interrupt(
+                {"description": f"Upload file '{local_path}' to WebDAV path '{path}'?"}
+            )
+            if decision == DecisionEnum.REJECT.value:
                 raise UserDeniedAction()
 
         async with self._create_client() as client:
@@ -126,9 +128,12 @@ class WebDAVToolKit(BaseToolKit[WebDAVSettings]):
             raise PermissionError("Write operations are disabled")
 
         if self.settings.write_mode is PermissionModeEnum.REQUEST:
-            if not await self.request_confirmation(
-                f"Create file at WebDAV path '{path}' with {len(content)} bytes of content?"
-            ):
+            decision = interrupt(
+                {
+                    "description": f"Create file at WebDAV path '{path}' with {len(content)} bytes of content?"
+                }
+            )
+            if decision == DecisionEnum.REJECT.value:
                 raise UserDeniedAction()
 
         with tempfile.NamedTemporaryFile(delete=False) as temp_file:
@@ -157,9 +162,10 @@ class WebDAVToolKit(BaseToolKit[WebDAVSettings]):
             raise PermissionError("Write operations are disabled")
 
         if self.settings.write_mode is PermissionModeEnum.REQUEST:
-            if not await self.request_confirmation(
-                f"Delete file at WebDAV path '{path}'?"
-            ):
+            decision = interrupt(
+                {"description": f"Delete file at WebDAV path '{path}'?"}
+            )
+            if decision == DecisionEnum.REJECT.value:
                 raise UserDeniedAction()
 
         async with self._create_client() as client:
@@ -172,7 +178,9 @@ class WebDAVToolKit(BaseToolKit[WebDAVSettings]):
         normalized_path = path.lstrip("/").rstrip("/")
         for allowed_path in self.settings.allowed_paths:
             normalized_allowed = allowed_path.lstrip("/").rstrip("/")
-            if normalized_path == normalized_allowed or normalized_path.startswith(normalized_allowed + "/"):
+            if normalized_path == normalized_allowed or normalized_path.startswith(
+                normalized_allowed + "/"
+            ):
                 return
 
         raise PermissionError(f"Access denied to path: {path}")
