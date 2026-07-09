@@ -47,6 +47,13 @@ class VKWebhookChannel(BaseVKChannel):
             self._secret_access_key,
         ) = await self._bot.setup_webhook()
 
+        server_id = await self._bot.callback.find_server_id()
+        if server_id is not None:
+            await self._bot.callback.set_callback_settings(
+                server_id,
+                {"message_event": True},
+            )
+
         await server_task
 
     def get_server(self) -> uvicorn.Server:

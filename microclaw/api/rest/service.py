@@ -38,7 +38,7 @@ class RESTAPIService(facet.AsyncioServiceMixin):
 
         self.add_task(server.serve())
 
-    def get_app(self) -> fastapi.FastAPI:
+    async def get_app(self) -> fastapi.FastAPI:
         app = fastapi.FastAPI(
             root_url=self._settings.root_url,
             root_path=self._settings.root_path,

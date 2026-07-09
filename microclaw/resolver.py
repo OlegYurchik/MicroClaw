@@ -213,12 +213,14 @@ class DependencyResolver:
                 raise ValueError(f"MCP with name '{mcp_settings_or_name}' not exists")
 
         skill_paths = await self.resolve_skills(agent_settings)
+        syncer = await self.resolve_syncer()
 
         return Agent(
             settings=agent_settings,
             model_settings=model_settings,
             provider_settings=provider_settings,
             toolkits=agent_toolkits,
+            syncer=syncer,
             mcp_settings=agent_mcps_settings,
             skills=skill_paths,
         )

@@ -1,6 +1,14 @@
+# OS cache files
+.fuse*
+
+# AI cache files
+.kilo/
+
 # Python cache files
 __pycache__/
+.pytest_cache/
 .ruff_cache/
+.vkbottle/
 *.pyc
 
 # Environment
@@ -8,3 +16,8 @@ __pycache__/
 
 # Configuration
 config.yaml
+
+# Local databases
+.sessions/
+.users/
+.workspace/

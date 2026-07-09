@@ -1,4 +1,5 @@
 import logging
+from typing import Callable
 
 from loguru import logger
 
@@ -20,3 +21,18 @@ class InterceptHandler(logging.Handler):
         logger.opt(depth=depth, exception=record.exc_info).log(
             level, record.getMessage()
         )
+
+
+def generate_formatter(base_format: str) -> Callable:
+    def formatter(record):
+        fmt = base_format
+        extra = record["extra"]
+        if extra:
+            extra_items = " | ".join(
+                f"{k}={str(v).replace('{', '{{').replace('}', '}}')}"
+                for k, v in extra.items()
+            )
+            fmt += f" | <yellow>{extra_items}</yellow>"
+        return fmt + "\n"
+
+    return formatter

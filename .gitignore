@@ -1,8 +1,12 @@
 # OS cache files
 .fuse*
 
+# AI cache files
+.kilo/
+
 # Python cache files
 __pycache__/
+.pytest_cache/
 .ruff_cache/
 .vkbottle/
 *.pyc

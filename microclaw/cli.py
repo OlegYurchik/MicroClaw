@@ -8,7 +8,7 @@ from loguru import logger
 
 from .agents import get_cli as get_agents_cli
 from .cron import get_cli as get_cron_cli
-from .logging import InterceptHandler
+from .logging import InterceptHandler, generate_formatter
 from .service import MicroclawService
 from .settings import MicroclawSettings
 
@@ -39,18 +39,20 @@ def callback(
 
     logging.basicConfig(handlers=[InterceptHandler()], level=0)
 
+    formatter = generate_formatter(base_format=settings.logging.format)
+
     logger.remove()
     if settings.logging.console:
         logger.add(
             sink=sys.stderr,
             level=settings.logging.level,
-            format=settings.logging.format,
+            format=formatter,
         )
     if settings.logging.path:
         logger.add(
             sink=settings.logging.path,
             level=settings.logging.level,
-            format=settings.logging.format,
+            format=formatter,
             rotation=settings.logging.rotation,
             retention=settings.logging.retention,
             compression=settings.logging.compression,

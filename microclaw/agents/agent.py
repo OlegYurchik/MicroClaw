@@ -33,6 +33,7 @@ from langchain.agents.middleware.types import (
 )
 from langchain.messages import ToolMessage
 from langgraph.types import Command
+from langgraph.errors import GraphBubbleUp
 from loguru import logger
 
 from microclaw.agents.settings import (
@@ -109,7 +110,6 @@ class Agent:
             tool for toolkit in self._toolkits.values() for tool in toolkit.get_tools()
         ]
         self._client = client or self.get_client()
-        self._compiled_agent_cache: dict[tuple, Any] = {}
 
     def _create_mcp_client(self) -> MultiServerMCPClient:
         servers = {}
@@ -250,7 +250,8 @@ class Agent:
 
         bound_logger.info(
             "Agent ask started",
-            extra={"messages_count": len(messages), "tools_count": len(self._tools)},
+            messages_count=len(messages),
+            tools_count=len(self._tools),
         )
 
         if session_id is not None:
@@ -292,7 +293,7 @@ class Agent:
         bound_logger = logger.bind(request_id=request_id, session_id=session_id)
         bound_logger.info(
             "Agent resume_after_confirmation started",
-            extra={"decision": decision.value},
+            decision=decision.value,
         )
 
         system_prompt = await self._get_agent_prompt(channel=channel)
@@ -323,8 +324,6 @@ class Agent:
         ):
             yield msg
 
-        bound_logger.info("Agent resume_after_confirmation finished")
-
     async def has_pending_interrupt(self, session_id: uuid.UUID) -> bool:
         config = {
             "recursion_limit": 1000,
@@ -346,10 +345,6 @@ class Agent:
         channel: "BaseChannel | None",  # noqa: F821
         system_prompt: str,
     ):
-        cache_key = (id(channel), system_prompt)
-        if cache_key in self._compiled_agent_cache:
-            return self._compiled_agent_cache[cache_key]
-
         mcp_tools = []
         try:
             mcp_tools = list(await self._mcp.get_tools())
@@ -393,7 +388,6 @@ class Agent:
                 checkpointer=self._checkpointer,
             )
 
-        self._compiled_agent_cache[cache_key] = agent
         return agent
 
     async def _process_events(
@@ -515,7 +509,7 @@ class Agent:
                     spending = self._get_empty_spending()
                 case "on_tool_start":
                     tool_name = event["name"]
-                    bound_logger.info("Tool call started", extra={"tool": tool_name})
+                    bound_logger.info("Tool call started", tool=tool_name)
                     tool_input = event["data"].get("input", {})
                     compact_input = self._compact_tool_output(tool_input)
                     text = f"Tool name: {tool_name};\nTool input: {compact_input}"
@@ -527,7 +521,7 @@ class Agent:
                     )
                 case "on_tool_end":
                     tool_name = event["name"]
-                    bound_logger.info("Tool call finished", extra={"tool": tool_name})
+                    bound_logger.info("Tool call finished", tool=tool_name)
                     tool_output = event["data"].get("output")
                     compact_output = self._compact_tool_output(tool_output)
                     text = f"Tool name: {tool_name};\nTool output: {compact_output}"
@@ -539,7 +533,7 @@ class Agent:
                     )
                 case "on_tool_error":
                     tool_name = event["name"]
-                    bound_logger.error("Tool call error", extra={"tool": tool_name})
+                    bound_logger.error("Tool call error", tool=tool_name)
                     error_data = event["data"]
                     error_message = self._compact_tool_output(
                         error_data.get("error", "Unknown error")
@@ -917,7 +911,9 @@ class Agent:
 async def _handle_tool_errors(request, handler) -> Any:
     try:
         return await handler(request)
-    except BaseException as exception:
+    except GraphBubbleUp as exception:
+        raise exception
+    except Exception as exception:
         tb = "".join(
             traceback.format_exception(
                 type(exception), exception, exception.__traceback__

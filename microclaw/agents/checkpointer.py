@@ -143,6 +143,24 @@ class SyncerCheckpointer(BaseCheckpointSaver):
         existing.extend(writes)
         await self._syncer.set(key, self._serialize(existing), ttl=self._ttl)
 
+    async def _load_pending_writes(
+        self, thread_id: str, checkpoint_ns: str, checkpoint_id: str
+    ) -> list[tuple[str, str, Any]]:
+        prefix = f"checkpoint_writes:{thread_id}:{checkpoint_ns}:{checkpoint_id}:"
+        keys = await self._syncer.scan_keys(prefix + "*")
+        pending_writes: list[tuple[str, str, Any]] = []
+        for key in keys:
+            if not key.startswith(prefix):
+                continue
+            task_id = key[len(prefix) :]
+            raw = await self._syncer.get(key)
+            if raw is None:
+                continue
+            writes = self._deserialize(raw)
+            for channel, value in writes:
+                pending_writes.append((task_id, channel, value))
+        return pending_writes
+
     async def aget_tuple(self, config: RunnableConfig) -> CheckpointTuple | None:
         thread_id = config["configurable"]["thread_id"]
         checkpoint_ns = config["configurable"].get("checkpoint_ns", "")
@@ -156,6 +174,7 @@ class SyncerCheckpointer(BaseCheckpointSaver):
                 return None
             keys.sort()
             key = keys[-1]
+            checkpoint_id = key.split(":")[-1]
         else:
             key = self._get_key(thread_id, checkpoint_ns, checkpoint_id)
 
@@ -178,11 +197,24 @@ class SyncerCheckpointer(BaseCheckpointSaver):
                 }
             }
 
+        resolved_config = {
+            "configurable": {
+                "thread_id": thread_id,
+                "checkpoint_ns": checkpoint_ns,
+                "checkpoint_id": checkpoint_id,
+            }
+        }
+
+        pending_writes = await self._load_pending_writes(
+            thread_id, checkpoint_ns, checkpoint_id
+        )
+
         return CheckpointTuple(
-            config=config,
+            config=resolved_config,
             checkpoint=checkpoint,
             metadata=metadata,
             parent_config=parent_config,
+            pending_writes=pending_writes,
         )
 
     async def alist(
@@ -239,17 +271,25 @@ class SyncerCheckpointer(BaseCheckpointSaver):
                     }
                 }
 
+            pending_writes = await self._load_pending_writes(
+                thread_id, checkpoint_ns, checkpoint_id
+            )
+
             yield CheckpointTuple(
                 config=item_config,
                 checkpoint=checkpoint,
                 metadata=metadata,
                 parent_config=parent_config,
+                pending_writes=pending_writes,
             )
             count += 1
 
     async def adelete_thread(self, thread_id: str) -> None:
         keys = await self._syncer.scan_keys(f"checkpoint:{thread_id}:*")
         for key in keys:
+            await self._syncer.delete(key)
+        write_keys = await self._syncer.scan_keys(f"checkpoint_writes:{thread_id}:*")
+        for key in write_keys:
             await self._syncer.delete(key)
 
     async def adelete_for_runs(self, run_ids: Sequence[str]) -> None:
@@ -258,6 +298,12 @@ class SyncerCheckpointer(BaseCheckpointSaver):
     async def acopy_thread(self, source_thread_id: str, target_thread_id: str) -> None:
         keys = await self._syncer.scan_keys(f"checkpoint:{source_thread_id}:*")
         for key in keys:
+            value = await self._syncer.get(key)
+            if value is not None:
+                new_key = key.replace(source_thread_id, target_thread_id, 1)
+                await self._syncer.set(new_key, value, ttl=self._ttl)
+        write_keys = await self._syncer.scan_keys(f"checkpoint_writes:{source_thread_id}:*")
+        for key in write_keys:
             value = await self._syncer.get(key)
             if value is not None:
                 new_key = key.replace(source_thread_id, target_thread_id, 1)

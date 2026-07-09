@@ -10,6 +10,7 @@ import aiohttp
 from loguru import logger
 from vkbottle import Callback, Keyboard
 from vkbottle.bot import Bot, Message
+from vkbottle.tools.event_data import ShowSnackbarEvent
 from vkbottle_types.events import GroupEventType
 
 from microclaw.agents import Agent
@@ -26,6 +27,7 @@ from microclaw.toolkits import ToolKitSettings
 from .settings import VKSettings
 from .printer import VKAgentMessagePrinter
 from .toolkit import VKToolKit
+from .middlewares.typing import VKTypingMiddleware
 
 
 class BaseVKChannel(BaseChannel):
@@ -61,6 +63,8 @@ class BaseVKChannel(BaseChannel):
         raise NotImplementedError
 
     def _setup_handlers(self) -> None:
+        message_view = self._bot.labeler.views()["message"]
+        message_view.register_middleware(VKTypingMiddleware)
         self._bot.on.message()(self._handle_message)
         self._bot.on.raw_event(
             GroupEventType.MESSAGE_EVENT,
@@ -247,17 +251,23 @@ class BaseVKChannel(BaseChannel):
                 event_id = obj.get("event_id")
                 user_id = obj.get("user_id")
 
+                logger.debug(
+                    f"send_message_event_answer event_id={event_id!r} "
+                    f"user_id={user_id} peer_id={peer_id}"
+                )
                 try:
+                    event_data = ShowSnackbarEvent(text=status_text)
                     await self._bot.api.messages.send_message_event_answer(
                         event_id=event_id,
                         user_id=user_id,
                         peer_id=peer_id,
-                        event_data=json.dumps(
-                            {"type": "show_snackbar", "text": status_text}
-                        ),
+                        event_data=event_data.model_dump_json(),
                     )
-                except Exception:
-                    logger.exception("send_message_event_answer failed")
+                except Exception as exc:
+                    logger.exception(
+                        f"send_message_event_answer failed: {exc} "
+                        f"event_id={event_id!r} user_id={user_id} peer_id={peer_id}"
+                    )
 
     async def _generate_and_send_answer(
         self,
