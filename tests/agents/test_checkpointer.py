@@ -2,8 +2,6 @@
 
 import pytest
 
-from langgraph.checkpoint.base import CheckpointTuple
-
 from microclaw.agents.checkpointer import SyncerCheckpointer
 from microclaw.syncers.memory.settings import MemorySyncerSettings
 from microclaw.syncers.memory.syncer import MemorySyncer

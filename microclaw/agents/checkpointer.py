@@ -1,8 +1,6 @@
 import asyncio
-import base64
-import pickle
 import random
-from typing import Any, AsyncIterator, Iterator, Sequence
+from typing import Any, AsyncIterator, Iterator, List, Sequence, Tuple
 
 from langgraph.checkpoint.base import (
     BaseCheckpointSaver,
@@ -16,7 +14,7 @@ from langgraph.checkpoint.base import (
 from microclaw.syncers.interfaces import SyncerInterface
 
 
-class SyncerCheckpointer(BaseCheckpointSaver):
+class SyncerCheckpointer(BaseCheckpointSaver[str]):
     def __init__(self, syncer: SyncerInterface, ttl: int | None = None):
         super().__init__()
         self._syncer = syncer
@@ -25,8 +23,6 @@ class SyncerCheckpointer(BaseCheckpointSaver):
     def get_next_version(self, current: str | None, channel: None) -> str:
         if current is None:
             current_v = 0
-        elif isinstance(current, int):
-            current_v = current
         else:
             current_v = int(current.split(".")[0])
         next_v = current_v + 1
@@ -34,11 +30,11 @@ class SyncerCheckpointer(BaseCheckpointSaver):
         return f"{next_v:032}.{next_h:016}"
 
     def put(
-        self,
-        config: RunnableConfig,
-        checkpoint: Checkpoint,
-        metadata: CheckpointMetadata,
-        new_versions: ChannelVersions,
+            self,
+            config: RunnableConfig,
+            checkpoint: Checkpoint,
+            metadata: CheckpointMetadata,
+            new_versions: ChannelVersions,
     ) -> RunnableConfig:
         return self._run_sync(self.aput(config, checkpoint, metadata, new_versions))
 
@@ -113,9 +109,9 @@ class SyncerCheckpointer(BaseCheckpointSaver):
             "checkpoint": checkpoint,
             "metadata": metadata,
             "new_versions": new_versions,
-            "parent_config": config.get("configurable", {}).get("checkpoint_id"),
+            "parent_config": config["configurable"].get("checkpoint_id"),
         }
-        await self._syncer.set(key, self._serialize(data), ttl=self._ttl)
+        await self._syncer.set(key, self.serde.dumps_typed(data), ttl=self._ttl)
         return {
             "configurable": {
                 "thread_id": thread_id,
@@ -134,30 +130,34 @@ class SyncerCheckpointer(BaseCheckpointSaver):
         thread_id = config["configurable"]["thread_id"]
         checkpoint_ns = config["configurable"].get("checkpoint_ns", "")
         checkpoint_id = config["configurable"].get("checkpoint_id")
-        key = f"checkpoint_writes:{thread_id}:{checkpoint_ns}:{checkpoint_id}:{task_id}"
-        existing = await self._syncer.get(key)
-        if existing is None:
-            existing = []
+        key = self._get_writes_key(thread_id, checkpoint_ns, checkpoint_id, task_id)
+        raw = await self._syncer.get(key)
+        if raw is None:
+            record: dict[str, Any] = {"task_path": task_path, "writes": list(writes)}
         else:
-            existing = self._deserialize(existing)
-        existing.extend(writes)
-        await self._syncer.set(key, self._serialize(existing), ttl=self._ttl)
+            record = self.serde.loads_typed(raw)
+            record["task_path"] = task_path
+            record["writes"].extend(writes)
+        await self._syncer.set(key, self.serde.dumps_typed(record), ttl=self._ttl)
 
     async def _load_pending_writes(
-        self, thread_id: str, checkpoint_ns: str, checkpoint_id: str
-    ) -> list[tuple[str, str, Any]]:
+            self,
+            thread_id: str,
+            checkpoint_ns: str,
+            checkpoint_id: str,
+    ) -> List[Tuple[str, str, Any]]:
         prefix = f"checkpoint_writes:{thread_id}:{checkpoint_ns}:{checkpoint_id}:"
         keys = await self._syncer.scan_keys(prefix + "*")
-        pending_writes: list[tuple[str, str, Any]] = []
+        pending_writes: List[Tuple[str, str, Any]] = []
         for key in keys:
             if not key.startswith(prefix):
                 continue
-            task_id = key[len(prefix) :]
+            task_id = key[len(prefix):]
             raw = await self._syncer.get(key)
             if raw is None:
                 continue
-            writes = self._deserialize(raw)
-            for channel, value in writes:
+            record = self.serde.loads_typed(raw)
+            for channel, value in record["writes"]:
                 pending_writes.append((task_id, channel, value))
         return pending_writes
 
@@ -182,7 +182,7 @@ class SyncerCheckpointer(BaseCheckpointSaver):
         if raw is None:
             return None
 
-        data = self._deserialize(raw)
+        data = self.serde.loads_typed(raw)
         checkpoint = data["checkpoint"]
         metadata = data["metadata"]
 
@@ -226,7 +226,9 @@ class SyncerCheckpointer(BaseCheckpointSaver):
         limit: int | None = None,
     ) -> AsyncIterator[CheckpointTuple]:
         if config is None:
-            return
+            raise ValueError("config is required for alist")
+        if filter is not None:
+            raise NotImplementedError("metadata filtering is not supported")
 
         thread_id = config["configurable"]["thread_id"]
         checkpoint_ns = config["configurable"].get("checkpoint_ns", "")
@@ -247,7 +249,7 @@ class SyncerCheckpointer(BaseCheckpointSaver):
             raw = await self._syncer.get(key)
             if raw is None:
                 continue
-            data = self._deserialize(raw)
+            data = self.serde.loads_typed(raw)
             checkpoint = data["checkpoint"]
             metadata = data["metadata"]
 
@@ -293,41 +295,46 @@ class SyncerCheckpointer(BaseCheckpointSaver):
             await self._syncer.delete(key)
 
     async def adelete_for_runs(self, run_ids: Sequence[str]) -> None:
-        pass
+        raise NotImplementedError("delete_for_runs is not supported")
 
     async def acopy_thread(self, source_thread_id: str, target_thread_id: str) -> None:
-        keys = await self._syncer.scan_keys(f"checkpoint:{source_thread_id}:*")
-        for key in keys:
+        cp_keys = await self._syncer.scan_keys(f"checkpoint:{source_thread_id}:*")
+        for key in cp_keys:
             value = await self._syncer.get(key)
             if value is not None:
-                new_key = key.replace(source_thread_id, target_thread_id, 1)
+                new_key = self._swap_thread_id_in_key(key, target_thread_id)
                 await self._syncer.set(new_key, value, ttl=self._ttl)
         write_keys = await self._syncer.scan_keys(f"checkpoint_writes:{source_thread_id}:*")
         for key in write_keys:
             value = await self._syncer.get(key)
             if value is not None:
-                new_key = key.replace(source_thread_id, target_thread_id, 1)
+                new_key = self._swap_thread_id_in_key(key, target_thread_id)
                 await self._syncer.set(new_key, value, ttl=self._ttl)
 
     async def aprune(
         self, thread_ids: Sequence[str], *, strategy: str = "keep_latest"
     ) -> None:
-        pass
+        raise NotImplementedError("prune is not supported")
 
     @staticmethod
     def _get_key(thread_id: str, checkpoint_ns: str, checkpoint_id: str) -> str:
         return f"checkpoint:{thread_id}:{checkpoint_ns}:{checkpoint_id}"
 
     @staticmethod
+    def _get_writes_key(thread_id: str, checkpoint_ns: str, checkpoint_id: str, task_id: str) -> str:
+        return f"checkpoint_writes:{thread_id}:{checkpoint_ns}:{checkpoint_id}:{task_id}"
+
+    @staticmethod
     def _get_thread_prefix(thread_id: str, checkpoint_ns: str = "") -> str:
         return f"checkpoint:{thread_id}:{checkpoint_ns}:*"
 
     @staticmethod
-    def _serialize(data: dict[str, Any]) -> str:
-        return base64.b64encode(
-            pickle.dumps(data, protocol=pickle.HIGHEST_PROTOCOL)
-        ).decode("ascii")
-
-    @staticmethod
-    def _deserialize(data: str) -> dict[str, Any]:
-        return pickle.loads(base64.b64decode(data.encode("ascii")))
+    def _swap_thread_id_in_key(key: str, target_thread_id: str) -> str:
+        parts = key.split(":")
+        # Expected formats:
+        #   checkpoint:<thread_id>:<ns>:<id>
+        #   checkpoint_writes:<thread_id>:<ns>:<id>:<task_id>
+        if len(parts) < 2:
+            return key
+        parts[1] = target_thread_id
+        return ":".join(parts)
