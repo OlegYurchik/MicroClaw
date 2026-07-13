@@ -364,7 +364,6 @@ class EmailToolKit(BaseToolKit[EmailSettings]):
                     f"{confirmation_text}"
                 )
                 decision = interrupt({"description": confirmation_request_text})
-                logger.info(f"delete_messages decision={decision!r}")
                 if decision == DecisionEnum.REJECT.value:
                     raise UserDeniedAction()
 

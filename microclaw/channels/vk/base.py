@@ -106,9 +106,6 @@ class BaseVKChannel(BaseChannel):
         peer_id = channel_internal_id
         request_id = uuid.uuid4()
         with self.set_current_request_id(request_id):
-            logger.info(
-                f"[{request_id}] Conversation start session={session_id} peer={peer_id}",
-            )
             user = await self._get_or_create_user(peer_id)
             agent = agent or await self.get_agent_for_user(user) or self._agent
             await self._generate_and_send_answer(
@@ -117,19 +114,11 @@ class BaseVKChannel(BaseChannel):
                 agent=agent,
                 new_messages=new_messages,
             )
-            logger.info(
-                f"[{request_id}] Conversation end session={session_id} peer={peer_id}",
-            )
 
     async def _handle_message(self, message: Message):
         request_id = uuid.uuid4()
         with self.set_current_request_id(request_id):
-            logger.info(
-                f"[{request_id}] msg from_id={message.from_id} peer_id={message.peer_id} "
-                f"text={message.text!r} att={len(message.attachments) if message.attachments else 0}",
-            )
             if self._is_auth_disabled(message):
-                logger.warning(f"[{request_id}] rejected by allow_from")
                 return
 
             text = (message.text or "").strip()
@@ -151,8 +140,6 @@ class BaseVKChannel(BaseChannel):
     async def handle_voice_message(self, message: Message):
         request_id = uuid.uuid4()
         with self.set_current_request_id(request_id):
-            logger.info(f"[{request_id}] voice peer={message.peer_id}")
-
             user = await self._get_or_create_user(message.peer_id)
             agent = await self.get_agent_for_user(user) or self._agent
             session_id = await self._get_or_create_session(user, message.peer_id)
@@ -228,34 +215,19 @@ class BaseVKChannel(BaseChannel):
                     return
 
                 user = await self._get_or_create_user(peer_id)
-                _session_id = uuid.UUID(session_id_str)
+                session_id = uuid.UUID(session_id_str)
                 agent = await self.get_agent_for_user(user) or self._agent
-                printer = self._printer(peer_id, _session_id, agent)
+                printer = self._printer(peer_id, session_id, agent)
                 saver = AgentMessageSaver(
                     sessions_storage=self._sessions_storage,
-                    session_id=_session_id,
+                    session_id=session_id,
                 )
 
                 async with printer, saver:
-                    async for msg in agent.resume_after_confirmation(
-                        session_id=_session_id,
-                        decision=DecisionEnum.APPROVE
-                        if approved
-                        else DecisionEnum.REJECT,
-                        channel=self,
-                    ):
-                        await saver.register_new_message(msg)
-                        await printer.register_new_message(msg)
+                    status_text = "✅ Confirmed" if approved else "❌ Rejected"
+                    event_id = obj.get("event_id")
+                    user_id = obj.get("user_id")
 
-                status_text = "✅ Confirmed" if approved else "❌ Rejected"
-                event_id = obj.get("event_id")
-                user_id = obj.get("user_id")
-
-                logger.debug(
-                    f"send_message_event_answer event_id={event_id!r} "
-                    f"user_id={user_id} peer_id={peer_id}"
-                )
-                try:
                     event_data = ShowSnackbarEvent(text=status_text)
                     await self._bot.api.messages.send_message_event_answer(
                         event_id=event_id,
@@ -263,11 +235,53 @@ class BaseVKChannel(BaseChannel):
                         peer_id=peer_id,
                         event_data=event_data.model_dump_json(),
                     )
-                except Exception as exc:
-                    logger.exception(
-                        f"send_message_event_answer failed: {exc} "
-                        f"event_id={event_id!r} user_id={user_id} peer_id={peer_id}"
-                    )
+
+                    conversation_message_id = obj.get("conversation_message_id")
+                    if conversation_message_id:
+                        await self._update_confirmation_message(
+                            peer_id=peer_id,
+                            conversation_message_id=conversation_message_id,
+                            approved=approved,
+                        )
+
+                    async for msg in agent.resume_after_confirmation(
+                        session_id=session_id,
+                        decision=(
+                            DecisionEnum.APPROVE
+                            if approved
+                            else DecisionEnum.REJECT
+                        ),
+                        channel=self,
+                    ):
+                        await saver.register_new_message(msg)
+                        await printer.register_new_message(msg)
+
+    async def _update_confirmation_message(
+        self,
+        peer_id: int,
+        conversation_message_id: int,
+        approved: bool,
+    ):
+        status_line = "✅ Confirmed" if approved else "❌ Rejected"
+        response = await self._bot.api.messages.get_by_conversation_message_id(
+            peer_id=peer_id,
+            conversation_message_ids=conversation_message_id,
+        )
+        current_text = ""
+        if response.items:
+            current_text = response.items[0].text or ""
+
+        if status_line in current_text:
+            return
+
+        new_text = f"{current_text}\n\n{status_line}" if current_text else status_line
+
+        await self._bot.api.messages.edit(
+            peer_id=peer_id,
+            conversation_message_id=conversation_message_id,
+            message=new_text,
+            keyboard="",
+        )
 
     async def _generate_and_send_answer(
         self,
@@ -278,7 +292,6 @@ class BaseVKChannel(BaseChannel):
     ):
         request_id = uuid.uuid4()
         with self.set_current_request_id(request_id):
-            logger.info(f"[{request_id}] gen start session={session_id} peer={peer_id}")
             for message in new_messages:
                 await self._sessions_storage.add_message(
                     session_id=session_id, message=message
@@ -330,8 +343,6 @@ class BaseVKChannel(BaseChannel):
                         and self._settings.debug
                     ):
                         await printer.print(text="Dialog summarized")
-
-            logger.info(f"[{request_id}] gen end session={session_id} peer={peer_id}")
 
     async def _send_confirmation(
         self, entry: dict, peer_id: int, session_id: uuid.UUID

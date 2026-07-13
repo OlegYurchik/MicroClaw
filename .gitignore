@@ -19,5 +19,6 @@ config.yaml
 
 # Local databases
 .sessions/
+.skills/
 .users/
 .workspace/

@@ -7,7 +7,6 @@ from typing import Any, Callable, Generic, TypeVar
 from langchain_core.tools import StructuredTool as LangChainStructuredTool
 from pydantic import BaseModel
 
-from .exceptions import UserDeniedAction
 from .settings import ToolKitSettings
 
 

@@ -1,7 +1,4 @@
-"""Ensure _handle_tool_errors does NOT swallow GraphBubbleUp / GraphInterrupt."""
-
 import uuid
-from typing import Any
 
 import pytest
 from langchain.agents import create_agent
@@ -16,8 +13,6 @@ from microclaw.agents.agent import _handle_tool_errors
 
 
 class DummyModel(BaseChatModel):
-    """A dummy model that always returns a tool call."""
-
     def _generate(self, messages, stop=None, run_manager=None, **kwargs):
         raise NotImplementedError
 

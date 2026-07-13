@@ -1,5 +1,3 @@
-from typing import Any
-
 from vkbottle.bot import Message
 from vkbottle.dispatch.middlewares.abc import BaseMiddleware
 from loguru import logger

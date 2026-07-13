@@ -20,7 +20,7 @@ async def test_resolve_agent_passes_syncer(tmp_path):
                 provider="default",
             )
         },
-        skills_dir=tmp_path,
+        skills_directory=tmp_path,
     )
     resolver = DependencyResolver(settings=settings)
     agents = await resolver.resolve_agents()
