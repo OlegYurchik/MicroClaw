@@ -12,6 +12,7 @@ from pydantic import (
     conint,
 )
 
+from microclaw.skills import SkillSettings
 from microclaw.toolkits import ToolKitSettings
 
 
@@ -95,12 +96,10 @@ class MCPLocalSettings(MCPBaseSettings):
     env: dict[str, str] = Field(default_factory=dict)
 
 
-MCPSettings = MCPRemoteSettings | MCPLocalSettings
-
-
-class SkillSettings(BaseModel):
-    name: str
-    url: AnyHttpUrl | None = None
+MCPSettings = (
+    MCPRemoteSettings |
+    MCPLocalSettings
+)
 
 
 class AgentSettings(BaseModel):

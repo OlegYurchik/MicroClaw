@@ -9,11 +9,6 @@ from microclaw.agents.agent import Agent
 from microclaw.dto import DecisionEnum
 
 
-# ---------------------------------------------------------------------------
-# has_pending_interrupt
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.asyncio
 async def test_has_pending_interrupt_true(make_agent, toolkit):
     agent: Agent = make_agent(toolkits={"tools": toolkit}, client=MagicMock())
@@ -42,11 +37,6 @@ async def test_has_pending_interrupt_false(make_agent, toolkit):
         result = await agent.has_pending_interrupt(session_id)
 
     assert result is False
-
-
-# ---------------------------------------------------------------------------
-# resume_after_confirmation preserves checkpoint (vs ask which deletes it)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio

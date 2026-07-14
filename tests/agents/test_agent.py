@@ -134,11 +134,6 @@ async def test_ask_uses_channel_tools(make_agent, channel):
     assert len(tool_msgs) == 2
 
 
-# ---------------------------------------------------------------------------
-# summarize_memory
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.asyncio
 async def test_summarize_memory(agent, client):
     client.ainvoke = AsyncMock(return_value=SimpleNamespace(content="memory summary"))
@@ -157,11 +152,6 @@ async def test_summarize_memory_daily(agent, client):
     assert result.text == "daily summary"
     assert result.is_summary is True
     assert result.spending is not None
-
-
-# ---------------------------------------------------------------------------
-# summarize_dialogue
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
@@ -188,11 +178,6 @@ async def test_summarize_dialogue(agent, client):
     assert result.spending is not None
 
 
-# ---------------------------------------------------------------------------
-# extract_important_info
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.asyncio
 async def test_extract_important_info(agent, client):
     client.ainvoke = AsyncMock(
@@ -209,11 +194,6 @@ async def test_extract_important_info_daily(agent, client):
     client.ainvoke = AsyncMock(return_value=SimpleNamespace(content="daily info"))
     result = await agent.extract_important_info([], is_daily=True)
     assert result == "daily info"
-
-
-# ---------------------------------------------------------------------------
-# get_model_context_window_size
-# ---------------------------------------------------------------------------
 
 
 def test_get_model_context_window_size_from_settings(agent):
@@ -254,11 +234,6 @@ def test_get_model_context_window_size_returns_none_when_unknown(agent):
     assert agent.get_model_context_window_size() is None
 
 
-# ---------------------------------------------------------------------------
-# Other getters
-# ---------------------------------------------------------------------------
-
-
 def test_get_context_threshold_size(agent):
     assert (
         agent.get_context_threshold_size()
@@ -278,11 +253,6 @@ def test_get_max_memory_flush_tokens(agent):
     assert (
         agent.get_max_memory_flush_tokens() == agent._settings.max_memory_flush_tokens
     )
-
-
-# ---------------------------------------------------------------------------
-# get_memory_toolkit
-# ---------------------------------------------------------------------------
 
 
 def test_get_memory_toolkit(agent, memory_toolkit):

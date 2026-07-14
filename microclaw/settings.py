@@ -16,13 +16,13 @@ from .agents import (
     MCPSettings,
     ModelSettings,
     ProviderSettings,
-    SkillSettings,
 )
 from .api.rest import RESTAPISettings
 from .toolkits import ToolKitSettings
 from .channels import ChannelSettingsType
 from .sessions_storages import SessionsStorageSettingsType
 from .sessions_storages.filesystem import FilesystemSessionsStorageSettings
+from .skills import SkillSettings, SkillRepositorySettingsType
 from .stt import STTSettings
 from .syncers import SyncerSettingsType
 from .syncers.memory import MemorySyncerSettings
@@ -68,8 +68,9 @@ class MicroclawSettings(BaseSettings):
     }
     toolkits: dict[str, ToolKitSettings] = Field(default_factory=dict)
     mcp: dict[str, MCPSettings] = Field(default_factory=dict)
-    skills_dir: pathlib.Path = pathlib.Path("./.skills")
-    skills: dict[str, SkillSettings | AnyHttpUrl | str] = Field(default_factory=dict)
+    skills_directory: pathlib.Path = pathlib.Path("./.skills")
+    skills_repositories: dict[str, SkillRepositorySettingsType] = Field(default_factory=dict)
+    skills: dict[str, SkillSettings | str] = Field(default_factory=dict)
     agents: dict[str, AgentSettings] = {
         "default": AgentSettings(),
     }
@@ -227,6 +228,26 @@ class MicroclawSettings(BaseSettings):
                     "already defined"
                 )
             mcp_names.add(mcp_settings.name)
+
+        for skill_name, skill_value in settings.skills.items():
+            if isinstance(skill_value, SkillSettings) and isinstance(skill_value.repo, str):
+                if skill_value.repo not in settings.skills_repositories:
+                    raise ValueError(
+                        f"Global skill '{skill_name}' references repository "
+                        f"'{skill_value.repo}' which is not defined in skills_repositories"
+                    )
+
+        for agent_name, agent_settings in settings.agents.items():
+            if not agent_settings.skills:
+                continue
+            for skill_item in agent_settings.skills:
+                if isinstance(skill_item, SkillSettings) and isinstance(skill_item.repo, str):
+                    if skill_item.repo not in settings.skills_repositories:
+                        raise ValueError(
+                            f"Agent '{agent_name}' skill '{skill_item.name}' "
+                            f"references repository '{skill_item.repo}' which is not "
+                            f"defined in skills_repositories"
+                        )
 
         return settings
 

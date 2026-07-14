@@ -23,7 +23,7 @@ dependencies = [
     "tenacity>=9.0.0",
     "textual>=8.2.5",
     "deepagents>=0.6.12",
-    "skillnet-ai>=0.0.18",
+    "skilly>=0.0.32",
 ]
 
 [dependency-groups]
@@ -77,15 +77,9 @@ email = [
     "aioimaplib>=0.9.11",
     "aiosmtplib>=3.0.1",
 ]
-a2a = [
-    "a2a>=0.1.0",
-]
 nextcloud_tasks = [
     "nextcloud-tasks-api>=0.0.5",
 ]
 homeassistant = [
     "homeassistant-api>=4.3.0",
-]
-discogs = [
-    "python3-discogs-client>=2.7.0",
 ]

@@ -1,10 +1,11 @@
-import asyncio
+import pathlib
+import shutil
 from types import NoneType
-from urllib.parse import urlparse
 
 from loguru import logger
-from pydantic import AnyHttpUrl
-from skillnet_ai.downloader import SkillDownloader
+import skilly
+from skilly.skills import discover_github_skills
+from skilly.skillsmp.client import SkillsMp
 
 from .agents import (
     Agent,
@@ -21,6 +22,7 @@ from .sessions_storages import (
     SessionsStorageSettingsType,
     get_sessions_storage,
 )
+from .skills import SkillRepositoryGitHubSettings, SkillRepositoryLocalSettings
 from .toolkits import BaseToolKit, get_toolkit
 from .stt import STT, STTSettings
 from .syncers import SyncerInterface, get_syncer
@@ -229,33 +231,102 @@ class DependencyResolver:
         if not agent_settings.skills:
             return []
 
-        self._settings.skills_dir.mkdir(parents=True, exist_ok=True)
+        self._settings.skills_directory.mkdir(parents=True, exist_ok=True)
+        repo = skilly.SkillRepository(directory=self._settings.skills_directory)
 
         skill_paths = []
         for skill_item in agent_settings.skills:
-            skill_path = await self.resolve_skill(skill_item)
+            skill_path = await self.resolve_skill(skill_item, repo=repo)
             if skill_path:
                 skill_paths.append(skill_path)
         return skill_paths
 
-    async def resolve_skill(self, skill: SkillSettings | str) -> str | None:
+    async def resolve_skill(
+        self,
+        skill: SkillSettings | str,
+        repo: skilly.SkillRepository | None = None,
+    ) -> str | None:
         skill = self._normalize_skill(skill)
+        if repo is None:
+            repo = skilly.SkillRepository(directory=self._settings.skills_directory)
 
-        expected_path = self._settings.skills_dir / skill.name
-        if expected_path.exists():
-            return str(expected_path.resolve())
+        installed = repo.find(skill.name)
+        if installed is not None:
+            return str(installed.path)
 
-        if skill.url:
-            downloaded_path = await asyncio.to_thread(
-                SkillDownloader().download,
-                str(skill.url),
-                target_dir=str(self._settings.skills_dir),
+        if not skill.repo:
+            result = SkillsMp().search(skill.name)
+            for smp_skill in result.data.skills:
+                if smp_skill.name != skill.name:
+                    continue
+
+                discovered_skills = discover_github_skills(None, smp_skill.github_url)
+                for discovered_skill in discovered_skills:
+                    if (
+                        discovered_skill.directory_name == skill.name
+                        or discovered_skill.name == skill.name
+                    ):
+                        installed = repo.install(discovered_skill, skill_name=skill.name)
+                        return str(installed.path)
+
+            logger.warning("Skill '%s' not found in Skills Marketplace", skill.name)
+            return None
+
+        repo_settings = skill.repo
+        if isinstance(repo_settings, str):
+            repo_settings = self._settings.skills_repositories.get(repo_settings)
+        if repo_settings is None:
+            logger.warning(
+                "Repository '%s' not found for skill '%s'", skill.repo, skill.name
             )
-            if downloaded_path:
-                return downloaded_path
+            return None
+
+        if isinstance(repo_settings, SkillRepositoryGitHubSettings):
+            discovered = discover_github_skills(None, str(repo_settings.url))
+            for discovered_skill in discovered:
+                if (
+                    discovered_skill.directory_name == skill.name
+                    or discovered_skill.name == skill.name
+                ):
+                    installed = repo.install(discovered_skill, skill_name=skill.name)
+                    return str(installed.path)
+
+            logger.warning(
+                "Skill '%s' not found in GitHub repository '%s'",
+                skill.name,
+                repo_settings.url,
+            )
+            return None
+
+        if isinstance(repo_settings, SkillRepositoryLocalSettings):
+            src_path = repo_settings.directory / skill.name
+            if not src_path.exists():
+                logger.warning(
+                    "Skill '%s' not found in local repository '%s'",
+                    skill.name,
+                    repo_settings.directory,
+                )
+                return None
+
+            expected_path = self._settings.skills_directory / skill.name
+            try:
+                shutil.copytree(str(src_path), str(expected_path))
+            except FileExistsError:
+                pass
+            installed = repo.find(skill.name)
+            if installed is not None:
+                return str(installed.path)
+
+            shutil.rmtree(str(expected_path), ignore_errors=True)
+            logger.warning(
+                "Skill '%s' copied but not recognized as valid skill", skill.name
+            )
+            return None
 
         logger.warning(
-            "Skill '%s' not found locally and could not be downloaded", skill.name
+            "Skill '%s' could not be installed from repository type '%s'",
+            skill.name,
+            type(repo_settings).__name__,
         )
         return None
 
@@ -263,37 +334,13 @@ class DependencyResolver:
         if isinstance(skill, SkillSettings):
             return skill
 
-        try:
-            skill_url = AnyHttpUrl(skill)
-        except Exception:
-            skill_url = None
-
-        if skill_url is not None:
-            return SkillSettings(
-                name=self._get_skill_name_from_url(url=skill_url),
-                url=skill_url,
-            )
-
         global_skill = self._settings.skills.get(skill)
         if isinstance(global_skill, SkillSettings):
             return global_skill
-
         if isinstance(global_skill, str):
-            try:
-                skill_url = AnyHttpUrl(global_skill)
-            except Exception:
-                skill_url = None
-            if skill_url is not None:
-                return SkillSettings(name=skill, url=skill_url)
-            return SkillSettings(name=global_skill, url=None)
+            return SkillSettings(name=global_skill)
 
-        return SkillSettings(name=skill, url=None)
-
-    @staticmethod
-    def _get_skill_name_from_url(url: AnyHttpUrl | str) -> str:
-        parsed = urlparse(str(url))
-        path_parts = [p for p in parsed.path.split("/") if p]
-        return path_parts[-1] if path_parts else str(url)
+        return SkillSettings(name=skill)
 
     async def resolve_subagents_for_agent(
         self,
