@@ -5,6 +5,7 @@ import shutil
 from typing import Iterable
 
 from microclaw.toolkits.base import BaseToolKit, tool
+from microclaw.toolkits.capabilities import DiscoveryCapability, ToolKitCapability
 from microclaw.toolkits.enums import PermissionModeEnum
 from microclaw.toolkits.exceptions import UserDeniedAction
 from .dto import CommandResult
@@ -13,6 +14,9 @@ from .settings import CommandToolKitSettings
 
 class CommandToolKit(BaseToolKit[CommandToolKitSettings]):
     """Tools for executing shell commands with a whitelist of allowed commands."""
+    required_capabilities: list[ToolKitCapability] = []
+    write_capabilities: list[ToolKitCapability] = []
+    discovery_capabilities: list[DiscoveryCapability] = []
 
     def __init__(self, key: str, settings: CommandToolKitSettings):
         super().__init__(key=key, settings=settings)

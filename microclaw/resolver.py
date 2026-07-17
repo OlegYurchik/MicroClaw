@@ -47,6 +47,10 @@ class DependencyResolver:
         self._syncer: SyncerInterface | None = None
         self._users_storages: dict[str, UsersStorageInterface] | None = None
 
+    @property
+    def settings(self) -> MicroclawSettings:
+        return self._settings
+
     async def resolve_channels(self) -> dict[str, BaseChannel]:
         if self._channels is None:
             self._channels = {

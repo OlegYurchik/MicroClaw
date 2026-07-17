@@ -9,6 +9,7 @@ from typing import Any
 from aiodav import Client
 
 from microclaw.toolkits.base import BaseToolKit, tool
+from microclaw.toolkits.capabilities import DiscoveryCapability, ToolKitCapability
 from microclaw.toolkits.enums import PermissionModeEnum
 from microclaw.toolkits.exceptions import UserDeniedAction
 from .dto import File, Directory, WebDAVObject
@@ -16,6 +17,9 @@ from .settings import WebDAVSettings
 
 
 class WebDAVToolKit(BaseToolKit[WebDAVSettings]):
+    required_capabilities: list[ToolKitCapability] = []
+    write_capabilities: list[ToolKitCapability] = []
+    discovery_capabilities: list[DiscoveryCapability] = []
     @asynccontextmanager
     async def _create_client(self):
         """Создает новый клиент WebDAV."""

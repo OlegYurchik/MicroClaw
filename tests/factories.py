@@ -118,11 +118,13 @@ class FakeChannel(BaseChannel):
         new_messages: list[AgentMessage] | None = None,
         agent: Agent | None = None,
     ):
-        await self._generate_and_send_answer(
-            session_id=session_id,
-            agent=agent,
-            new_messages=new_messages or [],
-        )
+        request_id = uuid.uuid4()
+        with self.set_current_request_id(request_id):
+            await self._generate_and_send_answer(
+                session_id=session_id,
+                agent=agent,
+                new_messages=new_messages or [],
+            )
 
     async def _generate_and_send_answer(
         self,
@@ -131,6 +133,7 @@ class FakeChannel(BaseChannel):
         new_messages: tuple = (),
     ):
         agent = agent or self._agent
+        request_id = self.get_current_request_id()
 
         for msg in new_messages:
             await self._sessions_storage.add_message(
@@ -143,7 +146,10 @@ class FakeChannel(BaseChannel):
         )
         history = [msg async for msg in message_generator]
 
-        with self.set_current_channel():
+        with (
+            self.set_current_request_id(request_id),
+            self.set_current_session_id(session_id),
+        ):
             if await agent.has_pending_interrupt(session_id=session_id):
                 async for _ in agent.resume_after_confirmation(
                     session_id=session_id,

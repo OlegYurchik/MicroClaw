@@ -6,6 +6,7 @@ from caldav.aio import AsyncDAVClient, AsyncPrincipal, AsyncCalendar, AsyncEvent
 from caldav.elements import dav
 
 from microclaw.toolkits.base import BaseToolKit, tool
+from microclaw.toolkits.capabilities import DiscoveryCapability, ToolKitCapability
 from microclaw.toolkits.enums import PermissionModeEnum
 from microclaw.toolkits.exceptions import UserDeniedAction
 from microclaw.toolkits.settings import ToolKitSettings
@@ -15,6 +16,9 @@ from .settings import CalDAVSettings
 
 class CalDAVToolKit(BaseToolKit[CalDAVSettings]):
     """Tools for managing calendars and events via CalDAV protocol."""
+    required_capabilities: list[ToolKitCapability] = []
+    write_capabilities: list[ToolKitCapability] = []
+    discovery_capabilities: list[DiscoveryCapability] = []
 
     DATETIME_FORMAT = "%Y%m%dT%H%M%S"
     DATE_FORMAT = "%Y%m%d"

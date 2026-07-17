@@ -8,6 +8,7 @@ import aiohttp
 import vobject
 
 from microclaw.toolkits import BaseToolKit, ToolKitSettings, tool
+from microclaw.toolkits.capabilities import DiscoveryCapability, ToolKitCapability
 from microclaw.toolkits.enums import PermissionModeEnum
 from microclaw.toolkits.exceptions import UserDeniedAction
 from .dto import AddressBook, Contact
@@ -70,6 +71,9 @@ class XMLBuilder:
 
 class CardDAVToolKit(BaseToolKit[CardDAVSettings]):
     """Tools for managing address books and contacts via CardDAV protocol."""
+    required_capabilities: list[ToolKitCapability] = []
+    write_capabilities: list[ToolKitCapability] = []
+    discovery_capabilities: list[DiscoveryCapability] = []
 
     def __init__(self, key: str, settings: ToolKitSettings):
         super().__init__(key=key, settings=settings)

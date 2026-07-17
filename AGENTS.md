@@ -241,13 +241,34 @@ Every toolkit operation can have mode: `ALLOW`, `REQUEST`, `DENY`.
 When mode is `REQUEST`, the channel asks user for confirmation before execution.
 Use `BaseToolKit.request_confirmation()` or check `PermissionModeEnum` in toolkit code.
 
-### 7. Context Variables
-Channels use `contextvars` to track current state:
-- `BaseChannel.CHANNEL_CONTEXT`
+### 7. Toolkit Execution Context
+
+Channels create `ToolkitExecutionContext` for each request based on toolkit capabilities:
+
+```python
+# Required capabilities in toolkit
+class MyToolKit(BaseToolKit[MySettings]):
+    required_capabilities = [ToolKitCapability.CURRENT_USER]
+    write_capabilities = [ToolKitCapability.CURRENT_USER]
+    discovery_capabilities = [DiscoveryCapability.MODELS]
+```
+
+Accessors are scoped and permission-controlled:
+- `CurrentUserAccessor` — bound to `user_id`, requires `CURRENT_USER` + `write` flag
+- `CurrentSessionAccessor` — bound to `session_id`, requires `CURRENT_SESSION`
+- `AllUsersAccessor`, `AllSessionsAccessor` — for admin/lookup operations
+
+Get context inside tools:
+```python
+from microclaw.toolkits.context import get_toolkit_context
+
+ctx = get_toolkit_context()
+user = await ctx.current_user_accessor.get()
+```
+
+Context variables still exposed:
 - `BaseChannel.SESSION_ID_CONTEXT`
 - `BaseChannel.REQUEST_ID_CONTEXT`
-
-Used inside `Agent.ask()` to bind logger context without passing IDs through every call.
 
 ## Key Data Models
 
@@ -354,9 +375,17 @@ User tasks stored per-user in `UsersStorage`.
 1. Create directory under `microclaw/toolkits/<name>/`.
 2. Implement class extending `BaseToolKit[<SettingsType>]`.
 3. Define settings model in `settings.py`.
-4. Register in `microclaw/toolkits/__init__.py` or reference via full path in config.
-5. Add optional dependency group in `pyproject.toml`.
-6. Add tests in `tests/toolkits/` if applicable.
+4. Declare capabilities if the toolkit needs users/sessions/discovery:
+   ```python
+   class MyToolKit(BaseToolKit[MySettings]):
+       required_capabilities: list[ToolKitCapability] = []
+       write_capabilities: list[ToolKitCapability] = []
+       discovery_capabilities: list[DiscoveryCapability] = []
+   ```
+5. Use `get_toolkit_context()` inside tools instead of `BaseChannel.get_current_channel()`.
+6. Register in `microclaw/toolkits/__init__.py` or reference via full path in config.
+7. Add optional dependency group in `pyproject.toml`.
+8. Add tests in `tests/toolkits/` if applicable.
 
 ### Adding a New Channel
 1. Create directory under `microclaw/channels/<name>/`.
@@ -384,6 +413,8 @@ User tasks stored per-user in `UsersStorage`.
 - [ ] File paths sanitized to prevent traversal.
 - [ ] User input validated via Pydantic.
 - [ ] Toolkit sensitive operations use `PermissionModeEnum.REQUEST`.
+- [ ] Toolkit capabilities (`required_capabilities`, `write_capabilities`, `discovery_capabilities`) declared explicitly.
+- [ ] No toolkits assume unrestricted access to users/sessions/discovery without appropriate capability flags.
 
 ## Common Commands
 

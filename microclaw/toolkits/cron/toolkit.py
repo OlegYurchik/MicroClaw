@@ -1,11 +1,12 @@
-from microclaw.dto import DecisionEnum
 from langgraph.types import interrupt
 import uuid
 from typing import Any
 
-from microclaw.channels import BaseChannel
+from microclaw.dto import DecisionEnum
 from microclaw.dto import CronTask
 from microclaw.toolkits.base import BaseToolKit, tool
+from microclaw.toolkits.capabilities import ToolKitCapability
+from microclaw.toolkits.context import get_toolkit_context
 from microclaw.toolkits.enums import PermissionModeEnum
 from microclaw.toolkits.exceptions import UserDeniedAction
 from .settings import CronSettings
@@ -13,6 +14,10 @@ from .settings import CronSettings
 
 class CronToolKit(BaseToolKit[CronSettings]):
     """Tools for managing cron tasks."""
+
+    required_capabilities = [ToolKitCapability.CURRENT_USER]
+    write_capabilities = [ToolKitCapability.CURRENT_USER]
+    discovery_capabilities = []
 
     @tool
     async def get_crons(self) -> list[CronTask]:
@@ -22,12 +27,10 @@ class CronToolKit(BaseToolKit[CronSettings]):
         Returns:
             List of cron tasks with their configuration
         """
-        users_storage = self._get_users_storage()
-        user_id = self._get_user_id()
-
-        cron_tasks = await users_storage.get_crons(user_id=user_id)
-
-        return cron_tasks
+        ctx = get_toolkit_context()
+        if ctx is None or ctx.current_user_accessor is None:
+            raise RuntimeError("No active channel context")
+        return await ctx.current_user_accessor.get_crons()
 
     @tool
     async def create_cron(
@@ -59,8 +62,9 @@ class CronToolKit(BaseToolKit[CronSettings]):
             if decision == DecisionEnum.REJECT.value:
                 raise UserDeniedAction()
 
-        users_storage = self._get_users_storage()
-        user_id = self._get_user_id()
+        ctx = get_toolkit_context()
+        if ctx is None or ctx.current_user_accessor is None:
+            raise RuntimeError("No active channel context")
 
         cron_task = CronTask(
             id=uuid.uuid4(),
@@ -70,7 +74,7 @@ class CronToolKit(BaseToolKit[CronSettings]):
             args=args or {},
         )
 
-        await users_storage.create_cron(user_id=user_id, cron_task=cron_task)
+        await ctx.current_user_accessor.create_cron(cron_task)
         return cron_task
 
     @tool
@@ -92,19 +96,9 @@ class CronToolKit(BaseToolKit[CronSettings]):
             if decision == DecisionEnum.REJECT.value:
                 raise UserDeniedAction()
 
-        users_storage = self._get_users_storage()
+        ctx = get_toolkit_context()
+        if ctx is None or ctx.current_user_accessor is None:
+            raise RuntimeError("No active channel context")
 
         cron_uuid = uuid.UUID(cron_id)
-        await users_storage.remove_cron(cron_id=cron_uuid)
-
-    def _get_users_storage(self):
-        channel = BaseChannel.get_current_channel()
-        if channel is None:
-            raise RuntimeError("No active channel found")
-        return channel.get_users_storage()
-
-    def _get_user_id(self) -> uuid.UUID:
-        channel = BaseChannel.get_current_channel()
-        if channel is None:
-            raise RuntimeError("No active channel found")
-        return channel.get_user_id()
+        await ctx.current_user_accessor.remove_cron(cron_uuid)

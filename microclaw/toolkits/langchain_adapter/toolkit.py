@@ -4,6 +4,7 @@ from typing import Any
 from langchain_core.tools import BaseToolkit, BaseTool
 
 from microclaw.toolkits.base import BaseToolKit
+from microclaw.toolkits.capabilities import DiscoveryCapability, ToolKitCapability
 
 from .settings import LangChainToolkitAdapterSettings
 
@@ -15,6 +16,9 @@ class LangChainToolkitAdapter(BaseToolKit[LangChainToolkitAdapterSettings]):
     optionally filters them by name, and applies the toolkit key prefix to each
     tool name so that they integrate seamlessly with the microclaw agent.
     """
+    required_capabilities: list[ToolKitCapability] = []
+    write_capabilities: list[ToolKitCapability] = []
+    discovery_capabilities: list[DiscoveryCapability] = []
 
     def get_tools(self) -> list[BaseTool]:
         toolkit_cls = self._import_class(self._settings.toolkit_class)

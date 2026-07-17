@@ -3,6 +3,7 @@ from langgraph.types import interrupt
 import pathlib
 
 from microclaw.toolkits.base import BaseToolKit, tool
+from microclaw.toolkits.capabilities import DiscoveryCapability, ToolKitCapability
 from microclaw.toolkits.enums import PermissionModeEnum
 from microclaw.toolkits.exceptions import UserDeniedAction
 from .dto import DirectoryInfo, FilesystemItemType
@@ -11,6 +12,9 @@ from .settings import FileSystemToolKitSettings
 
 class FileSystemToolKit(BaseToolKit[FileSystemToolKitSettings]):
     """Tools for managing files and directories on the local filesystem."""
+    required_capabilities: list[ToolKitCapability] = []
+    write_capabilities: list[ToolKitCapability] = []
+    discovery_capabilities: list[DiscoveryCapability] = []
 
     def __init__(self, key: str, settings: FileSystemToolKitSettings):
         super().__init__(key=key, settings=settings)

@@ -2,6 +2,7 @@ import datetime
 import tiktoken
 
 from microclaw.toolkits.base import BaseToolKit, tool
+from microclaw.toolkits.capabilities import DiscoveryCapability, ToolKitCapability
 from .drivers.fabric import get_memory_driver
 from .settings import MemoryToolKitSettings
 
@@ -20,6 +21,9 @@ class MemorySizeExceeded(Exception):
 
 class MemoryToolKit(BaseToolKit[MemoryToolKitSettings]):
     """Tools for managing daily memories and general memory."""
+    required_capabilities: list[ToolKitCapability] = []
+    write_capabilities: list[ToolKitCapability] = []
+    discovery_capabilities: list[DiscoveryCapability] = []
 
     def __init__(self, key: str, settings: MemoryToolKitSettings):
         super().__init__(key=key, settings=settings)

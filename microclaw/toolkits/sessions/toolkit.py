@@ -1,35 +1,24 @@
 import uuid
 from difflib import SequenceMatcher
 
-
 from microclaw.toolkits.base import BaseToolKit, tool
-from microclaw.channels import BaseChannel
-from microclaw.sessions_storages.filters import MessageFilter
+from microclaw.toolkits.capabilities import ToolKitCapability
+from microclaw.toolkits.context import get_toolkit_context
 from .dto import SessionInfo, MessageInfo
 from .settings import SessionsToolKitSettings
 
 
 class SessionsToolKit(BaseToolKit[SessionsToolKitSettings]):
+    required_capabilities = [
+        ToolKitCapability.CURRENT_USER,
+        ToolKitCapability.ALL_USERS,
+        ToolKitCapability.ALL_SESSIONS,
+    ]
+    write_capabilities = []
+    discovery_capabilities = []
+
     def __init__(self, key: str, settings: SessionsToolKitSettings):
         super().__init__(key=key, settings=settings)
-
-    def _get_current_user_id(self) -> uuid.UUID | None:
-        channel = BaseChannel.get_current_channel()
-        if channel is None:
-            return None
-        return channel.get_user_id()
-
-    def _get_sessions_storage(self):
-        channel = BaseChannel.get_current_channel()
-        if channel is None:
-            return None
-        return channel.get_sessions_storage()
-
-    def _get_users_storage(self):
-        channel = BaseChannel.get_current_channel()
-        if channel is None:
-            return None
-        return channel.get_users_storage()
 
     @tool
     async def search_sessions(self, query: str, limit: int | None = None) -> list[str]:
@@ -43,28 +32,29 @@ class SessionsToolKit(BaseToolKit[SessionsToolKitSettings]):
         Returns:
             List of session contents matching the query
         """
-        user_id = self._get_current_user_id()
-        if user_id is None:
+        ctx = get_toolkit_context()
+        if ctx is None or ctx.current_user_accessor is None:
             return []
 
-        sessions_storage = self._get_sessions_storage()
-        users_storage = self._get_users_storage()
-        if sessions_storage is None or users_storage is None:
+        user = await ctx.current_user_accessor.get()
+        if user is None:
+            return []
+        user_id = user.id
+
+        if ctx.sessions_accessor is None or ctx.all_users_accessor is None:
             return []
 
         limit = limit or self._settings.max_results
         results_with_scores = []
 
-        session_gen = sessions_storage.get_sessions()
+        session_gen = ctx.sessions_accessor.get_sessions()
         async for session_id in session_gen:
-            user = await users_storage.get_user_by_session(session_id)
-            if user is None or user.id != user_id:
+            owner = await ctx.all_users_accessor.get_by_session(session_id)
+            if owner is None or owner.id != user_id:
                 continue
 
             content = ""
-            messages_gen = sessions_storage.get_messages(
-                filter=MessageFilter(session_id=session_id)
-            )
+            messages_gen = ctx.sessions_accessor.get_messages(session_id=session_id)
 
             async for message in messages_gen:
                 content += f"{message.role}: {message.content}\n\n"
@@ -90,23 +80,24 @@ class SessionsToolKit(BaseToolKit[SessionsToolKitSettings]):
         Returns:
             SessionInfo object with session details or None if not found
         """
-        user_id = self._get_current_user_id()
-        if user_id is None:
+        ctx = get_toolkit_context()
+        if ctx is None or ctx.current_user_accessor is None:
             return None
 
-        sessions_storage = self._get_sessions_storage()
-        users_storage = self._get_users_storage()
-        if sessions_storage is None or users_storage is None:
+        user = await ctx.current_user_accessor.get()
+        if user is None:
+            return None
+        user_id = user.id
+
+        if ctx.sessions_accessor is None or ctx.all_users_accessor is None:
             return None
 
-        user = await users_storage.get_user_by_session(session_id)
-        if user is None or user.id != user_id:
+        owner = await ctx.all_users_accessor.get_by_session(session_id)
+        if owner is None or owner.id != user_id:
             return None
 
         messages = []
-        messages_gen = sessions_storage.get_messages(
-            filter=MessageFilter(session_id=session_id)
-        )
+        messages_gen = ctx.sessions_accessor.get_messages(session_id=session_id)
 
         async for message in messages_gen:
             import datetime
@@ -141,27 +132,28 @@ class SessionsToolKit(BaseToolKit[SessionsToolKitSettings]):
         Returns:
             List of SessionInfo objects with session details
         """
-        user_id = self._get_current_user_id()
-        if user_id is None:
+        ctx = get_toolkit_context()
+        if ctx is None or ctx.current_user_accessor is None:
             return []
 
-        sessions_storage = self._get_sessions_storage()
-        users_storage = self._get_users_storage()
-        if sessions_storage is None or users_storage is None:
+        user = await ctx.current_user_accessor.get()
+        if user is None:
+            return []
+        user_id = user.id
+
+        if ctx.sessions_accessor is None or ctx.all_users_accessor is None:
             return []
 
         sessions = []
 
-        session_gen = sessions_storage.get_sessions()
+        session_gen = ctx.sessions_accessor.get_sessions()
         async for session_id in session_gen:
-            user = await users_storage.get_user_by_session(session_id)
-            if user is None or user.id != user_id:
+            owner = await ctx.all_users_accessor.get_by_session(session_id)
+            if owner is None or owner.id != user_id:
                 continue
 
             messages = []
-            messages_gen = sessions_storage.get_messages(
-                filter=MessageFilter(session_id=session_id)
-            )
+            messages_gen = ctx.sessions_accessor.get_messages(session_id=session_id)
 
             async for message in messages_gen:
                 import datetime

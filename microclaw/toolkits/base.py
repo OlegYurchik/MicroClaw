@@ -2,11 +2,12 @@ import functools
 import json
 import random
 import string
-from typing import Any, Callable, Generic, TypeVar
+from typing import Any, Callable, Generic, Sequence, TypeVar
 
 from langchain_core.tools import StructuredTool as LangChainStructuredTool
 from pydantic import BaseModel
 
+from .capabilities import DiscoveryCapability, ToolKitCapability
 from .settings import ToolKitSettings
 
 
@@ -18,6 +19,10 @@ class EmptySettings(BaseModel):
 
 
 class BaseToolKit(Generic[SettingsType]):
+    required_capabilities: Sequence[ToolKitCapability] = ()
+    write_capabilities: Sequence[ToolKitCapability] = ()
+    discovery_capabilities: Sequence[DiscoveryCapability] = ()
+
     def __init__(self, key: str, settings: ToolKitSettings):
         self._prefix = key + "_"
         self._prompt = settings.prompt

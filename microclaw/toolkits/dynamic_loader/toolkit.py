@@ -2,6 +2,7 @@ import difflib
 from typing import Any
 
 from microclaw.toolkits.base import BaseToolKit, tool
+from microclaw.toolkits.capabilities import DiscoveryCapability, ToolKitCapability
 from microclaw.toolkits.fabric import get_toolkit
 from microclaw.toolkits import ToolKitSettings
 from .dto import ToolKitInfo, ToolInfo
@@ -10,6 +11,9 @@ from .settings import DynamicLoaderToolKitSettings
 
 class DynamicLoaderToolKit(BaseToolKit[DynamicLoaderToolKitSettings]):
     """Toolkit for dynamically loading and using other toolkits."""
+    required_capabilities: list[ToolKitCapability] = []
+    write_capabilities: list[ToolKitCapability] = []
+    discovery_capabilities: list[DiscoveryCapability] = []
 
     def __init__(self, key: str, settings: ToolKitSettings):
         super().__init__(key=key, settings=settings)

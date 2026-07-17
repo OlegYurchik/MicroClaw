@@ -140,11 +140,8 @@ class BaseTelegramChannel(BaseChannel):
         new_messages: list[AgentMessage] | None = None,
         agent: Agent | None = None,
     ):
-        request_id = uuid.uuid4()
         chat_id = channel_internal_id
-        logger.info(
-            f"[{request_id}] Starting conversation for session_id={session_id} chat_id={chat_id}",
-        )
+        request_id = uuid.uuid4()
         with self.set_current_request_id(request_id):
             user = await self._get_or_create_user(chat_id)
             agent = agent or await self.get_agent_for_user(user) or self._agent
@@ -153,9 +150,6 @@ class BaseTelegramChannel(BaseChannel):
                 chat_id=chat_id,
                 agent=agent,
                 new_messages=new_messages or (),
-            )
-            logger.info(
-                f"[{request_id}] Finished conversation for session_id={session_id} chat_id={chat_id}",
             )
 
     async def handle_new_session(self, message: aiogram.types.Message):
@@ -304,14 +298,23 @@ class BaseTelegramChannel(BaseChannel):
                     session_id=session_id,
                 )
 
-                async with printer, saver:
-                    async for msg in agent.resume_after_confirmation(
+                with (
+                    self.set_toolkit_context(
                         session_id=session_id,
-                        decision=DecisionEnum.APPROVE if approved else DecisionEnum.REJECT,
-                        channel=self,
-                    ):
-                        await saver.register_new_message(msg)
-                        await printer.register_new_message(msg)
+                        request_id=request_id,
+                        channel_internal_id=str(chat_id),
+                        user=user,
+                        agent=agent,
+                    ),
+                ):
+                    async with printer, saver:
+                        async for msg in agent.resume_after_confirmation(
+                            session_id=session_id,
+                            decision=DecisionEnum.APPROVE if approved else DecisionEnum.REJECT,
+                            channel=self,
+                        ):
+                            await saver.register_new_message(msg)
+                            await printer.register_new_message(msg)
 
                 status_text = "✅ Confirmed" if approved else "❌ Rejected"
                 keyboard = aiogram.types.InlineKeyboardMarkup(
@@ -357,10 +360,7 @@ class BaseTelegramChannel(BaseChannel):
         agent: Agent,
         new_messages: Sequence[AgentMessage] = (),
     ):
-        request_id = uuid.uuid4()
-        logger.info(
-            f"[{request_id}] Starting generation for session_id={session_id} chat_id={chat_id}",
-        )
+        request_id = self.get_current_request_id() or uuid.uuid4()
         for message in new_messages:
             await self._sessions_storage.add_message(
                 session_id=session_id,
@@ -388,11 +388,17 @@ class BaseTelegramChannel(BaseChannel):
             )
             history = [_message async for _message in message_generator]
 
+            user = await self._get_or_create_user(chat_id)
             with (
-                self.set_current_channel(),
+                self.set_toolkit_context(
+                    session_id=session_id,
+                    request_id=request_id,
+                    channel_internal_id=str(chat_id),
+                    user=user,
+                    agent=agent,
+                ),
                 self.set_current_chat_id(chat_id),
                 self.set_current_session_id(session_id),
-                self.set_current_request_id(request_id),
             ):
                 async with printer, saver:
                     msg_generator = (

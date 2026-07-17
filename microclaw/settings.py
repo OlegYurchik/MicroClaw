@@ -80,25 +80,22 @@ class MicroclawSettings(BaseSettings):
     cron: dict[str, CronTaskSettings] = Field(default_factory=dict)
 
     @model_validator(mode="after")
-    @classmethod
-    def validate(cls, settings: Self) -> Self:
-        settings_copy = settings.model_copy()
-
-        for name, model_settings in settings_copy.models.items():
+    def validate(self) -> Self:
+        for name, model_settings in self.models.items():
             provider_value = model_settings.provider
             if isinstance(provider_value, (str, NoneType)):
                 provider_value = get_by_key_or_first(
-                    storage=settings_copy.providers, key=provider_value
+                    storage=self.providers, key=provider_value
                 )
             if provider_value is None:
                 raise ValueError(f"Provider for model '{name}' not exists")
             model_settings.provider = provider_value
 
-        for name, agent_settings in settings_copy.agents.items():
+        for name, agent_settings in self.agents.items():
             model_value = agent_settings.model
             if isinstance(model_value, (str, NoneType)):
                 model_value = get_by_key_or_first(
-                    storage=settings_copy.models, key=model_value
+                    storage=self.models, key=model_value
                 )
             if model_value is None:
                 raise ValueError(f"Model for agent '{name}' not exists")
@@ -109,18 +106,18 @@ class MicroclawSettings(BaseSettings):
                 )
             agent_settings.model = model_value
 
-        for name, channel_settings in settings_copy.channels.items():
+        for name, channel_settings in self.channels.items():
             agent_value = channel_settings.agent
             if isinstance(agent_value, str):
                 agent = get_by_key_or_first(
-                    storage=settings_copy.agents, key=agent_value
+                    storage=self.agents, key=agent_value
                 )
                 if agent is None:
                     raise ValueError(
                         f"Agent '{agent_value}' for channel '{name}' not exists"
                     )
             elif agent_value is None:
-                if not settings_copy.agents:
+                if not self.agents:
                     raise ValueError(f"No agents defined for channel '{name}'")
             elif not isinstance(agent_value, AgentSettings):
                 raise ValueError(
@@ -130,7 +127,7 @@ class MicroclawSettings(BaseSettings):
             sessions_storage_value = channel_settings.sessions_storage
             if isinstance(sessions_storage_value, str):
                 sessions_storage = get_by_key_or_first(
-                    storage=settings_copy.sessions_storages,
+                    storage=self.sessions_storages,
                     key=sessions_storage_value,
                 )
                 if sessions_storage is None:
@@ -138,7 +135,7 @@ class MicroclawSettings(BaseSettings):
                         f"Sessions storage '{sessions_storage_value}' for channel '{name}' not exists"
                     )
             elif sessions_storage_value is None:
-                if not settings_copy.sessions_storages:
+                if not self.sessions_storages:
                     raise ValueError(
                         f"No sessions storages defined for channel '{name}'"
                     )
@@ -149,7 +146,7 @@ class MicroclawSettings(BaseSettings):
 
             stt_value = channel_settings.stt
             if isinstance(stt_value, str):
-                stt = get_by_key_or_first(storage=settings_copy.stt, key=stt_value)
+                stt = get_by_key_or_first(storage=self.stt, key=stt_value)
                 if stt is None:
                     raise ValueError(
                         f"STT '{stt_value}' for channel '{name}' not exists"
@@ -158,7 +155,7 @@ class MicroclawSettings(BaseSettings):
                 model_value = stt_value.model
                 if isinstance(model_value, (str, NoneType)):
                     model_value = get_by_key_or_first(
-                        storage=settings_copy.models, key=model_value
+                        storage=self.models, key=model_value
                     )
                 if model_value is None:
                     raise ValueError(
@@ -178,7 +175,7 @@ class MicroclawSettings(BaseSettings):
             users_storage_value = channel_settings.users_storage
             if isinstance(users_storage_value, str):
                 users_storage = get_by_key_or_first(
-                    storage=settings_copy.users_storages,
+                    storage=self.users_storages,
                     key=users_storage_value,
                 )
                 if users_storage is None:
@@ -186,18 +183,18 @@ class MicroclawSettings(BaseSettings):
                         f"Users storage '{users_storage_value}' for channel '{name}' not exists"
                     )
             elif users_storage_value is None:
-                if not settings_copy.users_storages:
+                if not self.users_storages:
                     raise ValueError(f"No users storages defined for channel '{name}'")
             elif not isinstance(users_storage_value, UsersStorageSettingsType):
                 raise ValueError(
                     f"Invalid users_storage type for channel '{name}': {type(users_storage_value)}"
                 )
 
-        for name, stt_settings in settings_copy.stt.items():
+        for name, stt_settings in self.stt.items():
             model_value = stt_settings.model
             if isinstance(model_value, (str, NoneType)):
                 model_value = get_by_key_or_first(
-                    storage=settings_copy.models, key=model_value
+                    storage=self.models, key=model_value
                 )
             if model_value is None:
                 raise ValueError(f"Model for stt '{name}' not exists")
@@ -209,7 +206,7 @@ class MicroclawSettings(BaseSettings):
             stt_settings.model = model_value
 
         toolkit_names = set()
-        for toolkit_settings in settings.toolkits:
+        for toolkit_settings in self.toolkits:
             if isinstance(toolkit_settings, str) or toolkit_settings.name is None:
                 continue
             if toolkit_settings.name in toolkit_names:
@@ -219,7 +216,7 @@ class MicroclawSettings(BaseSettings):
                 )
 
         mcp_names = set()
-        for name, mcp_settings in settings.mcp.items():
+        for name, mcp_settings in self.mcp.items():
             if mcp_settings.name is None:
                 continue
             if mcp_settings.name in mcp_names:
@@ -229,27 +226,27 @@ class MicroclawSettings(BaseSettings):
                 )
             mcp_names.add(mcp_settings.name)
 
-        for skill_name, skill_value in settings.skills.items():
+        for skill_name, skill_value in self.skills.items():
             if isinstance(skill_value, SkillSettings) and isinstance(skill_value.repo, str):
-                if skill_value.repo not in settings.skills_repositories:
+                if skill_value.repo not in self.skills_repositories:
                     raise ValueError(
                         f"Global skill '{skill_name}' references repository "
                         f"'{skill_value.repo}' which is not defined in skills_repositories"
                     )
 
-        for agent_name, agent_settings in settings.agents.items():
+        for agent_name, agent_settings in self.agents.items():
             if not agent_settings.skills:
                 continue
             for skill_item in agent_settings.skills:
                 if isinstance(skill_item, SkillSettings) and isinstance(skill_item.repo, str):
-                    if skill_item.repo not in settings.skills_repositories:
+                    if skill_item.repo not in self.skills_repositories:
                         raise ValueError(
                             f"Agent '{agent_name}' skill '{skill_item.name}' "
                             f"references repository '{skill_item.repo}' which is not "
                             f"defined in skills_repositories"
                         )
 
-        return settings
+        return self
 
     @classmethod
     def load(

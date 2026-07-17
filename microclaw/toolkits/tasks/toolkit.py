@@ -6,6 +6,7 @@ from caldav.aio import AsyncDAVClient, AsyncPrincipal, AsyncCalendar, AsyncTodo
 from caldav.elements import dav
 
 from microclaw.toolkits.base import BaseToolKit, tool
+from microclaw.toolkits.capabilities import DiscoveryCapability, ToolKitCapability
 from microclaw.toolkits.enums import PermissionModeEnum
 from microclaw.toolkits.exceptions import UserDeniedAction
 from microclaw.toolkits.settings import ToolKitSettings
@@ -15,6 +16,9 @@ from .settings import TasksSettings
 
 class TasksToolKit(BaseToolKit[TasksSettings]):
     """Tools for managing tasks and task lists via Nextcloud Tasks (CalDAV)."""
+    required_capabilities: list[ToolKitCapability] = []
+    write_capabilities: list[ToolKitCapability] = []
+    discovery_capabilities: list[DiscoveryCapability] = []
 
     def __init__(self, key: str, settings: ToolKitSettings):
         super().__init__(key=key, settings=settings)

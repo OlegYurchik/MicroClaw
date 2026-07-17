@@ -10,6 +10,7 @@ from homeassistant_api.models import (
 from homeassistant_api.models.states import Context as HAContext
 
 from microclaw.toolkits.base import BaseToolKit, tool
+from microclaw.toolkits.capabilities import DiscoveryCapability, ToolKitCapability
 from microclaw.toolkits.settings import ToolKitSettings
 from .dto import (
     Context,
@@ -26,6 +27,9 @@ class HomeAssistantToolKit(BaseToolKit[HomeAssistantSettings]):
     Tools for controlling and monitoring Home Assistant entities, services, areas, and
     devices.
     """
+    required_capabilities: list[ToolKitCapability] = []
+    write_capabilities: list[ToolKitCapability] = []
+    discovery_capabilities: list[DiscoveryCapability] = []
 
     def __init__(self, key: str, settings: ToolKitSettings):
         super().__init__(key=key, settings=settings)

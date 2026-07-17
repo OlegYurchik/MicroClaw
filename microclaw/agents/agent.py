@@ -111,6 +111,14 @@ class Agent:
         ]
         self._client = client or self.get_client()
 
+    @property
+    def toolkits(self) -> dict[str, "BaseToolKit"]:
+        return self._toolkits
+
+    @property
+    def settings(self) -> AgentSettings:
+        return self._settings
+
     def _create_mcp_client(self) -> MultiServerMCPClient:
         servers = {}
         for settings in self._mcp_settings.values():

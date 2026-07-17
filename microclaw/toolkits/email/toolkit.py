@@ -19,6 +19,7 @@ from email.mime.base import MIMEBase
 from email.encoders import encode_base64
 
 from microclaw.toolkits.base import BaseToolKit, tool
+from microclaw.toolkits.capabilities import DiscoveryCapability, ToolKitCapability
 from microclaw.toolkits.enums import PermissionModeEnum
 from microclaw.toolkits.exceptions import UserDeniedAction
 from .dto import EmailFolder, EmailMessage, EmailAttachment, FullEmailMessage
@@ -67,6 +68,9 @@ aioimaplib.IMAP4.starttls = _imap_starttls
 
 class EmailToolKit(BaseToolKit[EmailSettings]):
     """Tools for managing emails via IMAP and SMTP protocols."""
+    required_capabilities: list[ToolKitCapability] = []
+    write_capabilities: list[ToolKitCapability] = []
+    discovery_capabilities: list[DiscoveryCapability] = []
 
     @asynccontextmanager
     async def _create_imap_client(self) -> AsyncGenerator:

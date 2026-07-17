@@ -1,5 +1,6 @@
 import contextlib
 import contextvars
+import dataclasses
 import datetime
 import uuid
 import facet
@@ -13,12 +14,21 @@ from microclaw.stt import STT
 from microclaw.syncers import SyncerInterface
 from microclaw.users_storages import UsersStorageInterface
 from microclaw.toolkits import BaseToolKit
+from microclaw.toolkits.accessors import (
+    AllSessionsAccessor,
+    AllUsersAccessor,
+    CurrentSessionAccessor,
+    CurrentUserAccessor,
+    UserSessionsAccessor,
+)
+from microclaw.toolkits.capabilities import DiscoveryCapability, ToolKitCapability
+from microclaw.toolkits.context import ToolkitExecutionContext, TOOLKIT_CONTEXT
+from microclaw.toolkits.dto import DiscoveryInfo
 from microclaw.toolkits.memory.toolkit import MemorySizeExceeded
 from .settings import ChannelSettings
 
 
 class BaseChannel(facet.AsyncioServiceMixin):
-    CHANNEL_CONTEXT = contextvars.ContextVar("channel_context", default=None)
     SESSION_ID_CONTEXT = contextvars.ContextVar("session_id", default=None)
     REQUEST_ID_CONTEXT = contextvars.ContextVar("request_id", default=None)
 
@@ -57,16 +67,8 @@ class BaseChannel(facet.AsyncioServiceMixin):
         return self._users_storage
 
     @classmethod
-    def get_current_channel(cls) -> Self:
-        return cls.CHANNEL_CONTEXT.get(None)
-
-    @contextlib.contextmanager
-    def set_current_channel(self):
-        token = self.CHANNEL_CONTEXT.set(self)
-        try:
-            yield
-        finally:
-            self.CHANNEL_CONTEXT.reset(token)
+    def get_current_request_id(cls) -> uuid.UUID | None:
+        return cls.REQUEST_ID_CONTEXT.get(None)
 
     @contextlib.contextmanager
     def set_current_request_id(self, request_id: uuid.UUID):
@@ -75,10 +77,6 @@ class BaseChannel(facet.AsyncioServiceMixin):
             yield
         finally:
             self.REQUEST_ID_CONTEXT.reset(token)
-
-    @classmethod
-    def get_current_request_id(cls) -> uuid.UUID | None:
-        return cls.REQUEST_ID_CONTEXT.get(None)
 
     @classmethod
     def get_current_session_id(cls) -> uuid.UUID | None:
@@ -91,6 +89,134 @@ class BaseChannel(facet.AsyncioServiceMixin):
             yield
         finally:
             self.SESSION_ID_CONTEXT.reset(token)
+
+    @contextlib.contextmanager
+    def set_toolkit_context(
+        self,
+        session_id: uuid.UUID,
+        request_id: uuid.UUID,
+        channel_internal_id: str,
+        user: User,
+        agent: Agent,
+    ):
+        needed_caps = set()
+        discovery_caps = set()
+        write_caps = set()
+        for toolkit in agent.toolkits.values():
+            needed_caps.update(toolkit.required_capabilities)
+            discovery_caps.update(toolkit.discovery_capabilities)
+            write_caps.update(toolkit.write_capabilities)
+
+        context = ToolkitExecutionContext(
+            session_id=session_id,
+            request_id=request_id,
+            channel_key=self._channel_key,
+            channel_internal_id=channel_internal_id,
+        )
+
+        # Accessors (ToolKitCapability)
+        if ToolKitCapability.CURRENT_USER in needed_caps:
+            context = dataclasses.replace(
+                context,
+                current_user_accessor=CurrentUserAccessor(
+                    user_id=user.id,
+                    storage=self._users_storage,
+                    writable=(ToolKitCapability.CURRENT_USER in write_caps),
+                    invalidate_cache=(
+                        lambda: self._user_agents_cache.pop(user.id, None)
+                        if ToolKitCapability.CURRENT_USER in write_caps
+                        else None
+                    ),
+                ),
+            )
+
+        if ToolKitCapability.ALL_USERS in needed_caps:
+            context = dataclasses.replace(
+                context,
+                all_users_accessor=AllUsersAccessor(storage=self._users_storage),
+            )
+
+        if ToolKitCapability.CURRENT_USER in needed_caps:
+            context = dataclasses.replace(
+                context,
+                user_sessions_accessor=UserSessionsAccessor(
+                    user_id=user.id,
+                    storage=self._users_storage,
+                ),
+            )
+
+        if ToolKitCapability.CURRENT_SESSION in needed_caps:
+            context = dataclasses.replace(
+                context,
+                current_session_accessor=CurrentSessionAccessor(
+                    session_id=session_id,
+                    storage=self._sessions_storage,
+                    writable=(ToolKitCapability.CURRENT_SESSION in write_caps),
+                ),
+            )
+
+        if ToolKitCapability.ALL_SESSIONS in needed_caps:
+            context = dataclasses.replace(
+                context,
+                sessions_accessor=AllSessionsAccessor(storage=self._sessions_storage),
+            )
+
+        # Discovery (DiscoveryCapability)
+        if DiscoveryCapability.MODELS in discovery_caps:
+            context = dataclasses.replace(
+                context,
+                all_models={k: DiscoveryInfo(name=k) for k in self._resolver.settings.models},
+            )
+
+        if DiscoveryCapability.TOOLKITS in discovery_caps:
+            context = dataclasses.replace(
+                context,
+                all_toolkits={
+                    k: DiscoveryInfo(name=k, description=v.prompt)
+                    for k, v in self._resolver.settings.toolkits.items()
+                },
+            )
+
+        if DiscoveryCapability.SKILLS in discovery_caps:
+            context = dataclasses.replace(
+                context,
+                all_skills={
+                    k: DiscoveryInfo(name=(v if isinstance(v, str) else v.name))
+                    for k, v in self._resolver.settings.skills.items()
+                },
+            )
+
+        if DiscoveryCapability.AGENTS in discovery_caps:
+            current_agent_name = agent.name
+            context = dataclasses.replace(
+                context,
+                all_agents={
+                    k: DiscoveryInfo(
+                        name=v.identity.name if v.identity else k,
+                        description=v.identity.description if v.identity else None,
+                    )
+                    for k, v in self._resolver.settings.agents.items()
+                    if k != current_agent_name
+                },
+            )
+
+        if DiscoveryCapability.MCP in discovery_caps:
+            context = dataclasses.replace(
+                context,
+                all_mcp={
+                    k: DiscoveryInfo(
+                        name=(v.name or k),
+                        description=v.description,
+                    )
+                    for k, v in self._resolver.settings.mcp.items()
+                },
+            )
+
+        token = TOOLKIT_CONTEXT.set(context)
+        try:
+            yield
+        finally:
+            TOOLKIT_CONTEXT.reset(token)
 
     async def get_agent_for_user(self, user: User) -> Agent | None:
         if user.agent is None:

@@ -138,17 +138,15 @@ class BaseVKChannel(BaseChannel):
         )
 
     async def handle_voice_message(self, message: Message):
-        request_id = uuid.uuid4()
-        with self.set_current_request_id(request_id):
-            user = await self._get_or_create_user(message.peer_id)
-            agent = await self.get_agent_for_user(user) or self._agent
-            session_id = await self._get_or_create_session(user, message.peer_id)
-            printer = self._printer(message.peer_id, session_id, agent)
+        user = await self._get_or_create_user(message.peer_id)
+        agent = await self.get_agent_for_user(user) or self._agent
+        session_id = await self._get_or_create_session(user, message.peer_id)
+        printer = self._printer(message.peer_id, session_id, agent)
 
-            if self._stt is None:
-                logger.warning(f"[{request_id}] STT unavailable")
-                await printer.print(text="Voice messages not supported")
-                return
+        if self._stt is None:
+            logger.warning(f"[{self.get_current_request_id()}] STT unavailable")
+            await printer.print(text="Voice messages not supported")
+            return
 
             audio_attachments = self._get_audio_message_attachments(message)
             if not audio_attachments:
@@ -223,38 +221,47 @@ class BaseVKChannel(BaseChannel):
                     session_id=session_id,
                 )
 
-                async with printer, saver:
-                    status_text = "✅ Confirmed" if approved else "❌ Rejected"
-                    event_id = obj.get("event_id")
-                    user_id = obj.get("user_id")
+                with (
+                    self.set_toolkit_context(
+                        session_id=session_id,
+                        request_id=request_id,
+                        channel_internal_id=str(peer_id),
+                        user=user,
+                        agent=agent,
+                    ),
+                ):
+                    async with printer, saver:
+                        status_text = "✅ Confirmed" if approved else "❌ Rejected"
+                        event_id = obj.get("event_id")
+                        user_id = obj.get("user_id")
 
-                    event_data = ShowSnackbarEvent(text=status_text)
-                    await self._bot.api.messages.send_message_event_answer(
-                        event_id=event_id,
-                        user_id=user_id,
-                        peer_id=peer_id,
-                        event_data=event_data.model_dump_json(),
-                    )
-
-                    conversation_message_id = obj.get("conversation_message_id")
-                    if conversation_message_id:
-                        await self._update_confirmation_message(
+                        event_data = ShowSnackbarEvent(text=status_text)
+                        await self._bot.api.messages.send_message_event_answer(
+                            event_id=event_id,
+                            user_id=user_id,
                             peer_id=peer_id,
-                            conversation_message_id=conversation_message_id,
-                            approved=approved,
+                            event_data=event_data.model_dump_json(),
                         )
 
-                    async for msg in agent.resume_after_confirmation(
-                        session_id=session_id,
-                        decision=(
-                            DecisionEnum.APPROVE
-                            if approved
-                            else DecisionEnum.REJECT
-                        ),
-                        channel=self,
-                    ):
-                        await saver.register_new_message(msg)
-                        await printer.register_new_message(msg)
+                        conversation_message_id = obj.get("conversation_message_id")
+                        if conversation_message_id:
+                            await self._update_confirmation_message(
+                                peer_id=peer_id,
+                                conversation_message_id=conversation_message_id,
+                                approved=approved,
+                            )
+
+                        async for msg in agent.resume_after_confirmation(
+                            session_id=session_id,
+                            decision=(
+                                DecisionEnum.APPROVE
+                                if approved
+                                else DecisionEnum.REJECT
+                            ),
+                            channel=self,
+                        ):
+                            await saver.register_new_message(msg)
+                            await printer.register_new_message(msg)
 
     async def _update_confirmation_message(
         self,
@@ -290,60 +297,65 @@ class BaseVKChannel(BaseChannel):
         agent: Agent,
         new_messages: Sequence[AgentMessage] = (),
     ):
-        request_id = uuid.uuid4()
-        with self.set_current_request_id(request_id):
-            for message in new_messages:
-                await self._sessions_storage.add_message(
-                    session_id=session_id, message=message
-                )
-
-            saver = AgentMessageSaver(
-                sessions_storage=self._sessions_storage,
-                session_id=session_id,
+        request_id = self.get_current_request_id() or uuid.uuid4()
+        for message in new_messages:
+            await self._sessions_storage.add_message(
+                session_id=session_id, message=message
             )
-            printer = self._printer(peer_id, session_id, agent)
 
-            async with self._lock_chat_for_generating(peer_id):
-                message_generator = self._sessions_storage.get_messages(
-                    filter=MessageFilter(session_id=session_id)
-                )
-                history = [_message async for _message in message_generator]
+        saver = AgentMessageSaver(
+            sessions_storage=self._sessions_storage,
+            session_id=session_id,
+        )
+        printer = self._printer(peer_id, session_id, agent)
 
-                with (
-                    self.set_current_channel(),
-                    self.set_current_chat_id(peer_id),
-                    self.set_current_session_id(session_id),
+        async with self._lock_chat_for_generating(peer_id):
+            message_generator = self._sessions_storage.get_messages(
+                filter=MessageFilter(session_id=session_id)
+            )
+            history = [_message async for _message in message_generator]
+
+            user = await self._get_or_create_user(peer_id)
+            with (
+                self.set_toolkit_context(
+                    session_id=session_id,
+                    request_id=request_id,
+                    channel_internal_id=str(peer_id),
+                    user=user,
+                    agent=agent,
+                ),
+                self.set_current_chat_id(peer_id),
+                self.set_current_session_id(session_id),
+            ):
+                async with printer, saver:
+                    msg_generator = (
+                        agent.resume_after_confirmation(
+                            session_id=session_id,
+                            decision=DecisionEnum.REJECT,
+                            new_messages=new_messages,
+                            channel=self,
+                        )
+                        if await agent.has_pending_interrupt(session_id=session_id)
+                        else agent.ask(messages=history, channel=self)
+                    )
+                    async for new_message in msg_generator:
+                        if new_message.role == "request_confirmation":
+                            entries = json.loads(new_message.text)
+                            for entry in entries:
+                                await self._send_confirmation(
+                                    entry, peer_id, session_id
+                                )
+                            continue
+                        await saver.register_new_message(new_message)
+                        await printer.register_new_message(new_message)
+
+                if (
+                    await self.summarize_dialog_if_needed(
+                        agent=agent, session_id=session_id
+                    )
+                    and self._settings.debug
                 ):
-                    async with printer, saver:
-                        msg_generator = (
-                            agent.resume_after_confirmation(
-                                session_id=session_id,
-                                decision=DecisionEnum.REJECT,
-                                new_messages=new_messages,
-                                channel=self,
-                            )
-                            if await agent.has_pending_interrupt(session_id=session_id)
-                            else agent.ask(messages=history, channel=self)
-                        )
-                        async for new_message in msg_generator:
-                            if new_message.role == "request_confirmation":
-                                entries = json.loads(new_message.text)
-                                for entry in entries:
-                                    await self._send_confirmation(
-                                        entry, peer_id, session_id
-                                    )
-                                continue
-                            await saver.register_new_message(new_message)
-                            await printer.register_new_message(new_message)
-
-                    if (
-                        await self.summarize_dialog_if_needed(
-                            agent=agent, session_id=session_id
-                        )
-                        and self._settings.debug
-                    ):
-                        await printer.print(text="Dialog summarized")
-
+                    await printer.print(text="Dialog summarized")
     async def _send_confirmation(
         self, entry: dict, peer_id: int, session_id: uuid.UUID
     ):

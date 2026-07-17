@@ -59,22 +59,26 @@ class CLIChannel(BaseChannel):
         new_messages: list[AgentMessage],
         agent: Agent | None = None,
     ):
-        await self._generate_and_send_answer(
-            agent=agent,
-            session_id=session_id,
-            new_messages=new_messages,
-        )
+        request_id = uuid.uuid4()
+        with self.set_current_request_id(request_id):
+            await self._generate_and_send_answer(
+                agent=agent,
+                session_id=session_id,
+                new_messages=new_messages,
+            )
 
     async def handle_user_message(self, text: str, agent: Agent | None = None) -> None:
         if self._session_id is None:
             self._session_id = await self._create_session()
 
-        user_message = AgentMessage(role="user", text=text)
-        await self._generate_and_send_answer(
-            session_id=self._session_id,
-            agent=agent,
-            new_messages=[user_message],
-        )
+        request_id = uuid.uuid4()
+        with self.set_current_request_id(request_id):
+            user_message = AgentMessage(role="user", text=text)
+            await self._generate_and_send_answer(
+                session_id=self._session_id,
+                agent=agent,
+                new_messages=[user_message],
+            )
 
     async def _generate_and_send_answer(
         self,
@@ -109,8 +113,18 @@ class CLIChannel(BaseChannel):
         )
         history = [_message async for _message in message_generator]
 
+        request_id = self.get_current_request_id() or uuid.uuid4()
+        user = self._user
+        if user is None:
+            raise RuntimeError("User not initialized. Ensure start() was called.")
         with (
-            self.set_current_channel(),
+            self.set_toolkit_context(
+                session_id=session_id,
+                request_id=request_id,
+                channel_internal_id="cli",
+                user=user,
+                agent=agent,
+            ),
             self.set_current_session_id(session_id),
         ):
             await printer.show_thinking()
