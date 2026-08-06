@@ -6,16 +6,16 @@ from .enums import RoleEnum
 from .widgets import ChatWidget, MessageBox, ActionMessageBox
 
 
-class CLIApp(App):
+class TUIApp(App):
     CSS_PATH = "ui.tcss"
 
     def __init__(
         self,
-        channel: "CLIChannel",  # noqa: F821
+        channel: "TUIChannel",  # noqa: F821
     ):
         super().__init__()
         self._channel = channel
-        self._chat_widget = ChatWidget(channel=channel)
+        self._chat_widget = ChatWidget(channel=channel, commands=channel.slash_commands)
 
     async def on_mount(self) -> None:
         if (
@@ -33,8 +33,7 @@ class CLIApp(App):
         cost: float | None = None,
         currency: str = "$",
     ) -> None:
-        stats_widget = self._chat_widget.stats_widget
-        stats_widget.update_stats(
+        self._chat_widget.status_bar.update_stats(
             usage=context_usage,
             cost=cost,
             currency=currency,
@@ -43,8 +42,8 @@ class CLIApp(App):
     async def add_message(self, role: RoleEnum, text: str | None = None) -> MessageBox:
         return await self._chat_widget.add_message(role=role, text=text)
 
-    async def update_message(self, role: RoleEnum, text: str | None = None) -> None:
-        await self._chat_widget.update_message(role=role, text=text)
+    def update_message(self, role: RoleEnum, text: str | None = None) -> None:
+        self._chat_widget.update_message(role=role, text=text)
 
     async def add_confirmation_message(
         self,
@@ -60,3 +59,15 @@ class CLIApp(App):
         for message in messages:
             role = RoleEnum.USER if message.role == "user" else RoleEnum.AI
             await self._chat_widget.add_message(role=role, text=message.text)
+
+    async def set_queued_messages(self, texts: list[str]) -> None:
+        await self._chat_widget.set_queued_messages(texts)
+
+    def clear_queued_messages(self) -> None:
+        self._chat_widget.clear_queued_messages()
+
+    def show_thinking(self) -> None:
+        self._chat_widget.status_bar.show_thinking()
+
+    def hide_thinking(self) -> None:
+        self._chat_widget.status_bar.hide_thinking()

@@ -2,7 +2,7 @@ import enum
 
 from pydantic import BaseModel
 
-from microclaw.agents import AgentSettings
+from microclaw.agents.settings import AgentSettings
 from microclaw.sessions_storages import SessionsStorageSettingsType
 from microclaw.stt import STTSettings
 from microclaw.users_storages import UsersStorageSettingsType
@@ -10,8 +10,7 @@ from microclaw.users_storages import UsersStorageSettingsType
 
 class ChannelTypeEnum(str, enum.Enum):
     TELEGRAM = "telegram"
-    CLI = "cli"
-    MATRIX = "matrix"
+    TUI = "tui"
     VK = "vk"
 
 

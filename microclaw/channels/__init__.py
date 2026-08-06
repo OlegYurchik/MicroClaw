@@ -1,9 +1,9 @@
 from .base import BaseChannel
 from .fabric import get_channel
-from .telegram.polling import TelegramPollingSettings
-from .telegram.webhook import TelegramWebhookSettings
-from .vk.polling import VKPollingSettings
-from .vk.webhook import VKWebhookSettings
+from .telegram.polling.settings import TelegramPollingSettings
+from .telegram.webhook.settings import TelegramWebhookSettings
+from .vk.polling.settings import VKPollingSettings
+from .vk.webhook.settings import VKWebhookSettings
 from .settings import ChannelSettings, ChannelTypeEnum
 
 

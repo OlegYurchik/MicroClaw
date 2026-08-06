@@ -2,7 +2,10 @@ import asyncio
 
 import typer
 
+from microclaw.channels.tui import TUIChannel, TUIChannelSettings
+from microclaw.resolver import DependencyResolver
 from microclaw.sessions_storages import get_sessions_storage
+from microclaw.settings import MicroclawSettings
 from microclaw.syncers import get_syncer
 from microclaw.users_storages import get_users_storage
 from microclaw.utils import get_by_key_or_first
@@ -11,19 +14,8 @@ from microclaw.utils import get_by_key_or_first
 def run(
     ctx: typer.Context,
     agent_name: str | None = typer.Argument(default=None, metavar="name"),
-    show_loader: bool = typer.Option(False, "-l", "--loader", metavar="loader"),
-    show_costs: bool = typer.Option(False, "-c", "--costs", metavar="costs"),
-    show_context_usage: bool = typer.Option(
-        False,
-        "--context-usage",
-        metavar="context_usage",
-    ),
     debug: bool = typer.Option(False, "-d", "--debug", metavar="debug"),
 ):
-    from microclaw.channels.cli import CLIChannel, CLIChannelSettings
-    from microclaw.resolver import DependencyResolver
-    from microclaw.settings import MicroclawSettings
-
     settings: MicroclawSettings = ctx.obj["settings"]
 
     resolver = DependencyResolver(settings=settings)
@@ -47,11 +39,8 @@ def run(
     sessions_storage = get_sessions_storage(settings=sessions_storage_settings)
     users_storage = get_users_storage(settings=users_storage_settings)
     syncer = get_syncer(settings=settings.syncer)
-    channel = CLIChannel(
-        settings=CLIChannelSettings(
-            show_loader=show_loader,
-            show_costs=show_costs,
-            show_context_usage=show_context_usage,
+    channel = TUIChannel(
+        settings=TUIChannelSettings(
             debug=debug,
         ),
         agent=agent,
@@ -64,9 +53,14 @@ def run(
     asyncio.run(channel.run())
 
 
+def callback(ctx: typer.Context) -> None:
+    pass
+
+
 def get_cli() -> typer.Typer:
     cli = typer.Typer()
 
+    cli.callback()(callback)
     cli.command(name="run")(run)
 
     return cli

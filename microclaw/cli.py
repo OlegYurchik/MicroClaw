@@ -6,7 +6,7 @@ import sys
 import typer
 from loguru import logger
 
-from .agents import get_cli as get_agents_cli
+from .channels.tui.cli import get_cli as get_tui_cli
 from .cron import get_cli as get_cron_cli
 from .logging import InterceptHandler, generate_formatter
 from .service import MicroclawService
@@ -72,7 +72,7 @@ def get_cli() -> typer.Typer:
 
     cli.callback()(callback)
     cli.command(name="run")(run)
-    cli.add_typer(get_agents_cli(), name="agents")
     cli.add_typer(get_cron_cli(), name="cron")
+    cli.add_typer(get_tui_cli(), name="tui")
 
     return cli
