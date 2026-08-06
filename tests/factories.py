@@ -1,3 +1,4 @@
+from collections.abc import Sequence
 from typing import Any, AsyncIterator
 
 from langchain_core.language_models.chat_models import BaseChatModel
@@ -8,8 +9,7 @@ import uuid
 
 from microclaw.agents import Agent
 from microclaw.channels.base import BaseChannel
-from microclaw.dto import AgentMessage, DecisionEnum
-from microclaw.sessions_storages.filters import MessageFilter
+from microclaw.dto import AgentMessage
 
 
 class AssistantReply(BaseModel):
@@ -111,52 +111,13 @@ class FakeChatModel(BaseChatModel):
 
 
 class FakeChannel(BaseChannel):
-    async def start_conversation(
-        self,
-        session_id: uuid.UUID,
-        channel_internal_id: int,
-        new_messages: list[AgentMessage] | None = None,
-        agent: Agent | None = None,
-    ):
-        request_id = uuid.uuid4()
-        with self.set_current_request_id(request_id):
-            await self._generate_and_send_answer(
-                session_id=session_id,
-                agent=agent,
-                new_messages=new_messages or [],
-            )
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._chat_sessions: dict[str | int, uuid.UUID] = {}
 
-    async def _generate_and_send_answer(
-        self,
-        session_id: uuid.UUID,
-        agent: Agent | None = None,
-        new_messages: tuple = (),
-    ):
-        agent = agent or self._agent
-        request_id = self.get_current_request_id()
-
-        for msg in new_messages:
-            await self._sessions_storage.add_message(
-                session_id=session_id,
-                message=msg,
-            )
-
-        message_generator = self._sessions_storage.get_messages(
-            filter=MessageFilter(session_id=session_id)
-        )
-        history = [msg async for msg in message_generator]
-
-        with (
-            self.set_current_request_id(request_id),
-            self.set_current_session_id(session_id),
-        ):
-            if await agent.has_pending_interrupt(session_id=session_id):
-                async for _ in agent.resume_after_confirmation(
-                    session_id=session_id,
-                    decision=DecisionEnum.REJECT,
-                    new_messages=new_messages,
-                ):
-                    pass
-            else:
-                async for _ in agent.ask(messages=history):
-                    pass
+    async def _resolve_session_for_chat(self, chat_id: str | int) -> uuid.UUID:
+        if chat_id not in self._chat_sessions:
+            session_id = uuid.uuid4()
+            await self._sessions_storage.create_session(session_id)
+            self._chat_sessions[chat_id] = session_id
+        return self._chat_sessions[chat_id]

@@ -56,7 +56,11 @@ async def test_get_tuple_with_checkpoint_id(checkpointer):
     await checkpointer.aput(config, checkpoint, {"step": 0}, {})
 
     query_config = {
-        "configurable": {"thread_id": "t2", "checkpoint_ns": "", "checkpoint_id": "def-456"}
+        "configurable": {
+            "thread_id": "t2",
+            "checkpoint_ns": "",
+            "checkpoint_id": "def-456",
+        }
     }
     tuple_ = await checkpointer.aget_tuple(query_config)
     assert tuple_ is not None
@@ -66,7 +70,13 @@ async def test_get_tuple_with_checkpoint_id(checkpointer):
 @pytest.mark.asyncio
 async def test_pending_writes_roundtrip(checkpointer):
     """aput_writes must be reflected in aget_tuple.pending_writes."""
-    config = {"configurable": {"thread_id": "t3", "checkpoint_ns": "", "checkpoint_id": "chk-1"}}
+    config = {
+        "configurable": {
+            "thread_id": "t3",
+            "checkpoint_ns": "",
+            "checkpoint_id": "chk-1",
+        }
+    }
     checkpoint = {
         "v": 1,
         "ts": "2024-01-01T00:00:00",
@@ -95,7 +105,13 @@ async def test_pending_writes_roundtrip(checkpointer):
 @pytest.mark.asyncio
 async def test_alist_includes_pending_writes(checkpointer):
     """alist must yield CheckpointTuples with pending_writes."""
-    config = {"configurable": {"thread_id": "t4", "checkpoint_ns": "", "checkpoint_id": "chk-2"}}
+    config = {
+        "configurable": {
+            "thread_id": "t4",
+            "checkpoint_ns": "",
+            "checkpoint_id": "chk-2",
+        }
+    }
     checkpoint = {
         "v": 1,
         "ts": "2024-01-01T00:00:00",
@@ -121,7 +137,13 @@ async def test_alist_includes_pending_writes(checkpointer):
 async def test_delete_thread_removes_checkpoints_and_writes(checkpointer):
     """adelete_thread must clean up both checkpoints and checkpoint_writes."""
     thread_id = "t5"
-    config = {"configurable": {"thread_id": thread_id, "checkpoint_ns": "", "checkpoint_id": "chk-3"}}
+    config = {
+        "configurable": {
+            "thread_id": thread_id,
+            "checkpoint_ns": "",
+            "checkpoint_id": "chk-3",
+        }
+    }
     checkpoint = {
         "v": 1,
         "ts": "2024-01-01T00:00:00",
@@ -145,7 +167,13 @@ async def test_copy_thread_copies_checkpoints_and_writes(checkpointer):
     """acopy_thread must duplicate both checkpoints and checkpoint_writes."""
     source_id = "t6"
     target_id = "t7"
-    config = {"configurable": {"thread_id": source_id, "checkpoint_ns": "", "checkpoint_id": "chk-4"}}
+    config = {
+        "configurable": {
+            "thread_id": source_id,
+            "checkpoint_ns": "",
+            "checkpoint_id": "chk-4",
+        }
+    }
     checkpoint = {
         "v": 1,
         "ts": "2024-01-01T00:00:00",
@@ -159,7 +187,13 @@ async def test_copy_thread_copies_checkpoints_and_writes(checkpointer):
 
     await checkpointer.acopy_thread(source_id, target_id)
 
-    target_config = {"configurable": {"thread_id": target_id, "checkpoint_ns": "", "checkpoint_id": "chk-4"}}
+    target_config = {
+        "configurable": {
+            "thread_id": target_id,
+            "checkpoint_ns": "",
+            "checkpoint_id": "chk-4",
+        }
+    }
     tuple_ = await checkpointer.aget_tuple(target_config)
     assert tuple_ is not None
     assert tuple_.checkpoint["channel_values"]["x"] == 1

@@ -39,6 +39,7 @@ def model_settings() -> ModelSettings:
     return ModelSettings(
         id="gpt-4",
         costs=ModelCosts(input=1, output=2, currency="$"),
+        context_window_size=8000,
     )
 
 
@@ -113,7 +114,7 @@ def make_agent(agent_settings, model_settings, provider_settings, syncer):
 
 @pytest.fixture
 def channel_settings() -> ChannelSettings:
-    return ChannelSettings(type=ChannelTypeEnum.CLI)
+    return ChannelSettings(type=ChannelTypeEnum.TUI)
 
 
 @pytest.fixture
@@ -150,3 +151,11 @@ def base_channel(
         users_storage=users_storage,
         resolver=resolver,
     )
+
+
+def _async_gen(items):
+    async def _gen():
+        for item in items:
+            yield item
+
+    return _gen()

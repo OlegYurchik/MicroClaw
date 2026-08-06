@@ -14,12 +14,12 @@ async def test_has_pending_interrupt_true(make_agent, toolkit):
     agent: Agent = make_agent(toolkits={"tools": toolkit}, client=MagicMock())
     session_id = uuid.uuid4()
 
-    mock_graph = MagicMock()
-    mock_graph.aget_state = AsyncMock(
-        return_value=MagicMock(interrupts=[MagicMock()])
-    )
+    mock_tuple = MagicMock()
+    mock_tuple.pending_writes = [("task", "__interrupt__", MagicMock())]
 
-    with patch.object(agent, "_create_agent", new=AsyncMock(return_value=mock_graph)):
+    with patch.object(
+        agent._checkpointer, "aget_tuple", new=AsyncMock(return_value=mock_tuple)
+    ):
         result = await agent.has_pending_interrupt(session_id)
 
     assert result is True
@@ -30,10 +30,12 @@ async def test_has_pending_interrupt_false(make_agent, toolkit):
     agent: Agent = make_agent(toolkits={"tools": toolkit}, client=MagicMock())
     session_id = uuid.uuid4()
 
-    mock_graph = MagicMock()
-    mock_graph.aget_state = AsyncMock(return_value=MagicMock(interrupts=[]))
+    mock_tuple = MagicMock()
+    mock_tuple.pending_writes = []
 
-    with patch.object(agent, "_create_agent", new=AsyncMock(return_value=mock_graph)):
+    with patch.object(
+        agent._checkpointer, "aget_tuple", new=AsyncMock(return_value=mock_tuple)
+    ):
         result = await agent.has_pending_interrupt(session_id)
 
     assert result is False
@@ -50,11 +52,14 @@ async def test_resume_after_confirmation_preserves_checkpoint(make_agent, toolki
     mock_graph.astream_events = MagicMock(return_value=_empty_async_gen())
 
     with (
-        patch.object(agent._checkpointer, "adelete_thread", new_callable=AsyncMock) as mock_delete,
+        patch.object(
+            agent._checkpointer, "adelete_thread", new_callable=AsyncMock
+        ) as mock_delete,
         patch.object(agent, "_create_agent", new=AsyncMock(return_value=mock_graph)),
     ):
         _ = [
-            msg async for msg in agent.resume_after_confirmation(
+            msg
+            async for msg in agent.resume_after_confirmation(
                 session_id=session_id,
                 decision=DecisionEnum.APPROVE,
             )

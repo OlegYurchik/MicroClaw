@@ -6,13 +6,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from microclaw.dto import AgentMessage, DecisionEnum
-
-
-def _async_gen(items):
-    async def _gen():
-        for item in items:
-            yield item
-    return _gen()
+from tests.conftest import _async_gen
 
 
 @pytest.mark.asyncio
@@ -23,7 +17,9 @@ async def test_start_conversation_calls_ask_when_no_pending_interrupt(base_chann
 
     base_channel._agent.has_pending_interrupt = AsyncMock(return_value=False)
     base_channel._agent.ask = MagicMock(return_value=_async_gen([]))
-    base_channel._agent.resume_after_confirmation = MagicMock(return_value=_async_gen([]))
+    base_channel._agent.resume_after_confirmation = MagicMock(
+        return_value=_async_gen([])
+    )
 
     await base_channel.start_conversation(
         session_id=session_id,
@@ -45,7 +41,9 @@ async def test_start_conversation_calls_resume_when_pending_interrupt(base_chann
     new_msg = AgentMessage(role="user", text="new msg")
     base_channel._agent.has_pending_interrupt = AsyncMock(return_value=True)
     base_channel._agent.ask = MagicMock(return_value=_async_gen([]))
-    base_channel._agent.resume_after_confirmation = MagicMock(return_value=_async_gen([]))
+    base_channel._agent.resume_after_confirmation = MagicMock(
+        return_value=_async_gen([])
+    )
 
     await base_channel.start_conversation(
         session_id=session_id,

@@ -1,4 +1,5 @@
 import pathlib
+import uuid
 
 import pytest
 import skilly
@@ -14,6 +15,7 @@ from microclaw.agents import (
     Agent,
     AgentSettings,
     APITypeEnum,
+    MCPRemoteSettings,
     ModelSettings,
     ProviderSettings,
     SkillSettings,
@@ -113,9 +115,7 @@ async def test_resolve_skill_github_repo(base_settings, monkeypatch):
     def mock_discover(fetcher, url, **kwargs):
         return [discovered_skill]
 
-    monkeypatch.setattr(
-        "microclaw.resolver.discover_github_skills", mock_discover
-    )
+    monkeypatch.setattr("microclaw.resolver.discover_github_skills", mock_discover)
 
     installed_skill = skilly.Skill(
         name="github-skill",
@@ -169,7 +169,13 @@ def _make_search_result(skills_list):
         data=SkillsMpSearchData(
             skills=skills_list,
             pagination=SkillsMpPagination(
-                page=1, limit=20, total=len(skills_list), total_pages=1, has_next=False, has_prev=False, total_is_exact=True
+                page=1,
+                limit=20,
+                total=len(skills_list),
+                total_pages=1,
+                has_next=False,
+                has_prev=False,
+                total_is_exact=True,
             ),
             filters=SkillsMpFilters(search="test", sort_by="stars"),
         ),
@@ -242,7 +248,8 @@ async def test_resolve_skills_batch_filters_none(base_settings, monkeypatch):
     resolver = DependencyResolver(settings=base_settings)
 
     call_count = 0
-    async def mock_resolve(skill_item, repo=None):
+
+    async def mock_resolve(skill_item, repo=None, skills_dir=None):
         nonlocal call_count
         call_count += 1
         if isinstance(skill_item, SkillSettings) and skill_item.name == "found-skill":
@@ -292,3 +299,67 @@ def test_normalize_skill_unknown(base_settings):
     result = resolver._normalize_skill("unknown-skill")
     assert result.name == "unknown-skill"
     assert result.repo is None
+
+
+@pytest.mark.asyncio
+async def test_resolver__mcp_explicit_list_only(base_settings):
+    """When agent_settings.mcp is explicitly set, only listed MCPs are used."""
+    settings = base_settings.model_copy()
+    settings.mcp = {
+        "global_http": MCPRemoteSettings(name="global_http", url="http://global.example.com"),
+    }
+
+    resolver = DependencyResolver(settings=settings)
+    agent_settings = AgentSettings(
+        model="default",
+        mcp=[
+            MCPRemoteSettings(name="user_mcp", url="http://user.example.com"),
+        ],
+    )
+
+    agent = await resolver.resolve_agent(agent_settings=agent_settings)
+    assert "user_mcp" in agent._mcp_settings
+    assert "global_http" not in agent._mcp_settings
+    assert agent._mcp_settings["user_mcp"].url == "http://user.example.com"
+
+
+@pytest.mark.asyncio
+async def test_resolver__global_mcp_when_none(base_settings):
+    """When agent_settings.mcp is None, global MCPs are included."""
+    settings = base_settings.model_copy()
+    settings.mcp = {
+        "global_mcp": MCPRemoteSettings(name="global_mcp", url="http://global.example.com"),
+    }
+
+    resolver = DependencyResolver(settings=settings)
+    agent_settings = AgentSettings(model="default", mcp=None)
+
+    agent = await resolver.resolve_agent(agent_settings=agent_settings)
+    assert "global_mcp" in agent._mcp_settings
+
+
+@pytest.mark.asyncio
+async def test_resolver__per_user_skills_directory(base_settings, monkeypatch):
+    user_id = uuid.uuid4()
+    user_dir = base_settings.skills_directory / str(user_id)
+    user_dir.mkdir(parents=True)
+
+    installed_skill = skilly.Skill(
+        name="user-skill",
+        description="user skill",
+        path=str(user_dir / "user-skill"),
+    )
+
+    monkeypatch.setattr(
+        "microclaw.resolver.skilly.SkillRepository.find",
+        lambda self, name: installed_skill if name == "user-skill" else None,
+    )
+
+    resolver = DependencyResolver(settings=base_settings)
+    agent_settings = AgentSettings(
+        model="default",
+        skills=[SkillSettings(name="user-skill")],
+    )
+
+    result = await resolver.resolve_skills(agent_settings, user_id=user_id)
+    assert result == [str(user_dir / "user-skill")]

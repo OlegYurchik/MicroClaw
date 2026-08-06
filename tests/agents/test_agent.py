@@ -64,10 +64,11 @@ async def test_ask_yields_tool_messages(make_agent):
 
     tool_msgs = [msg for msg in result if msg.role == "tool"]
     assert len(tool_msgs) == 2
-    assert "Tool name: calc" in tool_msgs[0].text
-    assert "Tool input" in tool_msgs[0].text
-    assert "Tool name: calc" in tool_msgs[1].text
-    assert "Tool output" in tool_msgs[1].text
+    assert any(
+        '"name": "calc"' in msg.text and '"type": "input"' in msg.text
+        for msg in tool_msgs
+    )
+    assert any('"type": "output"' in msg.text for msg in tool_msgs)
 
     assistant_texts = [
         msg.text for msg in result if msg.role == "assistant" and msg.text
@@ -98,10 +99,11 @@ async def test_ask_yields_tool_error(make_agent):
 
     tool_msgs = [msg for msg in result if msg.role == "tool"]
     assert len(tool_msgs) == 2
-    assert "Tool name: broken_tool" in tool_msgs[0].text
-    assert "Tool input" in tool_msgs[0].text
-    assert "Tool name: broken_tool" in tool_msgs[1].text
-    assert "Error" in tool_msgs[1].text
+    assert any(
+        '"name": "broken_tool"' in msg.text and '"type": "input"' in msg.text
+        for msg in tool_msgs
+    )
+    assert any("Tool error" in msg.text for msg in tool_msgs)
 
 
 @pytest.mark.asyncio
@@ -139,9 +141,8 @@ async def test_summarize_memory(agent, client):
     client.ainvoke = AsyncMock(return_value=SimpleNamespace(content="memory summary"))
     result = await agent.summarize_memory("new context", "old context")
     assert isinstance(result, AgentMessage)
-    assert result.role == "system"
+    assert result.role == "summary"
     assert result.text == "memory summary"
-    assert result.is_summary is True
     assert result.spending is not None
 
 
@@ -150,16 +151,15 @@ async def test_summarize_memory_daily(agent, client):
     client.ainvoke = AsyncMock(return_value=SimpleNamespace(content="daily summary"))
     result = await agent.summarize_memory("new", "old", is_daily=True)
     assert result.text == "daily summary"
-    assert result.is_summary is True
+    assert result.role == "summary"
     assert result.spending is not None
 
 
 @pytest.mark.asyncio
 async def test_summarize_dialogue_empty_messages(agent):
     result = await agent.summarize_dialogue([])
-    assert result.role == "system"
+    assert result.role == "summary"
     assert result.text == "Dialog is empty"
-    assert result.is_summary is True
     assert result.spending is None
 
 
@@ -171,10 +171,9 @@ async def test_summarize_dialogue(agent, client):
         AgentMessage(role="assistant", text="hi"),
     ]
     result = await agent.summarize_dialogue(messages)
-    assert result.role == "system"
+    assert result.role == "summary"
     assert "Summary of the previous dialogue:" in result.text
     assert "dialogue summary" in result.text
-    assert result.is_summary is True
     assert result.spending is not None
 
 

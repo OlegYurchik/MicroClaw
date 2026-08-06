@@ -22,6 +22,9 @@ async def test_get_agent_for_user_caches_resolved_agent(base_channel, resolver):
     agent1 = await base_channel.get_agent_for_user(user)
     agent2 = await base_channel.get_agent_for_user(user)
     assert agent1 is agent2 is fake_agent
+    resolver.resolve_agent.assert_called_once()
+    call_kwargs = resolver.resolve_agent.call_args.kwargs
+    assert call_kwargs.get("user_id") == user.id
 
 
 @pytest.mark.asyncio
@@ -36,6 +39,18 @@ async def test_get_agent_for_user_different_users_different_agents(
     result_b = await base_channel.get_agent_for_user(user2)
     assert result_a is fake_a
     assert result_b is fake_b
+
+
+@pytest.mark.asyncio
+async def test_channel__get_agent_for_user_passes_user_id(
+    base_channel, resolver
+):
+    user = User(id=uuid.uuid4(), agent={"identity": {"name": "Test"}})
+    fake_agent = MagicMock(spec=Agent)
+    resolver.resolve_agent = AsyncMock(return_value=fake_agent)
+    await base_channel.get_agent_for_user(user)
+    _, kwargs = resolver.resolve_agent.call_args
+    assert kwargs["user_id"] == user.id
 
 
 @pytest.mark.parametrize(
@@ -75,4 +90,3 @@ async def test_is_context_went_across_threshold_parametrized(
         agent=agent, session_id=session_id
     )
     assert result is expected
-

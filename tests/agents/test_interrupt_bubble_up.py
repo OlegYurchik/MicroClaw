@@ -29,7 +29,7 @@ class DummyModel(BaseChatModel):
     def invoke(self, input, config=None, **kwargs):
         return AIMessage(
             content="",
-            tool_calls=[{"name": "interrupting_tool", "args": {}, "id": "tc1"}]
+            tool_calls=[{"name": "interrupting_tool", "args": {}, "id": "tc1"}],
         )
 
     async def ainvoke(self, input, config=None, **kwargs):
@@ -75,7 +75,9 @@ async def test_handle_tool_errors_does_not_swallow_graph_interrupt():
 
     # Resume should succeed (tool returns "done" after receiving the resume value)
     tool_ran = False
-    async for event in agent.astream_events(Command(resume="yes"), config, version="v2"):
+    async for event in agent.astream_events(
+        Command(resume="yes"), config, version="v2"
+    ):
         if event["event"] == "on_tool_end" and event.get("name") == "interrupting_tool":
             tool_ran = True
 
@@ -99,4 +101,6 @@ def test_handle_tool_errors_passes_through_graph_bubble_up():
         raise ValueError("boom")
 
     result = asyncio.run(_handle_tool_errors.awrap_tool_call(request, _boom))
-    assert isinstance(result, AIMessage.__bases__[0].__mro__[0])  # ToolMessage is not directly importable here easily
+    assert isinstance(
+        result, AIMessage.__bases__[0].__mro__[0]
+    )  # ToolMessage is not directly importable here easily
