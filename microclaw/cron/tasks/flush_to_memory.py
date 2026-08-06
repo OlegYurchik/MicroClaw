@@ -6,6 +6,7 @@ from pydantic import BaseModel
 
 from microclaw.channels.base import BaseChannel
 from microclaw.cron.base import BaseCronTask
+from microclaw.dto import User
 from microclaw.cron.settings import CronTaskSettings
 from microclaw.sessions_storages.interfaces import SessionsStorageInterface
 from microclaw.sessions_storages.filters import SessionFilter, MessageFilter
@@ -27,6 +28,8 @@ class FlushToMemoryCronTask(BaseCronTask[FlushToMemoryCronTaskSettings]):
         super().__init__(key=key, settings=settings, resolver=resolver)
         self._sessions_storage: SessionsStorageInterface | None = None
         self._channels: dict[str, BaseChannel] | None = None
+        self._session_user_cache: dict[uuid.UUID, User | None] = {}
+        self._user_channel_cache: dict[uuid.UUID, BaseChannel | None] = {}
 
     async def do_before(self):
         sessions_storages = await self._resolver.resolve_sessions_storages()
@@ -54,7 +57,7 @@ class FlushToMemoryCronTask(BaseCronTask[FlushToMemoryCronTaskSettings]):
                 logger.warning(f"User not found for session {session_id}")
                 continue
 
-            channel = await self._get_channel_for_user(user)
+            channel = await self._get_channel_for_user(user.id)
             if channel is None:
                 logger.warning(f"Channel not found for user {user.id}")
                 continue
@@ -126,16 +129,27 @@ class FlushToMemoryCronTask(BaseCronTask[FlushToMemoryCronTaskSettings]):
 
         logger.info(f"Daily memory processing completed for date {date}")
 
-    async def _get_user_by_session(self, session_id: uuid.UUID):
+    async def _get_user_by_session(self, session_id: uuid.UUID) -> User | None:
+        if session_id in self._session_user_cache:
+            return self._session_user_cache[session_id]
         for channel in self._channels.values():
             users_storage = channel.get_users_storage()
             user = await users_storage.get_user_by_session(session_id)
             if user is not None:
+                self._session_user_cache[session_id] = user
+                self._user_channel_cache[user.id] = channel
                 return user
+        self._session_user_cache[session_id] = None
+        return None
 
-    async def _get_channel_for_user(self, user):
+    async def _get_channel_for_user(self, user_id: uuid.UUID) -> BaseChannel | None:
+        if user_id in self._user_channel_cache:
+            return self._user_channel_cache[user_id]
         for channel in self._channels.values():
             users_storage = channel.get_users_storage()
-            check_user = await users_storage.get_user(user.id)
+            check_user = await users_storage.get_user(user_id)
             if check_user is not None:
+                self._user_channel_cache[user_id] = channel
                 return channel
+        self._user_channel_cache[user_id] = None
+        return None

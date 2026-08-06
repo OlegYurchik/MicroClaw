@@ -1,6 +1,7 @@
 import contextvars
 import uuid
 from dataclasses import dataclass
+from typing import Any
 
 from microclaw.toolkits.accessors import (
     AllSessionsAccessor,
@@ -32,6 +33,9 @@ class ToolkitExecutionContext:
     all_skills: dict[str, DiscoveryInfo] | None = None
     all_agents: dict[str, DiscoveryInfo] | None = None
     all_mcp: dict[str, DiscoveryInfo] | None = None
+
+    # Channel agent settings for copy-on-first-write
+    channel_agent_settings: dict[str, Any] | None = None
 
 
 TOOLKIT_CONTEXT = contextvars.ContextVar("toolkit_context", default=None)

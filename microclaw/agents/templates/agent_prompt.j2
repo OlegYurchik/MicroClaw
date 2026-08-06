@@ -16,18 +16,6 @@ Description: {{ data.agent_identity.description }}
 {{ channel.description }}
 {%- endif %}
 
-{%- if data.mcps %}
-## MCP Servers
-You have access to Model Context Protocol (MCP) servers that provide additional tools and capabilities.
-
-{%- for server_name, mcp_info in data.mcps.items() %}
-### {{ mcp_info.name }}
-{% if mcp_info.description %}{{ mcp_info.description }}{% endif %}
-{%- endfor %}
-
-MCP tools are included in the tooling section below with appropriate prefixes.
-{%- endif %}
-
 ## Tooling
 Tool availability (filtered by policy):
 Tool names are case-sensitive. Call tools exactly as listed.

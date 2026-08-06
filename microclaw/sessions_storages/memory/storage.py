@@ -4,7 +4,7 @@ from typing import AsyncGenerator
 from pydantic_filters import BaseSort, SortByOrder
 from pydantic_filters.pagination import OffsetPagination as BasePagination
 
-from microclaw.dto import AgentMessage, Spending
+from microclaw.dto import AgentMessage, SessionMetadata, Spending
 from microclaw.sessions_storages.interfaces import SessionsStorageInterface
 from microclaw.sessions_storages.filters import SessionFilter, MessageFilter
 from .settings import MemorySessionsStorageSettings
@@ -46,10 +46,14 @@ class MemorySessionsStorage(SessionsStorageInterface):
         if not message.spending:
             return
 
-        if message.is_summary:
+        if message.role == "summary":
             self._context[session_id] = message.spending.output_tokens
+        elif message.context_tokens is not None:
+            self._context[session_id] = message.context_tokens
         else:
-            self._context[session_id] = message.spending.get_total_tokens()
+            self._context[session_id] = (
+                message.spending.input_tokens + message.spending.output_tokens
+            )
 
         if session_id in self._spendings:
             self._spendings[session_id] += message.spending
@@ -114,8 +118,6 @@ class MemorySessionsStorage(SessionsStorageInterface):
 
         if filter.role is not None:
             messages = [m for m in messages if m.role == filter.role]
-        if filter.is_summary is not None:
-            messages = [m for m in messages if m.is_summary == filter.is_summary]
 
         if sort is not None and sort.sort_by is not None:
             sort_field = sort.sort_by
@@ -123,8 +125,6 @@ class MemorySessionsStorage(SessionsStorageInterface):
 
             if sort_field == "role":
                 messages.sort(key=lambda m: m.role, reverse=reverse)
-            elif sort_field == "is_summary":
-                messages.sort(key=lambda m: m.is_summary, reverse=reverse)
 
         if pagination and pagination.limit is not None:
             page_offset = pagination.offset if pagination else 0
@@ -139,7 +139,7 @@ class MemorySessionsStorage(SessionsStorageInterface):
         if from_last_summarization:
             index = 0
             for i, message in enumerate(messages):
-                if message.is_summary:
+                if message.role == "summary":
                     index = i
         else:
             index = 0
@@ -152,3 +152,25 @@ class MemorySessionsStorage(SessionsStorageInterface):
 
     async def get_context_size(self, session_id: uuid.UUID) -> int:
         return self._context.get(session_id, 0)
+
+    async def get_session(self, session_id: uuid.UUID) -> SessionMetadata | None:
+        if session_id not in self._sessions:
+            return None
+
+        session = self._sessions[session_id]
+        return SessionMetadata(
+            id=session_id,
+            created_at=session.get("created_at"),
+            updated_at=session.get("updated_at"),
+            context_size=self._context.get(session_id, 0),
+            spending=self._spendings.get(session_id),
+        )
+
+    async def delete_session(self, session_id: uuid.UUID) -> None:
+        if session_id not in self._sessions:
+            return
+
+        self._sessions.pop(session_id, None)
+        self._messages.pop(session_id, None)
+        self._spendings.pop(session_id, None)
+        self._context.pop(session_id, None)

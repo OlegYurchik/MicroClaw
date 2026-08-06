@@ -1,5 +1,6 @@
 import pathlib
 import shutil
+import uuid
 from types import NoneType
 
 from loguru import logger
@@ -23,7 +24,7 @@ from .sessions_storages import (
     get_sessions_storage,
 )
 from .skills import SkillRepositoryGitHubSettings, SkillRepositoryLocalSettings
-from .toolkits import BaseToolKit, get_toolkit
+from .toolkits import BaseToolKit, ToolKitSettings, get_toolkit
 from .stt import STT, STTSettings
 from .syncers import SyncerInterface, get_syncer
 from .users_storages import (
@@ -104,6 +105,10 @@ class DependencyResolver:
             stt = get_by_key_or_first(
                 storage=await self.resolve_stts(), key=stt_key_or_settings
             )
+            if stt is None:
+                raise RuntimeError(
+                    f"Have no STT with name '{stt_key_or_settings}'"
+                )
         elif isinstance(stt_key_or_settings, STTSettings):
             stt = await self.resolve_stt(stt_settings=stt_key_or_settings)
         else:
@@ -153,7 +158,9 @@ class DependencyResolver:
                 )
         return self._agents
 
-    async def resolve_agent(self, agent_settings: AgentSettings) -> Agent:
+    async def resolve_agent(
+        self, agent_settings: AgentSettings, user_id: uuid.UUID | None = None
+    ) -> Agent:
         model_settings = agent_settings.model
         if isinstance(model_settings, (str, NoneType)):
             model_settings = get_by_key_or_first(
@@ -185,21 +192,15 @@ class DependencyResolver:
             agent_toolkits = toolkits
         else:
             for toolkit_settings in agent_settings.toolkits:
-                if toolkit_settings in toolkits:
-                    agent_toolkits[toolkit_settings] = toolkits[toolkit_settings]
-                    continue
-                if isinstance(toolkit_settings, str):
-                    toolkit_key = toolkit_settings
-                else:
-                    toolkit_key = toolkit_settings.name or toolkit_settings.path
-                agent_toolkits[toolkit_key] = get_toolkit(
-                    key=toolkit_key,
-                    toolkit_settings_or_path=toolkit_settings,
+                toolkit_key, toolkit = self._resolve_toolkit_reference(
+                    toolkit_settings=toolkit_settings,
+                    toolkits=toolkits,
                 )
+                agent_toolkits[toolkit_key] = toolkit
 
         mcps = self._settings.mcp
         if agent_settings.mcp is None:
-            mcps_settings = mcps.keys()
+            mcps_settings = list(mcps.keys())
         else:
             mcps_settings = agent_settings.mcp
         agent_mcps_settings = {}
@@ -218,7 +219,7 @@ class DependencyResolver:
             else:
                 raise ValueError(f"MCP with name '{mcp_settings_or_name}' not exists")
 
-        skill_paths = await self.resolve_skills(agent_settings)
+        skill_paths = await self.resolve_skills(agent_settings, user_id=user_id)
         syncer = await self.resolve_syncer()
 
         return Agent(
@@ -231,16 +232,23 @@ class DependencyResolver:
             skills=skill_paths,
         )
 
-    async def resolve_skills(self, agent_settings: AgentSettings) -> list[str]:
+    async def resolve_skills(
+        self, agent_settings: AgentSettings, user_id: uuid.UUID | None = None
+    ) -> list[str]:
         if not agent_settings.skills:
             return []
 
-        self._settings.skills_directory.mkdir(parents=True, exist_ok=True)
-        repo = skilly.SkillRepository(directory=self._settings.skills_directory)
+        skills_dir = self._settings.skills_directory
+        if user_id is not None:
+            skills_dir = skills_dir / str(user_id)
+        skills_dir.mkdir(parents=True, exist_ok=True)
+        repo = skilly.SkillRepository(directory=skills_dir)
 
         skill_paths = []
         for skill_item in agent_settings.skills:
-            skill_path = await self.resolve_skill(skill_item, repo=repo)
+            skill_path = await self.resolve_skill(
+                skill_item, repo=repo, skills_dir=skills_dir
+            )
             if skill_path:
                 skill_paths.append(skill_path)
         return skill_paths
@@ -249,10 +257,13 @@ class DependencyResolver:
         self,
         skill: SkillSettings | str,
         repo: skilly.SkillRepository | None = None,
+        skills_dir: pathlib.Path | None = None,
     ) -> str | None:
         skill = self._normalize_skill(skill)
+        if skills_dir is None:
+            skills_dir = self._settings.skills_directory
         if repo is None:
-            repo = skilly.SkillRepository(directory=self._settings.skills_directory)
+            repo = skilly.SkillRepository(directory=skills_dir)
 
         installed = repo.find(skill.name)
         if installed is not None:
@@ -270,7 +281,9 @@ class DependencyResolver:
                         discovered_skill.directory_name == skill.name
                         or discovered_skill.name == skill.name
                     ):
-                        installed = repo.install(discovered_skill, skill_name=skill.name)
+                        installed = repo.install(
+                            discovered_skill, skill_name=skill.name
+                        )
                         return str(installed.path)
 
             logger.warning("Skill '%s' not found in Skills Marketplace", skill.name)
@@ -312,7 +325,7 @@ class DependencyResolver:
                 )
                 return None
 
-            expected_path = self._settings.skills_directory / skill.name
+            expected_path = skills_dir / skill.name
             try:
                 shutil.copytree(str(src_path), str(expected_path))
             except FileExistsError:
@@ -399,6 +412,24 @@ class DependencyResolver:
                     key=toolkit_key,
                 )
         return self._toolkits
+
+    def _resolve_toolkit_reference(
+        self,
+        toolkit_settings: ToolKitSettings | str,
+        toolkits: dict[str, BaseToolKit],
+    ) -> tuple[str, BaseToolKit]:
+        if isinstance(toolkit_settings, str):
+            if toolkit_settings in toolkits:
+                return toolkit_settings, toolkits[toolkit_settings]
+            return toolkit_settings, get_toolkit(
+                key=toolkit_settings,
+                toolkit_settings_or_path=toolkit_settings,
+            )
+        toolkit_key = toolkit_settings.name or toolkit_settings.path
+        return toolkit_key, get_toolkit(
+            key=toolkit_key,
+            toolkit_settings_or_path=toolkit_settings,
+        )
 
     async def resolve_stts(self) -> dict[str, STT]:
         if self._stt is None:

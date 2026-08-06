@@ -4,7 +4,11 @@ import uuid
 from collections import defaultdict
 from typing import AsyncGenerator
 
-from microclaw.dto import CronTask, User, UserChannelID, UserRoleEnum
+from pydantic_filters import BaseSort, SortByOrder
+from pydantic_filters.pagination import OffsetPagination as BasePagination
+
+from microclaw.dto import CronTask, TokenInfo, User, UserChannelID, UserRoleEnum
+from microclaw.users_storages.filters import UserFilter
 from microclaw.users_storages.interfaces import UsersStorageInterface
 from microclaw.utils import Empty
 from .settings import MemoryUsersStorageSettings
@@ -21,8 +25,33 @@ class MemoryUsersStorage(UsersStorageInterface):
         self._user_crons: dict[uuid.UUID, list[CronTask]] = defaultdict(list)
         self._tokens: dict[str, tuple[uuid.UUID, datetime.datetime | None]] = {}
 
-    async def get_users(self) -> AsyncGenerator[User]:
-        for user in self._users.values():
+    async def get_users(
+        self,
+        filter: UserFilter | None = None,
+        pagination: BasePagination | None = None,
+        sort: BaseSort | None = None,
+    ) -> AsyncGenerator[User]:
+        users = list(self._users.values())
+
+        if filter is not None:
+            if filter.id is not None:
+                users = [u for u in users if u.id == filter.id]
+            if filter.role is not None:
+                users = [u for u in users if u.role == filter.role]
+
+        if sort is not None and sort.sort_by is not None:
+            reverse = sort.sort_by_order == SortByOrder.desc
+            if sort.sort_by == "id":
+                users.sort(reverse=reverse)
+            elif sort.sort_by == "role":
+                users.sort(key=lambda u: u.role.value, reverse=reverse)
+
+        if pagination and pagination.limit is not None:
+            offset = pagination.offset or 0
+            limit = pagination.limit
+            users = users[offset:offset + limit]
+
+        for user in users:
             yield user
 
     async def create_user(
@@ -34,7 +63,11 @@ class MemoryUsersStorage(UsersStorageInterface):
         if user_id is None:
             user_id = uuid.uuid4()
 
-        user = User(id=user_id, role=role)
+        agent = None
+        if agent_settings is not None:
+            agent = agent_settings.model_dump(mode="json")
+
+        user = User(id=user_id, role=role, agent=agent)
         self._users[user_id] = user
         return user
 
@@ -54,7 +87,10 @@ class MemoryUsersStorage(UsersStorageInterface):
         if not isinstance(role, Empty):
             user.role = role
         if not isinstance(agent_settings, Empty):
-            user.agent = agent_settings
+            if hasattr(agent_settings, "model_dump"):
+                user.agent = agent_settings.model_dump(mode="json")
+            else:
+                user.agent = agent_settings
 
         return user
 
@@ -103,7 +139,9 @@ class MemoryUsersStorage(UsersStorageInterface):
     async def get_user_by_token(self, token: str) -> User | None:
         token_data = self._tokens.get(token)
         if token_data:
-            user_id, _ = token_data
+            user_id, expires_at = token_data
+            if expires_at is not None and expires_at < datetime.datetime.now(datetime.timezone.utc):
+                return None
             return self._users.get(user_id)
         return None
 
@@ -121,6 +159,20 @@ class MemoryUsersStorage(UsersStorageInterface):
         if sessions:
             return sessions[-1]
         return None
+
+    async def get_user_sessions(
+        self,
+        user_id: uuid.UUID,
+        channel_key: str,
+        channel_internal_id: str,
+    ) -> list[uuid.UUID]:
+        user_channel_id = UserChannelID(
+            channel_key=channel_key,
+            channel_internal_id=channel_internal_id,
+        )
+        if self._channels_users.get(user_channel_id) != user_id:
+            return []
+        return self._channel_sessions.get(user_channel_id, []).copy()
 
     async def attach_session_to_user(
         self,
@@ -156,7 +208,7 @@ class MemoryUsersStorage(UsersStorageInterface):
         self,
         user_id: uuid.UUID,
         ttl: datetime.timedelta | None = datetime.timedelta(days=30),
-    ) -> str:
+    ) -> TokenInfo:
         expires_at = None
         if ttl is not None:
             expires_at = datetime.datetime.now(datetime.timezone.utc) + ttl
@@ -167,7 +219,14 @@ class MemoryUsersStorage(UsersStorageInterface):
                 break
 
         self._tokens[token] = (user_id, expires_at)
-        return token
+        return TokenInfo(token=token, expires_at=expires_at)
 
     async def delete_token(self, token: str) -> None:
         self._tokens.pop(token, None)
+
+    async def get_tokens(self, user_id: uuid.UUID) -> list[str]:
+        return [
+            token
+            for token, (uid, _) in self._tokens.items()
+            if uid == user_id
+        ]

@@ -7,7 +7,11 @@ from typing import AsyncGenerator
 
 import aiofiles
 
-from microclaw.dto import CronTask, User, UserRoleEnum
+from pydantic_filters import BaseSort, SortByOrder
+from pydantic_filters.pagination import OffsetPagination as BasePagination
+
+from microclaw.dto import CronTask, TokenInfo, User, UserRoleEnum
+from microclaw.users_storages.filters import UserFilter
 from microclaw.users_storages.interfaces import UsersStorageInterface
 from microclaw.utils import Empty
 from .dto import TokenData, UserChannelData, UserData
@@ -22,15 +26,42 @@ class FilesystemUsersStorage(UsersStorageInterface):
 
         self._settings.path.mkdir(parents=True, exist_ok=True)
 
-    async def get_users(self) -> AsyncGenerator[User]:
+    async def get_users(
+        self,
+        filter: UserFilter | None = None,
+        pagination: BasePagination | None = None,
+        sort: BaseSort | None = None,
+    ) -> AsyncGenerator[User]:
+        users: list[User] = []
         for user_file in self._settings.path.glob("user_*.json"):
             try:
                 async with aiofiles.open(user_file, mode="r", encoding="utf-8") as f:
                     content = await f.read()
                 user_data = UserData.model_validate_json(content)
-                yield user_data.to_user()
+                users.append(user_data.to_user())
             except Exception:
                 continue
+
+        if filter is not None:
+            if filter.id is not None:
+                users = [u for u in users if u.id == filter.id]
+            if filter.role is not None:
+                users = [u for u in users if u.role == filter.role]
+
+        if sort is not None and sort.sort_by is not None:
+            reverse = sort.sort_by_order == SortByOrder.desc
+            if sort.sort_by == "id":
+                users.sort(reverse=reverse)
+            elif sort.sort_by == "role":
+                users.sort(key=lambda u: u.role.value, reverse=reverse)
+
+        if pagination and pagination.limit is not None:
+            offset = pagination.offset or 0
+            limit = pagination.limit
+            users = users[offset:offset + limit]
+
+        for user in users:
+            yield user
 
     async def create_user(
         self,
@@ -44,7 +75,7 @@ class FilesystemUsersStorage(UsersStorageInterface):
         user = User(
             id=user_id,
             role=role,
-            agent=agent_settings.model_dump() if agent_settings else None,
+            agent=agent_settings.model_dump(mode="json") if agent_settings else None,
         )
         await self._write_user(user=user)
         return user
@@ -70,9 +101,10 @@ class FilesystemUsersStorage(UsersStorageInterface):
             if not isinstance(role, Empty):
                 user_data.role = role
             if not isinstance(agent_settings, Empty):
-                user_data.agent = (
-                    agent_settings.model_dump() if agent_settings else None
-                )
+                if hasattr(agent_settings, "model_dump"):
+                    user_data.agent = agent_settings.model_dump(mode="json")
+                else:
+                    user_data.agent = agent_settings
 
             await self._write_user_data(user_data=user_data)
             return user_data.to_user()
@@ -208,6 +240,8 @@ class FilesystemUsersStorage(UsersStorageInterface):
     async def get_user_by_token(self, token: str) -> User | None:
         token_data = await self._read_token(token=token)
         if token_data:
+            if token_data.expires_at is not None and token_data.expires_at < datetime.datetime.now(datetime.timezone.utc):
+                return None
             user_data = await self._read_user_data(user_id=token_data.user_id)
             if user_data:
                 return user_data.to_user()
@@ -339,7 +373,7 @@ class FilesystemUsersStorage(UsersStorageInterface):
         self,
         user_id: uuid.UUID,
         ttl: datetime.timedelta | None = datetime.timedelta(days=30),
-    ) -> str:
+    ) -> TokenInfo:
         expires_at = None
         if ttl is not None:
             expires_at = datetime.datetime.now(datetime.timezone.utc) + ttl
@@ -352,12 +386,25 @@ class FilesystemUsersStorage(UsersStorageInterface):
 
         token_data = TokenData(token=token, user_id=user_id, expires_at=expires_at)
         await self._write_token(token_data=token_data)
-        return token
+        return TokenInfo(token=token, expires_at=expires_at)
 
     async def delete_token(self, token: str) -> None:
         token_file = self._get_token_file_path(token)
         if token_file.exists():
             token_file.unlink()
+
+    async def get_tokens(self, user_id: uuid.UUID) -> list[str]:
+        tokens = []
+        for token_file in self._settings.path.glob("token_*.json"):
+            try:
+                async with aiofiles.open(token_file, mode="r", encoding="utf-8") as f:
+                    content = await f.read()
+                token_data = TokenData.model_validate_json(content)
+                if token_data.user_id == user_id:
+                    tokens.append(token_data.token)
+            except Exception:
+                continue
+        return tokens
 
     async def _read_token(self, token: str) -> TokenData | None:
         token_file = self._get_token_file_path(token)

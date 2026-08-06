@@ -4,7 +4,7 @@ from typing import AsyncGenerator
 from pydantic_filters import BaseSort
 from pydantic_filters.pagination import OffsetPagination as BasePagination
 
-from microclaw.dto import AgentMessage, Spending
+from microclaw.dto import AgentMessage, SessionMetadata, Spending
 from microclaw.sessions_storages.interfaces import SessionsStorageInterface
 from microclaw.sessions_storages.filters import SessionFilter, MessageFilter
 
@@ -47,10 +47,14 @@ class DatabaseSessionsStorage(SessionsStorageInterface):
 
             context_size = session.context
             if message.spending:
-                if message.is_summary:
+                if message.role == "summary":
                     context_size = message.spending.output_tokens
+                elif message.context_tokens is not None:
+                    context_size = message.context_tokens
                 else:
-                    context_size = message.spending.get_total_tokens()
+                    context_size = (
+                        message.spending.input_tokens + message.spending.output_tokens
+                    )
 
             spending_dict = None
             if message.spending:
@@ -83,7 +87,7 @@ class DatabaseSessionsStorage(SessionsStorageInterface):
         if from_last_summarization:
             index = 0
             for i, message in enumerate(messages):
-                if message.is_summary:
+                if message.role == "summary":
                     index = i
             messages = messages[index:]
 
@@ -116,3 +120,20 @@ class DatabaseSessionsStorage(SessionsStorageInterface):
             sort=sort,
         ):
             yield session_id
+
+    async def get_session(self, session_id: uuid.UUID) -> SessionMetadata | None:
+        async with self._sessions_repository.transaction():
+            session = await self._sessions_repository.get_session(session_id)
+
+        if session is None:
+            return None
+        return SessionMetadata(
+            id=session.id,
+            created_at=session.created_at,
+            updated_at=session.updated_at,
+            context_size=session.context_size,
+            spending=Spending(**session.spending) if session.spending else None,
+        )
+
+    async def delete_session(self, session_id: uuid.UUID) -> None:
+        raise NotImplementedError

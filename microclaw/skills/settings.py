@@ -7,7 +7,6 @@ from .enums import SkillRepositoryTypeEnum
 from .types import SkillNameType
 
 
-
 class SkillRepositoryBaseSettings(BaseModel):
     type: SkillRepositoryTypeEnum
 
@@ -23,8 +22,7 @@ class SkillRepositoryGitHubSettings(SkillRepositoryBaseSettings):
 
 
 SkillRepositorySettingsType = (
-    SkillRepositoryLocalSettings |
-    SkillRepositoryGitHubSettings
+    SkillRepositoryLocalSettings | SkillRepositoryGitHubSettings
 )
 
 

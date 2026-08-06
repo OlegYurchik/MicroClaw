@@ -50,7 +50,6 @@ class MessageTable(BaseTable, table=True):
     text: str | None = Field(default=None, sa_column=Column(Text))
     chunked_message_id: str | None = Field(default=None)
     spending: dict | None = Field(default=None, sa_column=Column(JSON))
-    is_summary: bool = Field(default=False)
     audio: bytes | None = Field(default=None)
     audio_format: str | None = Field(default=None)
 
@@ -64,7 +63,6 @@ class MessageTable(BaseTable, table=True):
             text=item.text,
             chunked_message_id=item.chunked_message_id,
             spending=item.spending.model_dump() if item.spending else None,
-            is_summary=item.is_summary,
             audio=item.audio,
             audio_format=item.audio_format,
         )
@@ -75,7 +73,6 @@ class MessageTable(BaseTable, table=True):
             text=self.text,
             chunked_message_id=self.chunked_message_id,
             spending=Spending(**self.spending) if self.spending else None,
-            is_summary=self.is_summary,
             audio=self.audio,
             audio_format=self.audio_format,
         )

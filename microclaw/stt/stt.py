@@ -2,6 +2,7 @@ import pathlib
 from io import BytesIO
 from typing import Self
 
+import aiofiles
 from openai import AsyncOpenAI
 
 from microclaw.agents.settings import ModelSettings, ProviderSettings, APITypeEnum
@@ -44,12 +45,13 @@ class STT:
         if not path.exists():
             raise FileNotFoundError(f"Audio file not found: {audio_path}")
 
-        with path.open("rb") as audio_file:
-            response = await self._client.audio.transcriptions.create(
-                model=self._model_settings.id,
-                file=audio_file,
-                language=self._settings.language,
-            )
+        async with aiofiles.open(path, "rb") as audio_file:
+            audio_data = await audio_file.read()
+        response = await self._client.audio.transcriptions.create(
+            model=self._model_settings.id,
+            file=BytesIO(audio_data),
+            language=self._settings.language,
+        )
 
         audio_input_seconds = 0
         if response.usage and response.usage.type == "duration":

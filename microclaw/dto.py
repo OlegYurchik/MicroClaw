@@ -1,4 +1,5 @@
 import base64
+import datetime
 import enum
 import uuid
 from typing import Any, Self
@@ -93,7 +94,7 @@ class AgentMessage(BaseModel):
     text: str | None = None
     chunked_message_id: str | None = None
     spending: Spending | None = None
-    is_summary: bool = False
+    context_tokens: int | None = None
     audio: bytes | None = None
     audio_format: str | None = None
 
@@ -111,6 +112,14 @@ class AgentMessage(BaseModel):
         if value is None:
             return None
         return base64.b64encode(value).decode("utf-8")
+
+
+class SessionMetadata(BaseModel):
+    id: uuid.UUID
+    created_at: datetime.datetime | None = None
+    updated_at: datetime.datetime | None = None
+    context_size: int = 0
+    spending: Spending | None = None
 
 
 class UserRoleEnum(str, enum.Enum):
@@ -135,3 +144,8 @@ class CronTask(BaseModel):
     cron: str
     enabled: bool = True
     args: dict[str, Any] = Field(default_factory=dict)
+
+
+class TokenInfo(BaseModel):
+    token: str
+    expires_at: datetime.datetime | None = None

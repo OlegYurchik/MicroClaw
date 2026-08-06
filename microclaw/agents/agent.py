@@ -8,6 +8,7 @@ from typing import Any, AsyncGenerator, Sequence
 
 import deepagents.graph
 import tiktoken
+from deepagents import create_deep_agent
 from evolution_langchain import EvolutionInference
 from jinja2 import Template
 from langchain_core.messages import (
@@ -20,7 +21,6 @@ from langchain_mcp_adapters.client import MultiServerMCPClient
 from langchain_openai import ChatOpenAI
 from langchain_ollama import ChatOllama
 from langchain_core.runnables import RunnableLambda
-from deepagents import create_deep_agent
 from langchain.agents.middleware import wrap_tool_call, wrap_model_call
 from langchain.agents.middleware import (
     ModelCallLimitMiddleware,
@@ -47,6 +47,10 @@ from microclaw.agents.settings import (
 )
 from microclaw.dto import AgentMessage, DecisionEnum, InterruptEntry, Spending
 from microclaw.syncers import SyncerInterface
+from microclaw.utils.context import (
+    get_current_request_id,
+    get_current_session_id,
+)
 from microclaw.toolkits import BaseToolKit
 from microclaw.toolkits.memory import MemoryToolKit
 from .checkpointer import SyncerCheckpointer
@@ -55,7 +59,6 @@ from .dto import (
     SummaryMemoryValues,
     AgentPromptValues,
     SystemValues,
-    MCPInfo,
 )
 
 
@@ -77,6 +80,10 @@ def _patched_summarization_middleware():
 
 class Agent:
     TEMPLATES_DIR = pathlib.Path(__file__).parent / "templates"
+    RECURSION_LIMIT = 1000
+    TOOL_OUTPUT_TRUNCATION_RATIO = 2
+
+    _template_cache: dict[str, Template] = {}
 
     def __init__(
         self,
@@ -176,14 +183,24 @@ class Agent:
 
             try:
                 last_text: str | None = None
+                total_spending: Spending | None = None
                 async for msg in self.ask(agent_messages, stream=False):
+                    if msg.spending:
+                        if total_spending is None:
+                            total_spending = msg.spending
+                        else:
+                            total_spending += msg.spending
                     if msg.role == "assistant" and msg.text:
                         last_text = msg.text
                 final_text = last_text or ""
             except Exception as exc:
+                logger.opt(exception=True).error("Subagent {} failed", self.name)
                 final_text = f"Subagent error: {exc}"
 
-            return {"messages": [AIMessage(content=final_text)]}
+            result: dict[str, Any] = {"messages": [AIMessage(content=final_text)]}
+            if total_spending is not None:
+                result["spending"] = total_spending.model_dump(mode="json")
+            return result
 
         return {
             "name": self.name,
@@ -191,8 +208,8 @@ class Agent:
             "runnable": RunnableLambda(_runnable),
         }
 
-    def set_subagents(self, subagents: list["Agent"]):
-        self._subagents = subagents.copy()
+    def set_subagents(self, subagents: list["Agent"] | None):
+        self._subagents = subagents.copy() if subagents else []
 
     def get_client(self):
         api_type = self._model_settings.api_type or self._provider_settings.api_type
@@ -246,10 +263,8 @@ class Agent:
         channel: "BaseChannel | None" = None,  # noqa: F821
         stream: bool = False,
     ) -> AsyncGenerator[AgentMessage, None]:
-        from microclaw.channels import BaseChannel
-
-        session_id = BaseChannel.get_current_session_id()
-        request_id = BaseChannel.get_current_request_id()
+        session_id = get_current_session_id()
+        request_id = get_current_request_id()
         bound_logger = logger.bind(request_id=request_id, session_id=session_id)
         langchain_messages: list[BaseMessage] = self._convert_to_langchain_messages(
             messages
@@ -268,22 +283,24 @@ class Agent:
         agent = await self._create_agent(
             channel=channel,
             system_prompt=system_prompt,
+            bound_logger=bound_logger,
         )
 
         config = {
-            "recursion_limit": 1000,
+            "recursion_limit": self.RECURSION_LIMIT,
             "configurable": {"thread_id": str(session_id or "")},
         }
 
-        events_generator = agent.astream_events(
+        events_generator = self._process_astream(
+            agent,
             {"messages": langchain_messages},
-            config=config,
-            version="v2",
+            config,
+            bound_logger,
+            stream,
+            initial_messages=messages,
         )
 
-        async for msg in self._process_events(
-            events_generator, bound_logger, stream, messages=messages
-        ):
+        async for msg in events_generator:
             yield msg
 
         bound_logger.info("Agent ask finished")
@@ -295,9 +312,7 @@ class Agent:
         new_messages: Sequence[AgentMessage] = (),
         channel: "BaseChannel | None" = None,  # noqa: F821
     ) -> AsyncGenerator[AgentMessage, None]:
-        from microclaw.channels import BaseChannel
-
-        request_id = BaseChannel.get_current_request_id()
+        request_id = get_current_request_id()
         bound_logger = logger.bind(request_id=request_id, session_id=session_id)
         bound_logger.info(
             "Agent resume_after_confirmation started",
@@ -308,10 +323,11 @@ class Agent:
         agent = await self._create_agent(
             channel=channel,
             system_prompt=system_prompt,
+            bound_logger=bound_logger,
         )
 
         config = {
-            "recursion_limit": 1000,
+            "recursion_limit": self.RECURSION_LIMIT,
             "configurable": {"thread_id": str(session_id)},
         }
 
@@ -321,43 +337,57 @@ class Agent:
             update={"messages": langchain_messages},
         )
 
-        events_generator = agent.astream_events(
+        events_generator = self._process_astream(
+            agent,
             input_data,
-            config=config,
-            version="v2",
+            config,
+            bound_logger,
+            stream=False,
+            initial_messages=new_messages,
         )
 
-        async for msg in self._process_events(
-            events_generator, bound_logger, stream=False, messages=new_messages
-        ):
+        async for msg in events_generator:
             yield msg
 
     async def has_pending_interrupt(self, session_id: uuid.UUID) -> bool:
         config = {
-            "recursion_limit": 1000,
             "configurable": {"thread_id": str(session_id)},
         }
-        system_prompt = await self._get_agent_prompt(channel=None)
-        agent = await self._create_agent(
-            channel=None,
-            system_prompt=system_prompt,
-        )
         try:
-            snapshot = await agent.aget_state(config)
-            return bool(snapshot.interrupts)
+            checkpoint = await self._checkpointer.aget_tuple(config)
         except (KeyError, ValueError, TypeError):
             return False
+        if checkpoint is None or not checkpoint.pending_writes:
+            return False
+        return any(
+            channel == "__interrupt__"
+            for _task_id, channel, _value in checkpoint.pending_writes
+        )
 
     async def _create_agent(
         self,
         channel: "BaseChannel | None",  # noqa: F821
         system_prompt: str,
+        bound_logger=logger,
     ):
         mcp_tools = []
-        try:
-            mcp_tools = list(await self._mcp.get_tools())
-        except Exception as exception:
-            logger.warning(f"Cannot load MCP tools: {exception}")
+        for server_name in self._mcp.connections:
+            try:
+                server_tools = list(
+                    await self._mcp.get_tools(server_name=server_name)
+                )
+                mcp_tools.extend(server_tools)
+                bound_logger.info(
+                    "Loaded {} MCP tools from {}",
+                    len(server_tools),
+                    server_name,
+                )
+            except Exception as exception:
+                bound_logger.warning(
+                    "Cannot load MCP tools from {}: {}",
+                    server_name,
+                    exception,
+                )
 
         tools = list(self._tools) + mcp_tools
         if channel is not None:
@@ -398,57 +428,73 @@ class Agent:
 
         return agent
 
-    async def _process_events(
+    async def _process_astream(
         self,
-        events_generator,
+        agent,
+        input_data: dict | Command,
+        config: dict,
         bound_logger,
         stream: bool,
-        messages: list[AgentMessage] | None = None,
+        initial_messages: list[AgentMessage] | None = None,
     ) -> AsyncGenerator[AgentMessage, None]:
-        from microclaw.channels import BaseChannel
-
-        session_id = BaseChannel.get_current_session_id()
+        session_id = get_current_session_id()
         spending = self._get_empty_spending()
         accumulated_message: AgentMessage | None = None
         current_chunked_message_id: str | None = None
 
-        async for event in events_generator:
-            event_type = event["event"]
-            match event_type:
-                case "on_chat_model_start":
-                    current_chunked_message_id = str(uuid.uuid4())
-                    accumulated_message = AgentMessage(
-                        role="assistant",
-                        chunked_message_id=current_chunked_message_id,
-                    )
-                    spending = self._get_empty_spending()
-                    if messages:
-                        spending.input_tokens += sum(
-                            self._get_tokens_count(text=message.text)
-                            for message in messages
-                            if message.text
-                        )
-                case "on_chat_model_stream":
-                    chunk = event["data"]["chunk"]
-                    text = self._convert_content_to_text(chunk.content)
+        async for namespace, stream_mode, chunk in agent.astream(
+            input_data,
+            config=config,
+            stream_mode=["messages", "updates"],
+            subgraphs=True,
+        ):
+            if namespace:
+                continue
+
+            match stream_mode:
+                case "messages":
+                    msg_chunk, metadata = chunk
+                    if not hasattr(msg_chunk, "content") or not msg_chunk.content:
+                        continue
+
+                    chunk_role = self._detect_chunk_role(msg_chunk)
+
+                    if chunk_role == "tool":
+                        continue
+
+                    text = self._convert_content_to_text(msg_chunk.content)
                     if not text:
                         continue
-                    spending.output_tokens += self._get_tokens_count(text=text)
-                    message = AgentMessage(
-                        role="assistant",
-                        text=text,
-                        chunked_message_id=current_chunked_message_id,
-                    )
+
+                    if accumulated_message is None:
+                        current_chunked_message_id = str(uuid.uuid4())
+                        accumulated_message = AgentMessage(
+                            role="assistant",
+                            chunked_message_id=current_chunked_message_id,
+                            text="",
+                        )
+                        if initial_messages:
+                            spending.input_tokens += sum(
+                                self._get_tokens_count(m.text)
+                                for m in initial_messages
+                                if m.text
+                            )
+
+                    accumulated_message.text += text
+                    spending.output_tokens += self._get_tokens_count(text)
+
                     if stream:
-                        yield message
-                    else:
-                        accumulated_message.text = (
-                            accumulated_message.text or ""
-                        ) + message.text
-                case "on_chain_stream":
-                    chunk = event["data"].get("chunk", {})
-                    if isinstance(chunk, dict) and "__interrupt__" in chunk:
-                        interrupts = chunk["__interrupt__"]
+                        yield AgentMessage(
+                            role="assistant",
+                            text=text,
+                            chunked_message_id=current_chunked_message_id,
+                        )
+
+                case "updates":
+                    update_data = chunk
+
+                    if "__interrupt__" in update_data:
+                        interrupts = update_data["__interrupt__"]
                         entries = []
                         for intr in interrupts:
                             val = intr.value
@@ -468,91 +514,97 @@ class Agent:
                         yield AgentMessage(
                             role="request_confirmation",
                             text=json.dumps(
-                                [entry.model_dump() for entry in entries], default=str
+                                [e.model_dump() for e in entries], default=str
                             ),
                         )
                         return
-                case "on_chat_model_end":
-                    output = event["data"]["output"]
-                    if False and (
-                        usage_metadata := getattr(output, "usage_metadata", None)
-                    ):
-                        spending.input_tokens = usage_metadata.get(
-                            "input_tokens", spending.input_tokens
+
+                    for node_name, node_data in update_data.items():
+                        if (
+                            not isinstance(node_data, dict)
+                            or "messages" not in node_data
+                        ):
+                            continue
+                        subagent_spending = self._extract_subagent_spending(
+                            node_data
                         )
-                        spending.output_tokens = usage_metadata.get(
-                            "output_tokens", spending.output_tokens
-                        )
-                        spending.cache_read_tokens = usage_metadata.get(
-                            "cache_read_tokens", spending.cache_read_tokens
-                        )
-                        spending.cache_write_tokens = usage_metadata.get(
-                            "cache_write_tokens", spending.cache_write_tokens
-                        )
-                    elif (
-                        False
-                        and (
-                            response_metadata := getattr(
-                                output, "response_metadata", None
-                            )
-                        )
-                        and (token_usage := response_metadata.get("token_usage"))
-                    ):
-                        spending.input_tokens = token_usage.get("prompt_tokens", 0)
-                        spending.output_tokens = token_usage.get("completion_tokens", 0)
-                    else:
-                        text = self._convert_content_to_text(output.content)
-                        if text is not None:
-                            spending.output_tokens = self._get_tokens_count(text)
-                    if self._model_settings.costs is not None:
-                        spending.calculate_cost(model_costs=self._model_settings.costs)
+                        if subagent_spending is not None:
+                            spending += subagent_spending
+                        for msg in node_data["messages"]:
+                            if getattr(msg, "type", None) == "tool":
+                                tool_content = (
+                                    self._convert_content_to_text(msg.content) or ""
+                                )
+                                compact = self._compact_tool_output(tool_content)
+                                is_error = getattr(msg, "status", None) == "error"
+                                tool_name = getattr(msg, "name", "unknown")
+                                if is_error:
+                                    yield AgentMessage(
+                                        role="tool",
+                                        text=json.dumps(
+                                            {
+                                                "type": "error",
+                                                "name": tool_name,
+                                                "error": compact,
+                                            },
+                                            ensure_ascii=False,
+                                        ),
+                                    )
+                                else:
+                                    yield AgentMessage(
+                                        role="tool",
+                                        text=json.dumps(
+                                            {
+                                                "type": "output",
+                                                "name": tool_name,
+                                                "content": compact,
+                                            },
+                                            ensure_ascii=False,
+                                        ),
+                                    )
+                            elif (
+                                getattr(msg, "type", None) == "ai"
+                                and hasattr(msg, "tool_calls")
+                                and msg.tool_calls
+                            ):
+                                for tc in msg.tool_calls:
+                                    yield AgentMessage(
+                                        role="tool",
+                                        text=json.dumps(
+                                            {
+                                                "type": "input",
+                                                "name": tc.get("name", "unknown"),
+                                                "args": tc.get("args", {}),
+                                            },
+                                            ensure_ascii=False,
+                                            default=str,
+                                        ),
+                                    )
+
                     if not stream and accumulated_message:
                         yield accumulated_message
                         accumulated_message = None
 
-                    yield AgentMessage(
-                        role="assistant",
-                        spending=spending,
-                    )
-                    spending = self._get_empty_spending()
-                case "on_tool_start":
-                    tool_name = event["name"]
-                    bound_logger.info("Tool call started", tool=tool_name)
-                    tool_input = event["data"].get("input", {})
-                    compact_input = self._compact_tool_output(tool_input)
-                    text = f"Tool name: {tool_name};\nTool input: {compact_input}"
-                    spending.input_tokens += self._get_tokens_count(text=text)
+        if (
+            accumulated_message is None
+            and spending.input_tokens
+            and not spending.output_tokens
+        ):
+            logger.warning(
+                "Model returned no content after processing "
+                f"(input_tokens={spending.input_tokens}). "
+                "This may be a thinking-only response."
+            )
 
-                    yield AgentMessage(
-                        role="tool",
-                        text=text,
-                    )
-                case "on_tool_end":
-                    tool_name = event["name"]
-                    bound_logger.info("Tool call finished", tool=tool_name)
-                    tool_output = event["data"].get("output")
-                    compact_output = self._compact_tool_output(tool_output)
-                    text = f"Tool name: {tool_name};\nTool output: {compact_output}"
-                    spending.input_tokens += self._get_tokens_count(text=text)
+        if self._model_settings.costs:
+            spending.calculate_cost(model_costs=self._model_settings.costs)
 
-                    yield AgentMessage(
-                        role="tool",
-                        text=text,
-                    )
-                case "on_tool_error":
-                    tool_name = event["name"]
-                    bound_logger.error("Tool call error", tool=tool_name)
-                    error_data = event["data"]
-                    error_message = self._compact_tool_output(
-                        error_data.get("error", "Unknown error")
-                    )
-                    text = f"Tool name: {tool_name};\nError: {error_message}"
-                    spending.input_tokens += self._get_tokens_count(text=text)
-
-                    yield AgentMessage(
-                        role="tool",
-                        text=text,
-                    )
+        if spending.input_tokens or spending.output_tokens:
+            yield AgentMessage(
+                role="assistant",
+                spending=spending,
+                context_tokens=spending.input_tokens + spending.output_tokens or None,
+            )
 
     async def summarize_memory(
         self,
@@ -582,9 +634,8 @@ class Agent:
             spending.calculate_cost(model_costs=self._model_settings.costs)
 
         return AgentMessage(
-            role="system",
+            role="summary",
             text=response.content,
-            is_summary=True,
             spending=spending,
         )
 
@@ -595,9 +646,8 @@ class Agent:
     ) -> AgentMessage:
         if not messages:
             return AgentMessage(
-                role="system",
+                role="summary",
                 text="Dialog is empty",
-                is_summary=True,
             )
 
         summary_prompt = self._get_summary_dialogue_prompt(
@@ -620,9 +670,8 @@ class Agent:
             spending.calculate_cost(model_costs=self._model_settings.costs)
 
         return AgentMessage(
-            role="system",
-            text=(f"Summary of the previous dialogue:\n{response.content}"),
-            is_summary=True,
+            role="summary",
+            text=f"Summary of the previous dialogue:\n{response.content}",
             spending=spending,
         )
 
@@ -696,6 +745,16 @@ class Agent:
                 if content_part.get("type") == "text"
             )
 
+    def _detect_chunk_role(self, msg_chunk) -> str:
+        if (
+            getattr(msg_chunk, "type", None) == "tool"
+            or (hasattr(msg_chunk, "tool_calls") and msg_chunk.tool_calls)
+            or (hasattr(msg_chunk, "tool_call_chunks") and msg_chunk.tool_call_chunks)
+        ):
+            return "tool"
+
+        return "assistant"
+
     def _get_tokens_count(self, text: str) -> int:
         if len(text) == 0:
             return 0
@@ -711,9 +770,7 @@ class Agent:
         self,
         channel: "BaseChannel | None" = None,  # noqa: F821
     ) -> str:
-        template_path = self.TEMPLATES_DIR / "agent_prompt.j2"
-        template_content = template_path.read_text()
-        template = Template(template_content)
+        template = self._get_cached_template("agent_prompt.j2")
 
         toolkits = dict(self._toolkits)
         tools = list(self._tools)
@@ -722,13 +779,6 @@ class Agent:
             if channel_toolkit is not None:
                 toolkits["channel"] = channel_toolkit
                 tools.extend(channel_toolkit.get_tools())
-
-        mcps = {}
-        for server_name, mcp_setting in self._mcp_settings.items():
-            mcps[server_name] = MCPInfo(
-                name=server_name,
-                description=mcp_setting.description,
-            )
 
         memories = await self._get_memory_context()
         agent_prompt_values = AgentPromptValues(
@@ -739,13 +789,12 @@ class Agent:
             tools=tools,
             channel=channel,
             memories=memories,
-            mcps=mcps,
         )
 
         prompt = template.render(data=agent_prompt_values)
         return prompt
 
-    async def _get_memory_context(self) -> dict[str, str]:
+    async def _get_memory_context(self) -> dict[str, str] | None:
         memory_toolkit = self._toolkits.get("memory")
         if not memory_toolkit or not hasattr(memory_toolkit, "get_memory"):
             return None
@@ -774,13 +823,12 @@ class Agent:
         max_tokens: int = 300,
         is_daily: bool = False,
     ) -> str:
-        template_path = (
-            self.TEMPLATES_DIR / "summarize_memory_daily_prompt.j2"
+        template_name = (
+            "summarize_memory_daily_prompt.j2"
             if is_daily
-            else self.TEMPLATES_DIR / "summarize_memory_prompt.j2"
+            else "summarize_memory_prompt.j2"
         )
-        template_content = template_path.read_text()
-        template = Template(template_content)
+        template = self._get_cached_template(template_name)
 
         data = SummaryMemoryValues(
             old_context=old_context,
@@ -796,9 +844,7 @@ class Agent:
         messages: list[AgentMessage],
         max_tokens: int = 300,
     ) -> str:
-        template_path = self.TEMPLATES_DIR / "summarize_dialogue_prompt.j2"
-        template_content = template_path.read_text()
-        template = Template(template_content)
+        template = self._get_cached_template("summarize_dialogue_prompt.j2")
 
         context = "\n".join(
             f"{message.role}: {message.text}"
@@ -819,13 +865,12 @@ class Agent:
         max_tokens: int = 300,
         is_daily: bool = False,
     ) -> str:
-        template_path = (
-            self.TEMPLATES_DIR / "extract_dialogue_info_daily_prompt.j2"
+        template_name = (
+            "extract_dialogue_info_daily_prompt.j2"
             if is_daily
-            else self.TEMPLATES_DIR / "extract_dialogue_info_prompt.j2"
+            else "extract_dialogue_info_prompt.j2"
         )
-        template_content = template_path.read_text()
-        template = Template(template_content)
+        template = self._get_cached_template(template_name)
 
         context = "\n".join(
             f"{message.role}: {message.text}"
@@ -839,6 +884,13 @@ class Agent:
 
         prompt = template.render(data=data)
         return prompt
+
+    @classmethod
+    def _get_cached_template(cls, name: str) -> Template:
+        if name not in cls._template_cache:
+            template_path = cls.TEMPLATES_DIR / name
+            cls._template_cache[name] = Template(template_path.read_text())
+        return cls._template_cache[name]
 
     def _get_empty_spending(self) -> Spending:
         return Spending(
@@ -867,32 +919,31 @@ class Agent:
             return text
 
         separator = f"\n\n...[truncated, {len(text)} chars total]...\n\n"
-        half = max((max_len - len(separator)) // 2, 0)
+        half = max(
+            (max_len - len(separator)) // self.TOOL_OUTPUT_TRUNCATION_RATIO, 0
+        )
         return text[:half] + separator + text[-half:]
 
     def _extract_subagent_spending(self, tool_output: Any) -> Spending | None:
-        if not isinstance(tool_output, list):
+        spending_data = None
+
+        if isinstance(tool_output, dict):
+            spending_data = tool_output.get("spending")
+        elif isinstance(tool_output, list):
+            for message in tool_output:
+                if isinstance(message, dict):
+                    sd = message.get("spending")
+                    if sd:
+                        spending_data = sd
+                        break
+
+        if not isinstance(spending_data, dict):
             return None
 
-        total_spending = None
-        for message in tool_output:
-            if not isinstance(message, dict):
-                continue
-
-            spending_data = message.get("spending")
-            if not spending_data:
-                continue
-
-            try:
-                message_spending = Spending(**spending_data)
-                if total_spending is None:
-                    total_spending = message_spending
-                else:
-                    total_spending += message_spending
-            except (TypeError, ValueError):
-                continue
-
-        return total_spending
+        try:
+            return Spending(**spending_data)
+        except (TypeError, ValueError):
+            return None
 
     def _convert_to_langchain_messages(
         self, messages: Sequence[AgentMessage]
@@ -901,10 +952,14 @@ class Agent:
         for agent_message in messages:
             if agent_message.text is None:
                 continue
+            if agent_message.role == "tool":
+                continue
             langchain_message = None
             match agent_message.role:
                 case "system":
                     langchain_message = SystemMessage(content=agent_message.text)
+                case "summary":
+                    langchain_message = HumanMessage(content=agent_message.text)
                 case "user":
                     langchain_message = HumanMessage(content=agent_message.text)
                 case "assistant":
@@ -930,6 +985,7 @@ async def _handle_tool_errors(request, handler) -> Any:
         return ToolMessage(
             content=f"Tool error: {exception}\n\nTraceback:\n{tb}",
             tool_call_id=request.tool_call["id"],
+            name=request.tool_call.get("name"),
         )
 
 

@@ -23,9 +23,12 @@ class InterceptHandler(logging.Handler):
         )
 
 
-def generate_formatter(base_format: str) -> Callable:
-    def formatter(record):
-        fmt = base_format
+class _LoguruFormatter:
+    def __init__(self, base_format: str) -> None:
+        self._base_format = base_format
+
+    def __call__(self, record) -> str:
+        fmt = self._base_format
         extra = record["extra"]
         if extra:
             extra_items = " | ".join(
@@ -33,6 +36,8 @@ def generate_formatter(base_format: str) -> Callable:
                 for k, v in extra.items()
             )
             fmt += f" | <yellow>{extra_items}</yellow>"
-        return fmt + "\n"
+        return fmt + "{exception}\n"
 
-    return formatter
+
+def generate_formatter(base_format: str) -> Callable:
+    return _LoguruFormatter(base_format)

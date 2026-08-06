@@ -8,6 +8,17 @@ import facet
 import fastapi
 import uvicorn
 import yarl
+from aiogram.exceptions import (
+    TelegramNetworkError,
+    TelegramRetryAfter,
+    TelegramServerError,
+)
+from tenacity import (
+    retry,
+    retry_if_exception_type,
+    stop_after_attempt,
+    wait_exponential,
+)
 
 from microclaw.channels.telegram.base import BaseTelegramChannel
 from .cloudflare import CloudflareTunnelService
@@ -56,7 +67,17 @@ class TelegramWebhookChannel(BaseTelegramChannel):
             base_url = yarl.URL(str(self._settings.root_url))
 
         webhook_url = base_url / self._settings.root_path.lstrip("/")
-        await self._bot.set_webhook(
+
+        _set_webhook = retry(
+            retry=retry_if_exception_type(
+                (TelegramNetworkError, TelegramRetryAfter, TelegramServerError)
+            ),
+            stop=stop_after_attempt(3),
+            wait=wait_exponential(multiplier=1, min=1, max=10),
+            reraise=True,
+        )(self._bot.set_webhook)
+
+        await _set_webhook(
             url=str(webhook_url),
             secret_token=self._settings.secret_access_key,
         )

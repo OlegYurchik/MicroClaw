@@ -7,11 +7,6 @@ from .settings import AgentIdentity
 from microclaw.toolkits.base import BaseToolKit
 
 
-class MCPInfo(BaseModel):
-    name: str
-    description: str | None = None
-
-
 class SystemValues(BaseModel):
     time: AwareDatetime
     timezone: str = "UTC"
@@ -26,7 +21,6 @@ class AgentPromptValues:
     tools: list[BaseTool] = field(default_factory=list)
     channel: "BaseChannel" = None  # noqa: F821
     memories: dict[str, str] = field(default_factory=dict)
-    mcps: dict[str, MCPInfo] = field(default_factory=dict)
 
 
 @dataclass

@@ -6,7 +6,7 @@ import facet
 from pydantic_filters import BaseSort
 from pydantic_filters.pagination import OffsetPagination as BasePagination
 
-from microclaw.dto import AgentMessage, Spending
+from microclaw.dto import AgentMessage, SessionMetadata, Spending
 from .filters import SessionFilter, MessageFilter
 
 
@@ -41,4 +41,10 @@ class SessionsStorageInterface(facet.AsyncioServiceMixin):
         raise NotImplementedError
 
     async def get_context_size(self, session_id: uuid.UUID) -> int:
+        raise NotImplementedError
+
+    async def get_session(self, session_id: uuid.UUID) -> SessionMetadata | None:
+        raise NotImplementedError
+
+    async def delete_session(self, session_id: uuid.UUID) -> None:
         raise NotImplementedError

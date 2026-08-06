@@ -1,5 +1,5 @@
 import asyncio
-import random
+import time
 from typing import Any, AsyncIterator, Iterator, List, Sequence, Tuple
 
 from langgraph.checkpoint.base import (
@@ -26,24 +26,24 @@ class SyncerCheckpointer(BaseCheckpointSaver[str]):
         else:
             current_v = int(current.split(".")[0])
         next_v = current_v + 1
-        next_h = random.random()
+        next_h = time.time_ns()
         return f"{next_v:032}.{next_h:016}"
 
     def put(
-            self,
-            config: RunnableConfig,
-            checkpoint: Checkpoint,
-            metadata: CheckpointMetadata,
-            new_versions: ChannelVersions,
+        self,
+        config: RunnableConfig,
+        checkpoint: Checkpoint,
+        metadata: CheckpointMetadata,
+        new_versions: ChannelVersions,
     ) -> RunnableConfig:
         return self._run_sync(self.aput(config, checkpoint, metadata, new_versions))
 
     def put_writes(
-            self,
-            config: RunnableConfig,
-            writes: Sequence[tuple[str, Any]],
-            task_id: str,
-            task_path: str = "",
+        self,
+        config: RunnableConfig,
+        writes: Sequence[tuple[str, Any]],
+        task_id: str,
+        task_path: str = "",
     ) -> None:
         return self._run_sync(self.aput_writes(config, writes, task_id, task_path))
 
@@ -51,12 +51,12 @@ class SyncerCheckpointer(BaseCheckpointSaver[str]):
         return self._run_sync(self.aget_tuple(config))
 
     def list(
-            self,
-            config: RunnableConfig | None,
-            *,
-            filter: dict[str, Any] | None = None,
-            before: RunnableConfig | None = None,
-            limit: int | None = None,
+        self,
+        config: RunnableConfig | None,
+        *,
+        filter: dict[str, Any] | None = None,
+        before: RunnableConfig | None = None,
+        limit: int | None = None,
     ) -> Iterator[CheckpointTuple]:
         return iter(
             self._run_sync(
@@ -80,10 +80,10 @@ class SyncerCheckpointer(BaseCheckpointSaver[str]):
         return self._run_sync(self.acopy_thread(source_thread_id, target_thread_id))
 
     def prune(
-            self,
-            thread_ids: Sequence[str],
-            *,
-            strategy: str = "keep_latest",
+        self,
+        thread_ids: Sequence[str],
+        *,
+        strategy: str = "keep_latest",
     ) -> None:
         return self._run_sync(self.aprune(thread_ids, strategy=strategy))
 
@@ -93,14 +93,17 @@ class SyncerCheckpointer(BaseCheckpointSaver[str]):
             loop = asyncio.get_running_loop()
         except RuntimeError:
             return asyncio.run(coro)
+        import nest_asyncio
+
+        nest_asyncio.apply()
         return loop.run_until_complete(coro)
 
     async def aput(
-            self,
-            config: RunnableConfig,
-            checkpoint: Checkpoint,
-            metadata: CheckpointMetadata,
-            new_versions: ChannelVersions,
+        self,
+        config: RunnableConfig,
+        checkpoint: Checkpoint,
+        metadata: CheckpointMetadata,
+        new_versions: ChannelVersions,
     ) -> RunnableConfig:
         thread_id = config["configurable"]["thread_id"]
         checkpoint_ns = config["configurable"].get("checkpoint_ns", "")
@@ -123,11 +126,11 @@ class SyncerCheckpointer(BaseCheckpointSaver[str]):
         }
 
     async def aput_writes(
-            self,
-            config: RunnableConfig,
-            writes: Sequence[tuple[str, Any]],
-            task_id: str,
-            task_path: str = "",
+        self,
+        config: RunnableConfig,
+        writes: Sequence[tuple[str, Any]],
+        task_id: str,
+        task_path: str = "",
     ) -> None:
         thread_id = config["configurable"]["thread_id"]
         checkpoint_ns = config["configurable"].get("checkpoint_ns", "")
@@ -199,12 +202,12 @@ class SyncerCheckpointer(BaseCheckpointSaver[str]):
         )
 
     async def alist(
-            self,
-            config: RunnableConfig | None,
-            *,
-            filter: dict[str, Any] | None = None,
-            before: RunnableConfig | None = None,
-            limit: int | None = None,
+        self,
+        config: RunnableConfig | None,
+        *,
+        filter: dict[str, Any] | None = None,
+        before: RunnableConfig | None = None,
+        limit: int | None = None,
     ) -> AsyncIterator[CheckpointTuple]:
         if config is None:
             raise ValueError("config is required for alist")
@@ -276,10 +279,10 @@ class SyncerCheckpointer(BaseCheckpointSaver[str]):
             await self._syncer.delete(key)
 
     async def _load_pending_writes(
-            self,
-            thread_id: str,
-            checkpoint_ns: str,
-            checkpoint_id: str,
+        self,
+        thread_id: str,
+        checkpoint_ns: str,
+        checkpoint_id: str,
     ) -> List[Tuple[str, str, Any]]:
         prefix = f"checkpoint_writes:{thread_id}:{checkpoint_ns}:{checkpoint_id}:"
         keys = await self._syncer.scan_keys(prefix + "*")
@@ -287,7 +290,7 @@ class SyncerCheckpointer(BaseCheckpointSaver[str]):
         for key in keys:
             if not key.startswith(prefix):
                 continue
-            task_id = key[len(prefix):]
+            task_id = key[len(prefix) :]
             raw = await self._syncer.get(key)
             if raw is None:
                 continue
@@ -306,7 +309,9 @@ class SyncerCheckpointer(BaseCheckpointSaver[str]):
             if value is not None:
                 new_key = self._swap_thread_id_in_key(key, target_thread_id)
                 await self._syncer.set(new_key, value, ttl=self._ttl)
-        write_keys = await self._syncer.scan_keys(f"checkpoint_writes:{source_thread_id}:*")
+        write_keys = await self._syncer.scan_keys(
+            f"checkpoint_writes:{source_thread_id}:*"
+        )
         for key in write_keys:
             value = await self._syncer.get(key)
             if value is not None:
@@ -314,10 +319,10 @@ class SyncerCheckpointer(BaseCheckpointSaver[str]):
                 await self._syncer.set(new_key, value, ttl=self._ttl)
 
     async def aprune(
-            self,
-            thread_ids: Sequence[str],
-            *,
-            strategy: str = "keep_latest",
+        self,
+        thread_ids: Sequence[str],
+        *,
+        strategy: str = "keep_latest",
     ) -> None:
         raise NotImplementedError("prune is not supported")
 
@@ -326,8 +331,12 @@ class SyncerCheckpointer(BaseCheckpointSaver[str]):
         return f"checkpoint:{thread_id}:{checkpoint_ns}:{checkpoint_id}"
 
     @staticmethod
-    def _get_writes_key(thread_id: str, checkpoint_ns: str, checkpoint_id: str, task_id: str) -> str:
-        return f"checkpoint_writes:{thread_id}:{checkpoint_ns}:{checkpoint_id}:{task_id}"
+    def _get_writes_key(
+        thread_id: str, checkpoint_ns: str, checkpoint_id: str, task_id: str
+    ) -> str:
+        return (
+            f"checkpoint_writes:{thread_id}:{checkpoint_ns}:{checkpoint_id}:{task_id}"
+        )
 
     @staticmethod
     def _get_thread_prefix(thread_id: str, checkpoint_ns: str = "") -> str:

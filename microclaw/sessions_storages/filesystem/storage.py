@@ -9,7 +9,7 @@ import aiofiles
 from pydantic_filters import BaseSort, SortByOrder
 from pydantic_filters.pagination import OffsetPagination as BasePagination
 
-from microclaw.dto import AgentMessage, Spending
+from microclaw.dto import AgentMessage, SessionMetadata, Spending
 from microclaw.sessions_storages.interfaces import SessionsStorageInterface
 from microclaw.sessions_storages.filters import SessionFilter, MessageFilter
 from .dto import SessionData
@@ -29,6 +29,7 @@ class FilesystemSessionsStorage(SessionsStorageInterface):
             session_id = uuid.uuid4()
 
         await self._write_session(session_id=session_id, data=SessionData())
+        return session_id
 
     async def get_sessions(
         self,
@@ -78,10 +79,14 @@ class FilesystemSessionsStorage(SessionsStorageInterface):
             session_data = await self._read_session(session_id=session_id)
             session_data.messages.append(message)
             if message.spending:
-                if message.is_summary:
+                if message.role == "summary":
                     session_data.context = message.spending.output_tokens
+                elif message.context_tokens is not None:
+                    session_data.context = message.context_tokens
                 else:
-                    session_data.context = message.spending.get_total_tokens()
+                    session_data.context = (
+                        message.spending.input_tokens + message.spending.output_tokens
+                    )
 
                 if session_data.spending is None:
                     session_data.spending = message.spending
@@ -106,8 +111,6 @@ class FilesystemSessionsStorage(SessionsStorageInterface):
 
         messages = list(session_data.messages)
 
-        if filter.is_summary is not None:
-            messages = [m for m in messages if m.is_summary == filter.is_summary]
         if filter.role is not None:
             messages = [m for m in messages if m.role == filter.role]
 
@@ -117,8 +120,6 @@ class FilesystemSessionsStorage(SessionsStorageInterface):
 
             if sort_field == "role":
                 messages.sort(key=lambda m: m.role, reverse=reverse)
-            elif sort_field == "is_summary":
-                messages.sort(key=lambda m: m.is_summary, reverse=reverse)
 
         if pagination and pagination.limit is not None:
             page_offset = pagination.offset if pagination else 0
@@ -133,7 +134,7 @@ class FilesystemSessionsStorage(SessionsStorageInterface):
         if from_last_summarization:
             index = 0
             for i, message in enumerate(messages):
-                if message.is_summary:
+                if message.role == "summary":
                     index = i
         else:
             index = 0
@@ -152,6 +153,29 @@ class FilesystemSessionsStorage(SessionsStorageInterface):
         async with lock:
             session_data = await self._read_session(session_id=session_id)
         return session_data.context
+
+    async def get_session(self, session_id: uuid.UUID) -> SessionMetadata | None:
+        session_file = self._get_session_file_path(session_id)
+        if not session_file.exists():
+            return None
+
+        stat = session_file.stat()
+        session_data = await self._read_session(session_id=session_id)
+        return SessionMetadata(
+            id=session_id,
+            created_at=datetime.datetime.fromtimestamp(stat.st_ctime),
+            updated_at=datetime.datetime.fromtimestamp(stat.st_mtime),
+            context_size=session_data.context,
+            spending=session_data.spending,
+        )
+
+    async def delete_session(self, session_id: uuid.UUID) -> None:
+        session_file = self._get_session_file_path(session_id)
+        if not session_file.exists():
+            return
+
+        await aiofiles.os.remove(session_file)
+        self._locks.pop(session_id, None)
 
     async def _get_lock(self, session_id: uuid.UUID) -> asyncio.Lock:
         async with self._global_lock:

@@ -1,3 +1,4 @@
+import functools
 from typing import Any, Callable
 
 
@@ -11,9 +12,10 @@ def get_by_key_or_first(storage: dict[str, Any], key: str | None = None) -> Any 
 
 
 def suppress_exception(
-    exception_types: tuple[type[BaseException]] = (Exception,),
+    exception_types: tuple[type[BaseException], ...] = (Exception,),
 ) -> Callable:
     def decorator(function: Callable) -> Callable:
+        @functools.wraps(function)
         async def wrapper(*args, **kwargs):
             try:
                 return await function(*args, **kwargs)

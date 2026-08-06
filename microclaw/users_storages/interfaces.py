@@ -3,13 +3,21 @@ import uuid
 from typing import AsyncGenerator
 
 import facet
+from pydantic_filters import BaseSort
+from pydantic_filters.pagination import OffsetPagination as BasePagination
 
-from microclaw.dto import CronTask, User, UserRoleEnum
+from microclaw.dto import CronTask, TokenInfo, User, UserRoleEnum
 from microclaw.utils import Empty
+from .filters import UserFilter
 
 
 class UsersMixin:
-    async def get_users(self) -> AsyncGenerator[User]:
+    async def get_users(
+        self,
+        filter: UserFilter | None = None,
+        pagination: BasePagination | None = None,
+        sort: BaseSort | None = None,
+    ) -> AsyncGenerator[User]:
         raise NotImplementedError
 
     async def create_user(
@@ -95,10 +103,13 @@ class TokensMixin:
         self,
         user_id: uuid.UUID,
         ttl: datetime.timedelta | None = datetime.timedelta(days=30),
-    ) -> str:
+    ) -> TokenInfo:
         raise NotImplementedError
 
     async def delete_token(self, token: str):
+        raise NotImplementedError
+
+    async def get_tokens(self, user_id: uuid.UUID) -> list[str]:
         raise NotImplementedError
 
 

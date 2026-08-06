@@ -96,10 +96,7 @@ class MCPLocalSettings(MCPBaseSettings):
     env: dict[str, str] = Field(default_factory=dict)
 
 
-MCPSettings = (
-    MCPRemoteSettings |
-    MCPLocalSettings
-)
+MCPSettings = MCPRemoteSettings | MCPLocalSettings
 
 
 class AgentSettings(BaseModel):

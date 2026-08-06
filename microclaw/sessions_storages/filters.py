@@ -15,4 +15,3 @@ class MessageFilter(BaseFilter):
     session_id: uuid.UUID | None = None
     created_at: datetime | None = None
     role: str | None = None
-    is_summary: bool | None = None

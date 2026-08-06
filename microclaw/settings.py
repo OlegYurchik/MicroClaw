@@ -5,7 +5,7 @@ from typing import Self
 
 import yaml
 import yaml_include
-from pydantic import AnyHttpUrl, Field, model_validator
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings
 from yaml_env_tag import construct_env_tag
 
@@ -19,7 +19,10 @@ from .agents import (
 )
 from .api.rest import RESTAPISettings
 from .toolkits import ToolKitSettings
-from .channels import ChannelSettingsType
+from .channels.telegram.polling.settings import TelegramPollingSettings
+from .channels.telegram.webhook.settings import TelegramWebhookSettings
+from .channels.vk.polling.settings import VKPollingSettings
+from .channels.vk.webhook.settings import VKWebhookSettings
 from .sessions_storages import SessionsStorageSettingsType
 from .sessions_storages.filesystem import FilesystemSessionsStorageSettings
 from .skills import SkillSettings, SkillRepositorySettingsType
@@ -30,6 +33,14 @@ from .cron import CronTaskSettings
 from .users_storages import UsersStorageSettingsType
 from .users_storages.filesystem import FilesystemUsersStorageSettings
 from .utils import get_by_key_or_first
+
+
+ChannelSettingsType = (
+    TelegramPollingSettings
+    | TelegramWebhookSettings
+    | VKPollingSettings
+    | VKWebhookSettings
+)
 
 
 class LoggingSettings(BaseSettings):
@@ -69,7 +80,9 @@ class MicroclawSettings(BaseSettings):
     toolkits: dict[str, ToolKitSettings] = Field(default_factory=dict)
     mcp: dict[str, MCPSettings] = Field(default_factory=dict)
     skills_directory: pathlib.Path = pathlib.Path("./.skills")
-    skills_repositories: dict[str, SkillRepositorySettingsType] = Field(default_factory=dict)
+    skills_repositories: dict[str, SkillRepositorySettingsType] = Field(
+        default_factory=dict
+    )
     skills: dict[str, SkillSettings | str] = Field(default_factory=dict)
     agents: dict[str, AgentSettings] = {
         "default": AgentSettings(),
@@ -94,9 +107,7 @@ class MicroclawSettings(BaseSettings):
         for name, agent_settings in self.agents.items():
             model_value = agent_settings.model
             if isinstance(model_value, (str, NoneType)):
-                model_value = get_by_key_or_first(
-                    storage=self.models, key=model_value
-                )
+                model_value = get_by_key_or_first(storage=self.models, key=model_value)
             if model_value is None:
                 raise ValueError(f"Model for agent '{name}' not exists")
             if InputTypeEnum.TEXT not in model_value.input_types:
@@ -105,13 +116,18 @@ class MicroclawSettings(BaseSettings):
                     f"Supported input types: {[t.value for t in model_value.input_types]}"
                 )
             agent_settings.model = model_value
+            for toolkit_item in agent_settings.toolkits or []:
+                if isinstance(toolkit_item, str) and toolkit_item not in self.toolkits and "." not in toolkit_item:
+                    raise ValueError(
+                        f"Agent '{name}' toolkit '{toolkit_item}' is "
+                        "not a reference to a global toolkit and does not "
+                        "look like a dotted import path"
+                    )
 
         for name, channel_settings in self.channels.items():
             agent_value = channel_settings.agent
             if isinstance(agent_value, str):
-                agent = get_by_key_or_first(
-                    storage=self.agents, key=agent_value
-                )
+                agent = get_by_key_or_first(storage=self.agents, key=agent_value)
                 if agent is None:
                     raise ValueError(
                         f"Agent '{agent_value}' for channel '{name}' not exists"
@@ -193,9 +209,7 @@ class MicroclawSettings(BaseSettings):
         for name, stt_settings in self.stt.items():
             model_value = stt_settings.model
             if isinstance(model_value, (str, NoneType)):
-                model_value = get_by_key_or_first(
-                    storage=self.models, key=model_value
-                )
+                model_value = get_by_key_or_first(storage=self.models, key=model_value)
             if model_value is None:
                 raise ValueError(f"Model for stt '{name}' not exists")
             if InputTypeEnum.AUDIO not in model_value.input_types:
@@ -227,7 +241,9 @@ class MicroclawSettings(BaseSettings):
             mcp_names.add(mcp_settings.name)
 
         for skill_name, skill_value in self.skills.items():
-            if isinstance(skill_value, SkillSettings) and isinstance(skill_value.repo, str):
+            if isinstance(skill_value, SkillSettings) and isinstance(
+                skill_value.repo, str
+            ):
                 if skill_value.repo not in self.skills_repositories:
                     raise ValueError(
                         f"Global skill '{skill_name}' references repository "
@@ -238,7 +254,9 @@ class MicroclawSettings(BaseSettings):
             if not agent_settings.skills:
                 continue
             for skill_item in agent_settings.skills:
-                if isinstance(skill_item, SkillSettings) and isinstance(skill_item.repo, str):
+                if isinstance(skill_item, SkillSettings) and isinstance(
+                    skill_item.repo, str
+                ):
                     if skill_item.repo not in self.skills_repositories:
                         raise ValueError(
                             f"Agent '{agent_name}' skill '{skill_item.name}' "

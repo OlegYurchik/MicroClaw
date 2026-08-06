@@ -1,14 +1,16 @@
+from __future__ import annotations
 import functools
-import json
 import random
 import string
-from typing import Any, Callable, Generic, Sequence, TypeVar
+from typing import Any, Callable, Generic, Sequence, TypeVar, get_args, get_origin
 
 from langchain_core.tools import StructuredTool as LangChainStructuredTool
 from pydantic import BaseModel
 
 from .capabilities import DiscoveryCapability, ToolKitCapability
 from .settings import ToolKitSettings
+
+
 
 
 SettingsType = TypeVar("SettingsType")
@@ -27,6 +29,23 @@ class BaseToolKit(Generic[SettingsType]):
         self._prefix = key + "_"
         self._prompt = settings.prompt
         self._settings = self.get_settings_class()(**settings.args)
+
+        # Override class defaults with instance settings if provided
+        self.required_capabilities = (
+            list(settings.required_capabilities)
+            if settings.required_capabilities is not None
+            else list(self.__class__.required_capabilities)
+        )
+        self.write_capabilities = (
+            list(settings.write_capabilities)
+            if settings.write_capabilities is not None
+            else list(self.__class__.write_capabilities)
+        )
+        self.discovery_capabilities = (
+            list(settings.discovery_capabilities)
+            if settings.discovery_capabilities is not None
+            else list(self.__class__.discovery_capabilities)
+        )
 
     @property
     def prefix(self) -> str:
@@ -47,10 +66,21 @@ class BaseToolKit(Generic[SettingsType]):
     @classmethod
     def get_settings_class(cls) -> SettingsType | type[EmptySettings]:
         for base in cls.__orig_bases__:
-            origin = getattr(base, "__origin__", None)
+            origin = get_origin(base)
             if isinstance(origin, type) and issubclass(origin, BaseToolKit):
-                return base.__args__[0]
+                args = get_args(base)
+                if args:
+                    return args[0]
         return EmptySettings
+
+    def _require_context(self):
+        """Return toolkit context or raise if unavailable."""
+        from .context import get_toolkit_context
+
+        ctx = get_toolkit_context()
+        if ctx is None or ctx.current_user_accessor is None:
+            raise RuntimeError("Not available outside channel context.")
+        return ctx
 
     def get_tools(self) -> list[LangChainStructuredTool]:
         tool_functions = []
@@ -86,11 +116,6 @@ def _return_dict(function: Callable) -> Callable:
             return response.model_dump(mode="json")
         if isinstance(response, list):
             return [convert(response=element) for element in response]
-        if isinstance(response, str):
-            try:
-                return json.loads(response)
-            except json.JSONDecodeError:
-                return response
         return response
 
     @functools.wraps(function)

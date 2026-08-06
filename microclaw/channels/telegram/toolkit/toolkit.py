@@ -1,4 +1,15 @@
 import aiogram
+from aiogram.exceptions import (
+    TelegramNetworkError,
+    TelegramRetryAfter,
+    TelegramServerError,
+)
+from tenacity import (
+    retry,
+    retry_if_exception_type,
+    stop_after_attempt,
+    wait_exponential,
+)
 
 from microclaw.toolkits.base import BaseToolKit, tool
 from .settings import TelegramToolKitSettings
@@ -26,7 +37,16 @@ class TelegramToolKit(BaseToolKit[TelegramToolKitSettings]):
         """
         bot = aiogram.Bot(token=self.settings.bot_token)
 
-        await bot.set_message_reaction(
+        _set_reaction = retry(
+            retry=retry_if_exception_type(
+                (TelegramNetworkError, TelegramRetryAfter, TelegramServerError)
+            ),
+            stop=stop_after_attempt(3),
+            wait=wait_exponential(multiplier=1, min=1, max=10),
+            reraise=True,
+        )(bot.set_message_reaction)
+
+        await _set_reaction(
             chat_id=chat_id,
             message_id=message_id,
             reaction=[aiogram.types.ReactionTypeEmoji(emoji=emoji)],

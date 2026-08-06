@@ -2,7 +2,7 @@ import datetime
 import uuid
 from typing import AsyncGenerator
 
-from pydantic_filters import BasePagination
+from pydantic_filters import BasePagination, BaseSort
 
 from microclaw.dto import CronTask, UserRoleEnum
 from microclaw.utils import Empty
@@ -23,8 +23,15 @@ class UsersRepository(BaseRepository[UserData, UserFilter]):
             return item
         return None
 
-    async def get_users(self) -> AsyncGenerator[UserData]:
-        async for item in self.get_items():
+    async def get_users(
+        self,
+        filter_: UserFilter | None = None,
+        pagination: BasePagination | None = None,
+        sort: BaseSort | None = None,
+    ) -> AsyncGenerator[UserData]:
+        async for item in self.get_items(
+            filter_=filter_, pagination=pagination, sort=sort
+        ):
             yield item
 
     async def create_user(

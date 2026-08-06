@@ -2,10 +2,18 @@ import asyncio
 
 import fastapi
 import uvicorn
+from aiohttp import ClientError
 from fastapi import Request
 from fastapi.responses import PlainTextResponse
+from tenacity import (
+    retry,
+    retry_if_exception_type,
+    stop_after_attempt,
+    wait_exponential,
+)
 from vkbottle.callback import BotCallback
 from vkbottle.bot import Bot
+from vkbottle.exception_factory import VKAPIError
 
 from microclaw.channels.vk.base import BaseVKChannel
 
@@ -39,17 +47,37 @@ class VKWebhookChannel(BaseVKChannel):
         server = self.get_server()
         server_task = asyncio.create_task(server.serve())
 
-        # Give uvicorn a moment to start listening before calling setup_webhook
         await asyncio.sleep(1)
+
+        _setup_webhook = retry(
+            retry=retry_if_exception_type((ClientError, VKAPIError)),
+            stop=stop_after_attempt(3),
+            wait=wait_exponential(multiplier=1, min=1, max=10),
+            reraise=True,
+        )(self._bot.setup_webhook)
 
         (
             self._confirmation_code,
             self._secret_access_key,
-        ) = await self._bot.setup_webhook()
+        ) = await _setup_webhook()
 
-        server_id = await self._bot.callback.find_server_id()
+        _find_server_id = retry(
+            retry=retry_if_exception_type((ClientError, VKAPIError)),
+            stop=stop_after_attempt(3),
+            wait=wait_exponential(multiplier=1, min=1, max=10),
+            reraise=True,
+        )(self._bot.callback.find_server_id)
+
+        server_id = await _find_server_id()
         if server_id is not None:
-            await self._bot.callback.set_callback_settings(
+            _set_callback_settings = retry(
+                retry=retry_if_exception_type((ClientError, VKAPIError)),
+                stop=stop_after_attempt(3),
+                wait=wait_exponential(multiplier=1, min=1, max=10),
+                reraise=True,
+            )(self._bot.callback.set_callback_settings)
+
+            await _set_callback_settings(
                 server_id,
                 {"message_event": True},
             )
