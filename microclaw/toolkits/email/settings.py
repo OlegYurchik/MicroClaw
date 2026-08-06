@@ -24,4 +24,6 @@ class EmailSettings(BaseModel):
     sent_folder: str = "Sent"
 
     delete_mode: PermissionModeEnum = PermissionModeEnum.REQUEST
+    move_mode: PermissionModeEnum = PermissionModeEnum.REQUEST
+    mark_mode: PermissionModeEnum = PermissionModeEnum.REQUEST
     send_mode: PermissionModeEnum = PermissionModeEnum.REQUEST

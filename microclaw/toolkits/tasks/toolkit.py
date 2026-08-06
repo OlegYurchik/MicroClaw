@@ -1,4 +1,14 @@
 from microclaw.dto import DecisionEnum
+import asyncio
+
+from loguru import logger
+from tenacity import (
+    AsyncRetrying,
+    before_sleep_log,
+    retry_if_exception_type,
+    stop_after_attempt,
+    wait_exponential,
+)
 from langgraph.types import interrupt
 from datetime import datetime, date
 
@@ -16,9 +26,17 @@ from .settings import TasksSettings
 
 class TasksToolKit(BaseToolKit[TasksSettings]):
     """Tools for managing tasks and task lists via Nextcloud Tasks (CalDAV)."""
+
     required_capabilities: list[ToolKitCapability] = []
     write_capabilities: list[ToolKitCapability] = []
     discovery_capabilities: list[DiscoveryCapability] = []
+
+    _RETRYABLE_EXCEPTIONS: tuple[type[Exception], ...] = (
+        ConnectionError,
+        TimeoutError,
+        asyncio.TimeoutError,
+        OSError,
+    )
 
     def __init__(self, key: str, settings: ToolKitSettings):
         super().__init__(key=key, settings=settings)
@@ -30,11 +48,6 @@ class TasksToolKit(BaseToolKit[TasksSettings]):
         )
         self._principal = None
 
-    async def get_principal(self) -> AsyncPrincipal:
-        if self._principal is None:
-            self._principal = await self._client.get_principal()
-        return self._principal
-
     @tool
     async def get_task_lists(self) -> list[TaskList]:
         """
@@ -44,7 +57,7 @@ class TasksToolKit(BaseToolKit[TasksSettings]):
             List of TaskList objects with url and name
         """
         principal = await self.get_principal()
-        calendars = await principal.get_calendars()
+        calendars = await self._with_retry(principal.get_calendars)
         task_lists = []
         for calendar in calendars:
             task_list = await self._convert_calendar_to_dto(calendar=calendar)
@@ -76,7 +89,8 @@ class TasksToolKit(BaseToolKit[TasksSettings]):
                 raise UserDeniedAction()
 
         principal = await self.get_principal()
-        calendar = await principal.make_calendar(
+        calendar = await self._with_retry(
+            principal.make_calendar,
             name=name,
             cal_id=None,
             supported_calendar_component_set=None,
@@ -96,7 +110,7 @@ class TasksToolKit(BaseToolKit[TasksSettings]):
             TaskList object with url and name
         """
         calendar = AsyncCalendar(client=self._client, url=url)
-        name = await calendar.get_property(dav.DisplayName())
+        name = await self._with_retry(calendar.get_property, dav.DisplayName())
         return TaskList(url=url, name=name or "")
 
     @tool
@@ -114,7 +128,7 @@ class TasksToolKit(BaseToolKit[TasksSettings]):
         if self.settings.write_mode is PermissionModeEnum.DENY:
             raise PermissionError("Write operations denied")
         if self.settings.write_mode is PermissionModeEnum.REQUEST:
-            task_list_name = await calendar.get_property(dav.DisplayName())
+            task_list_name = await self._with_retry(calendar.get_property, dav.DisplayName())
             confirmation_request_text = f"Delete task list '{task_list_name}'?"
             decision = interrupt({"description": confirmation_request_text})
             if decision == DecisionEnum.REJECT.value:
@@ -142,7 +156,10 @@ class TasksToolKit(BaseToolKit[TasksSettings]):
             List of Task objects
         """
         calendar = await self._get_task_list(task_list_url)
-        todos = await calendar.todos(include_completed=completed is None or completed)
+        todos = await self._with_retry(
+            calendar.todos,
+            include_completed=completed is None or completed,
+        )
         todos = [await self._convert_todo_to_dto(todo=todo) for todo in todos]
 
         if completed is not None:
@@ -173,7 +190,7 @@ class TasksToolKit(BaseToolKit[TasksSettings]):
             Task object
         """
         calendar = await self._get_task_list(task_list_url)
-        todo = await calendar.todo_by_uid(task_uid)
+        todo = await self._with_retry(calendar.todo_by_uid, task_uid)
         if not todo:
             raise ValueError(f"Task with UID {task_uid} not found")
         return await self._convert_todo_to_dto(todo=todo)
@@ -206,7 +223,7 @@ class TasksToolKit(BaseToolKit[TasksSettings]):
         if self.settings.write_mode is PermissionModeEnum.DENY:
             raise PermissionError("Write operations denied")
         if self.settings.write_mode is PermissionModeEnum.REQUEST:
-            task_list_name = await calendar.get_property(dav.DisplayName())
+            task_list_name = await self._with_retry(calendar.get_property, dav.DisplayName())
             confirmation_request_text = (
                 f"Create task '{summary}' in task list '{task_list_name}'?"
             )
@@ -232,7 +249,7 @@ class TasksToolKit(BaseToolKit[TasksSettings]):
         if priority is not None:
             todo_data["priority"] = priority
 
-        todo = await calendar.add_todo(**todo_data)
+        todo = await self._with_retry(calendar.add_todo, **todo_data)
         return await self._convert_todo_to_dto(todo=todo)
 
     @tool
@@ -264,7 +281,7 @@ class TasksToolKit(BaseToolKit[TasksSettings]):
             Updated Task object
         """
         calendar = await self._get_task_list(task_list_url)
-        todo = await calendar.todo_by_uid(task_uid)
+        todo = await self._with_retry(calendar.todo_by_uid, task_uid)
         if not todo:
             raise ValueError(f"Task with UID {task_uid} not found")
 
@@ -320,7 +337,7 @@ class TasksToolKit(BaseToolKit[TasksSettings]):
                 if hasattr(todo.vobject_instance.vtodo, "completed"):
                     del todo.vobject_instance.vtodo.completed
 
-        await todo.save()
+        await self._with_retry(todo.save)
         return await self._convert_todo_to_dto(todo=todo)
 
     @tool
@@ -336,7 +353,7 @@ class TasksToolKit(BaseToolKit[TasksSettings]):
             None - indicates successful operation
         """
         calendar = await self._get_task_list(task_list_url)
-        todo = await calendar.todo_by_uid(task_uid)
+        todo = await self._with_retry(calendar.todo_by_uid, task_uid)
         if not todo:
             raise ValueError(f"Task with UID {task_uid} not found")
 
@@ -349,7 +366,7 @@ class TasksToolKit(BaseToolKit[TasksSettings]):
             if decision == DecisionEnum.REJECT.value:
                 raise UserDeniedAction()
 
-        await todo.delete()
+        await self._with_retry(todo.delete)
 
     @tool
     async def complete_task(self, task_uid: str, task_list_url: str) -> Task:
@@ -369,10 +386,28 @@ class TasksToolKit(BaseToolKit[TasksSettings]):
             task_list_url=task_list_url,
         )
 
+    async def _with_retry(self, func, *args, **kwargs):
+        async for attempt in AsyncRetrying(
+            stop=stop_after_attempt(3),
+            wait=wait_exponential(multiplier=1, min=2, max=10),
+            retry=retry_if_exception_type(self._RETRYABLE_EXCEPTIONS),
+            reraise=True,
+            before_sleep=before_sleep_log(logger, "warning"),
+        ):
+            with attempt:
+                return await func(*args, **kwargs)
+
+    async def get_principal(self) -> AsyncPrincipal:
+        if self._principal is None:
+            self._principal = await self._with_retry(self._client.get_principal)
+        return self._principal
+
     async def _get_task_list(self, task_list_url: str) -> AsyncCalendar:
         calendar = AsyncCalendar(client=self._client, url=task_list_url)
         if self.settings.allowed_task_lists is not None:
-            calendar_name = await calendar.get_property(dav.DisplayName())
+            calendar_name = await self._with_retry(
+                calendar.get_property, dav.DisplayName()
+            )
             if calendar_name not in self.settings.allowed_task_lists:
                 raise PermissionError(
                     f"Task list '{calendar_name}' is not in allowed task lists list"
@@ -380,7 +415,7 @@ class TasksToolKit(BaseToolKit[TasksSettings]):
         return calendar
 
     async def _convert_calendar_to_dto(self, calendar: AsyncCalendar) -> TaskList:
-        name = await calendar.get_property(dav.DisplayName())
+        name = await self._with_retry(calendar.get_property, dav.DisplayName())
         return TaskList(url=str(calendar.url), name=name or "")
 
     async def _convert_todo_to_dto(self, todo: AsyncTodo) -> Task:

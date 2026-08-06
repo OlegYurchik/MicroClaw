@@ -1,5 +1,6 @@
 from pydantic import BaseModel, Field
 
+from microclaw.toolkits.enums import PermissionModeEnum
 from .drivers import MemoryDriverSettingsType
 from .drivers.filesystem import FilesystemMemoryDriverSettings
 
@@ -16,3 +17,4 @@ class MemoryToolKitSettings(BaseModel):
         le=10000,
         description="Maximum tokens for memory file (applies to both general and daily)",
     )
+    edit_mode: PermissionModeEnum = PermissionModeEnum.ALLOW

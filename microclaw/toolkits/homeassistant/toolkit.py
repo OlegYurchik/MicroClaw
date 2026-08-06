@@ -1,6 +1,17 @@
 from datetime import datetime
 from typing import Any
 
+import asyncio
+
+from loguru import logger
+from tenacity import (
+    AsyncRetrying,
+    before_sleep_log,
+    retry_if_exception_type,
+    stop_after_attempt,
+    wait_exponential,
+)
+
 from homeassistant_api import Client
 from homeassistant_api.models import (
     Entity as HAEntity,
@@ -9,8 +20,12 @@ from homeassistant_api.models import (
 )
 from homeassistant_api.models.states import Context as HAContext
 
+from microclaw.dto import DecisionEnum
+from langgraph.types import interrupt
 from microclaw.toolkits.base import BaseToolKit, tool
 from microclaw.toolkits.capabilities import DiscoveryCapability, ToolKitCapability
+from microclaw.toolkits.enums import PermissionModeEnum
+from microclaw.toolkits.exceptions import UserDeniedAction
 from microclaw.toolkits.settings import ToolKitSettings
 from .dto import (
     Context,
@@ -27,23 +42,21 @@ class HomeAssistantToolKit(BaseToolKit[HomeAssistantSettings]):
     Tools for controlling and monitoring Home Assistant entities, services, areas, and
     devices.
     """
+
     required_capabilities: list[ToolKitCapability] = []
     write_capabilities: list[ToolKitCapability] = []
     discovery_capabilities: list[DiscoveryCapability] = []
 
+    _RETRYABLE_EXCEPTIONS: tuple[type[Exception], ...] = (
+        ConnectionError,
+        TimeoutError,
+        asyncio.TimeoutError,
+        OSError,
+    )
+
     def __init__(self, key: str, settings: ToolKitSettings):
         super().__init__(key=key, settings=settings)
         self._client = None
-
-    async def _get_client(self) -> Client:
-        if self._client is None:
-            self._client = Client(
-                api_url=self.settings.url,
-                token=self.settings.token,
-                use_async=True,
-                verify_ssl=self.settings.verify_ssl,
-            )
-        return self._client
 
     @tool
     async def get_services(self) -> list[Service]:
@@ -54,7 +67,7 @@ class HomeAssistantToolKit(BaseToolKit[HomeAssistantSettings]):
             List of Service objects with their descriptions and fields
         """
         client = await self._get_client()
-        ha_domains = await client.async_get_domains()
+        ha_domains = await self._with_retry(client.async_get_domains)
         services = []
         for domain_name, ha_domain in ha_domains.items():
             for service_name, ha_service in ha_domain.services.items():
@@ -77,7 +90,7 @@ class HomeAssistantToolKit(BaseToolKit[HomeAssistantSettings]):
             List of Entity objects with their current states and attributes
         """
         client = await self._get_client()
-        ha_entities_groups = await client.async_get_entities()
+        ha_entities_groups = await self._with_retry(client.async_get_entities)
         entities = []
         for ha_entity_group in ha_entities_groups.values():
             for ha_entity in ha_entity_group.entities.values():
@@ -97,7 +110,7 @@ class HomeAssistantToolKit(BaseToolKit[HomeAssistantSettings]):
             Entity object with current state and attributes
         """
         client = await self._get_client()
-        ha_entity = await client.async_get_entity(entity_id=entity_id)
+        ha_entity = await self._with_retry(client.async_get_entity, entity_id=entity_id)
         return self._convert_entity(ha_entity=ha_entity)
 
     @tool
@@ -112,7 +125,7 @@ class HomeAssistantToolKit(BaseToolKit[HomeAssistantSettings]):
             State object with current state value and attributes
         """
         client = await self._get_client()
-        ha_state = await client.async_get_state(entity_id=entity_id)
+        ha_state = await self._with_retry(client.async_get_state, entity_id=entity_id)
         return self._convert_state(ha_state)
 
     @tool
@@ -137,9 +150,10 @@ class HomeAssistantToolKit(BaseToolKit[HomeAssistantSettings]):
             StateHistory object containing historical states
         """
         client = await self._get_client()
-        ha_entity = await client.async_get_entity(entity_id=entity_id)
+        ha_entity = await self._with_retry(client.async_get_entity, entity_id=entity_id)
 
-        ha_history = client.async_get_entity_histories(
+        ha_history = await self._with_retry(
+            client.async_get_entity_histories,
             entities=(ha_entity,),
             start_timestamp=start_timestamp,
             end_timestamp=end_timestamp,
@@ -177,7 +191,7 @@ class HomeAssistantToolKit(BaseToolKit[HomeAssistantSettings]):
             List of matching Entity objects
         """
         client = await self._get_client()
-        ha_entities_groups = await client.async_get_entities()
+        ha_entities_groups = await self._with_retry(client.async_get_entities)
         entities = []
         pattern_lower = pattern.lower()
         for ha_entity_group in ha_entities_groups.values():
@@ -206,6 +220,12 @@ class HomeAssistantToolKit(BaseToolKit[HomeAssistantSettings]):
         Returns:
             None - indicates successful operation
         """
+        if self.settings.control_mode is PermissionModeEnum.DENY:
+            raise PermissionError("Controlling Home Assistant entities is not allowed")
+        if self.settings.control_mode is PermissionModeEnum.REQUEST:
+            decision = interrupt({"description": f"Turn on '{entity_id}'?"})
+            if decision == DecisionEnum.REJECT.value:
+                raise UserDeniedAction()
         domain = entity_id.split(".")[0]
         await self.call_service(
             domain=domain,
@@ -225,6 +245,12 @@ class HomeAssistantToolKit(BaseToolKit[HomeAssistantSettings]):
         Returns:
             None - indicates successful operation
         """
+        if self.settings.control_mode is PermissionModeEnum.DENY:
+            raise PermissionError("Controlling Home Assistant entities is not allowed")
+        if self.settings.control_mode is PermissionModeEnum.REQUEST:
+            decision = interrupt({"description": f"Turn off '{entity_id}'?"})
+            if decision == DecisionEnum.REJECT.value:
+                raise UserDeniedAction()
         domain = entity_id.split(".")[0]
         await self.call_service(
             domain=domain,
@@ -243,6 +269,12 @@ class HomeAssistantToolKit(BaseToolKit[HomeAssistantSettings]):
         Returns:
             None - indicates successful operation
         """
+        if self.settings.control_mode is PermissionModeEnum.DENY:
+            raise PermissionError("Controlling Home Assistant entities is not allowed")
+        if self.settings.control_mode is PermissionModeEnum.REQUEST:
+            decision = interrupt({"description": f"Toggle '{entity_id}'?"})
+            if decision == DecisionEnum.REJECT.value:
+                raise UserDeniedAction()
         domain = entity_id.split(".")[0]
         await self.call_service(
             domain=domain,
@@ -270,16 +302,34 @@ class HomeAssistantToolKit(BaseToolKit[HomeAssistantSettings]):
         Returns:
             None - indicates successful operation
         """
+        if self.settings.control_mode is PermissionModeEnum.DENY:
+            raise PermissionError("Calling Home Assistant services is not allowed")
+        if self.settings.control_mode is PermissionModeEnum.REQUEST:
+            decision = interrupt({"description": f"Call service '{domain}.{service}'?"})
+            if decision == DecisionEnum.REJECT.value:
+                raise UserDeniedAction()
         if entity_id:
             service_data = service_data or {}
             service_data["entity_id"] = entity_id
 
         client = await self._get_client()
-        await client.async_trigger_service(
+        await self._with_retry(
+            client.async_trigger_service,
             domain=domain,
             service=service,
             **(service_data or {}),
         )
+
+    async def _with_retry(self, func, *args, **kwargs):
+        async for attempt in AsyncRetrying(
+            stop=stop_after_attempt(3),
+            wait=wait_exponential(multiplier=1, min=2, max=10),
+            retry=retry_if_exception_type(self._RETRYABLE_EXCEPTIONS),
+            reraise=True,
+            before_sleep=before_sleep_log(logger, "warning"),
+        ):
+            with attempt:
+                return await func(*args, **kwargs)
 
     def _convert_entity(self, ha_entity: HAEntity) -> Entity:
         return Entity(
@@ -338,7 +388,6 @@ class HomeAssistantToolKit(BaseToolKit[HomeAssistantSettings]):
         return result
 
     def _convert_service_target(self, ha_target: Any) -> dict[str, Any]:
-        """Convert homeassistant_api service target to dict."""
         if hasattr(ha_target, "model_dump"):
             return ha_target.model_dump()
         elif hasattr(ha_target, "dict"):
@@ -346,9 +395,18 @@ class HomeAssistantToolKit(BaseToolKit[HomeAssistantSettings]):
         return ha_target
 
     def _convert_service_response(self, ha_response: Any) -> dict[str, Any]:
-        """Convert homeassistant_api service response to dict."""
         if hasattr(ha_response, "model_dump"):
             return ha_response.model_dump()
         elif hasattr(ha_response, "dict"):
             return ha_response.dict()
         return ha_response
+
+    async def _get_client(self) -> Client:
+        if self._client is None:
+            self._client = Client(
+                api_url=self.settings.url,
+                token=self.settings.token,
+                use_async=True,
+                verify_ssl=self.settings.verify_ssl,
+            )
+        return self._client

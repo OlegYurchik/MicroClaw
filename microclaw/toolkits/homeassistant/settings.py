@@ -1,5 +1,7 @@
 from pydantic import BaseModel, Field
 
+from microclaw.toolkits.enums import PermissionModeEnum
+
 
 class HomeAssistantSettings(BaseModel):
     """Settings for connecting to Home Assistant."""
@@ -20,3 +22,4 @@ class HomeAssistantSettings(BaseModel):
         default=30,
         description="Request timeout in seconds (default: 30)",
     )
+    control_mode: PermissionModeEnum = PermissionModeEnum.REQUEST

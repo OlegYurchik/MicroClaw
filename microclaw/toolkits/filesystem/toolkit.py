@@ -1,6 +1,9 @@
 from microclaw.dto import DecisionEnum
 from langgraph.types import interrupt
+import asyncio
 import pathlib
+
+import aiofiles
 
 from microclaw.toolkits.base import BaseToolKit, tool
 from microclaw.toolkits.capabilities import DiscoveryCapability, ToolKitCapability
@@ -12,6 +15,7 @@ from .settings import FileSystemToolKitSettings
 
 class FileSystemToolKit(BaseToolKit[FileSystemToolKitSettings]):
     """Tools for managing files and directories on the local filesystem."""
+
     required_capabilities: list[ToolKitCapability] = []
     write_capabilities: list[ToolKitCapability] = []
     discovery_capabilities: list[DiscoveryCapability] = []
@@ -23,20 +27,6 @@ class FileSystemToolKit(BaseToolKit[FileSystemToolKitSettings]):
             pathlib.Path(directory).resolve()
             for directory in self._settings.directories
         ]
-
-    def _validate_path(self, path_str: str) -> pathlib.Path:
-        path = pathlib.Path(path_str).resolve()
-
-        for allowed_path in self._allowed_paths:
-            try:
-                path.relative_to(allowed_path)
-                return path
-            except ValueError:
-                continue
-
-        raise PermissionError(
-            f"Path '{path_str}' is not within allowed directories: {self._settings.directories}"
-        )
 
     @tool
     async def list_directory(self, path: str = ".") -> list[DirectoryInfo]:
@@ -92,7 +82,8 @@ class FileSystemToolKit(BaseToolKit[FileSystemToolKitSettings]):
         if not validated_path.is_file():
             raise ValueError(f"Path '{path}' is not a file")
 
-        return validated_path.read_text(encoding="utf-8")
+        async with aiofiles.open(validated_path, encoding="utf-8") as f:
+            return await f.read()
 
     @tool
     async def write_file(self, path: str, content: str) -> None:
@@ -116,5 +107,20 @@ class FileSystemToolKit(BaseToolKit[FileSystemToolKitSettings]):
                 raise UserDeniedAction()
 
         validated_path = self._validate_path(path)
-        validated_path.parent.mkdir(parents=True, exist_ok=True)
-        validated_path.write_text(content, encoding="utf-8")
+        await asyncio.to_thread(validated_path.parent.mkdir, parents=True, exist_ok=True)
+        async with aiofiles.open(validated_path, "w", encoding="utf-8") as f:
+            await f.write(content)
+
+    def _validate_path(self, path_str: str) -> pathlib.Path:
+        path = pathlib.Path(path_str).resolve()
+
+        for allowed_path in self._allowed_paths:
+            try:
+                path.relative_to(allowed_path)
+                return path
+            except ValueError:
+                continue
+
+        raise PermissionError(
+            f"Path '{path_str}' is not within allowed directories: {self._settings.directories}"
+        )

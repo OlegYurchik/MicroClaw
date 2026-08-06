@@ -11,13 +11,14 @@ from mutagen.id3 import ID3, APIC
 from microclaw.toolkits.base import BaseToolKit, tool
 from microclaw.toolkits.capabilities import DiscoveryCapability, ToolKitCapability
 from microclaw.toolkits.enums import PermissionModeEnum
-from microclaw.toolkits.execptions import UserDeniedAction
+from microclaw.toolkits.exceptions import UserDeniedAction
 from .dto import AudioFileInfo, AudioTags, CoverImage
 from .settings import AudioTagsToolKitSettings
 
 
 class AudioTagsToolKit(BaseToolKit[AudioTagsToolKitSettings]):
     """Tools for managing audio file tags and metadata."""
+
     required_capabilities: list[ToolKitCapability] = []
     write_capabilities: list[ToolKitCapability] = []
     discovery_capabilities: list[DiscoveryCapability] = []
@@ -209,7 +210,7 @@ class AudioTagsToolKit(BaseToolKit[AudioTagsToolKitSettings]):
         if "APIC:" not in id3:
             return
 
-        if self._settings.allow_write is PermissionModeEnum.REQUEST:
+        if self._settings.write_mode is PermissionModeEnum.REQUEST:
             confirmation_request_text = f"Remove cover from audio '{path}'?"
             decision = interrupt({"description": confirmation_request_text})
             if decision == DecisionEnum.REJECT.value:

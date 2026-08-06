@@ -1,6 +1,7 @@
 from microclaw.dto import DecisionEnum
 from langgraph.types import interrupt
 import asyncio
+import shlex
 import shutil
 from typing import Iterable
 
@@ -14,6 +15,7 @@ from .settings import CommandToolKitSettings
 
 class CommandToolKit(BaseToolKit[CommandToolKitSettings]):
     """Tools for executing shell commands with a whitelist of allowed commands."""
+
     required_capabilities: list[ToolKitCapability] = []
     write_capabilities: list[ToolKitCapability] = []
     discovery_capabilities: list[DiscoveryCapability] = []
@@ -25,24 +27,6 @@ class CommandToolKit(BaseToolKit[CommandToolKitSettings]):
             if self._settings.allowed_commands
             else None
         )
-
-    def _validate_command(self, command: str) -> str:
-        base_command = command.split()[0] if command else ""
-
-        if (
-            self._allowed_commands_set is not None
-            and base_command not in self._allowed_commands_set
-        ):
-            raise PermissionError(
-                f"Command '{base_command}' is not allowed. "
-                f"Allowed commands: {self._settings.allowed_commands}"
-            )
-
-        command_path = shutil.which(base_command)
-        if command_path is None:
-            raise RuntimeError(f"Command '{base_command}' not found in system PATH")
-
-        return command_path
 
     @tool
     async def execute_command(
@@ -99,3 +83,21 @@ class CommandToolKit(BaseToolKit[CommandToolKitSettings]):
             raise RuntimeError(f"Command '{command}' timed out after {timeout} seconds")
         except Exception as e:
             raise RuntimeError(f"Error executing command '{command}': {str(e)}")
+
+    def _validate_command(self, command: str) -> str:
+        base_command = shlex.split(command)[0] if command else ""
+
+        if (
+            self._allowed_commands_set is not None
+            and base_command not in self._allowed_commands_set
+        ):
+            raise PermissionError(
+                f"Command '{base_command}' is not allowed. "
+                f"Allowed commands: {self._settings.allowed_commands}"
+            )
+
+        command_path = shutil.which(base_command)
+        if command_path is None:
+            raise RuntimeError(f"Command '{base_command}' not found in system PATH")
+
+        return command_path

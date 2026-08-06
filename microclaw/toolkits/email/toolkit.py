@@ -1,6 +1,17 @@
 from microclaw.dto import DecisionEnum
-from langgraph.types import interrupt
+
 import asyncio
+
+from loguru import logger
+from tenacity import (
+    AsyncRetrying,
+    before_sleep_log,
+    retry_if_exception_type,
+    stop_after_attempt,
+    wait_exponential,
+)
+
+from langgraph.types import interrupt
 import email
 import re
 import ssl
@@ -12,7 +23,7 @@ from email.utils import parsedate_to_datetime, getaddresses
 from typing import AsyncGenerator
 
 from aioimaplib import aioimaplib
-from aiosmtplib import SMTP
+from aiosmtplib import SMTP, SMTPException
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.mime.base import MIMEBase
@@ -26,7 +37,6 @@ from .dto import EmailFolder, EmailMessage, EmailAttachment, FullEmailMessage
 from .settings import EmailSettings, TLSModeEnum
 
 
-# Monkey patching aioimaplib to support starttls
 async def _protocol_starttls(self, host, ssl_context=None):
     if "STARTTLS" not in self.capabilities:
         aioimaplib.Abort("server does not have STARTTLS capability")
@@ -42,8 +52,6 @@ async def _protocol_starttls(self, host, ssl_context=None):
     if ssl_context is None:
         ssl_context = ssl.create_default_context(ssl.Purpose.SERVER_AUTH)
 
-    # Use loop.start_tls() to upgrade the transport to TLS
-    # This is the modern way to do STARTTLS with asyncio
     new_transport = await self.loop.start_tls(
         self.transport,
         self,
@@ -68,61 +76,19 @@ aioimaplib.IMAP4.starttls = _imap_starttls
 
 class EmailToolKit(BaseToolKit[EmailSettings]):
     """Tools for managing emails via IMAP and SMTP protocols."""
+    IMAP_TIMEOUT_SECONDS = 60
     required_capabilities: list[ToolKitCapability] = []
     write_capabilities: list[ToolKitCapability] = []
     discovery_capabilities: list[DiscoveryCapability] = []
 
-    @asynccontextmanager
-    async def _create_imap_client(self) -> AsyncGenerator:
-        if self.settings.imap_tls_mode == TLSModeEnum.STARTTLS:
-            client = aioimaplib.IMAP4(
-                host=self.settings.imap_host,
-                port=self.settings.imap_port,
-                timeout=60,
-            )
-            await client.wait_hello_from_server()
-            await client.starttls()
-        else:
-            client = aioimaplib.IMAP4_SSL(
-                host=self.settings.imap_host,
-                port=self.settings.imap_port,
-                timeout=60,
-            )
-            if not self.settings.verify_ssl:
-                client.cert_reqs = None
-            await client.wait_hello_from_server()
-        await client.login(
-            self.settings.username,
-            self.settings.password,
-        )
-        yield client
-
-    async def _ensure_imap_authenticated(self, client: aioimaplib.IMAP4) -> None:
-        status, _ = await client.noop()
-        if status == "OK":
-            return
-        if client.state == "NONAUTH":
-            await client.login(
-                self.settings.username,
-                self.settings.password,
-            )
-
-    @asynccontextmanager
-    async def _create_smtp_client(self):
-        client = SMTP(
-            hostname=self.settings.smtp_host,
-            port=self.settings.smtp_port,
-            use_tls=self.settings.smtp_tls_mode == TLSModeEnum.SSL,
-            start_tls=self.settings.smtp_tls_mode == TLSModeEnum.STARTTLS,
-            validate_certs=self.settings.verify_ssl,
-        )
-        await client.connect()
-        await client.login(
-            self.settings.username,
-            self.settings.password,
-        )
-        yield client
-        await client.quit()
+    _RETRYABLE_EXCEPTIONS: tuple[type[Exception], ...] = (
+        ConnectionError,
+        TimeoutError,
+        asyncio.TimeoutError,
+        OSError,
+        aioimaplib.Error,
+        SMTPException,
+    )
 
     @tool
     async def get_folders(self) -> list[EmailFolder]:
@@ -133,7 +99,7 @@ class EmailToolKit(BaseToolKit[EmailSettings]):
             List of EmailFolder objects with name, path, and flags
         """
         async with self._create_imap_client() as client:
-            status, data = await client.list("", "*")
+            status, data = await self._with_retry(client.list, "", "*")
             if status != "OK":
                 return []
 
@@ -182,7 +148,7 @@ class EmailToolKit(BaseToolKit[EmailSettings]):
         folder = folder or self.settings.default_folder
 
         async with self._create_imap_client() as client:
-            status, _ = await client.select(folder)
+            status, _ = await self._with_retry(client.select, folder)
             if status != "OK":
                 return []
 
@@ -197,7 +163,7 @@ class EmailToolKit(BaseToolKit[EmailSettings]):
             messages = []
             for uid in reversed(uid_list):
                 uid_str = uid.decode() if isinstance(uid, bytes) else uid
-                status, message_parts = await client.uid("FETCH", uid_str, "(RFC822)")
+                status, message_parts = await self._with_retry(client.uid, "FETCH", uid_str, "(RFC822)")
                 if status != "OK" or not message_parts:
                     continue
                 raw_message = b""
@@ -228,11 +194,11 @@ class EmailToolKit(BaseToolKit[EmailSettings]):
         folder = folder or self.settings.default_folder
 
         async with self._create_imap_client() as client:
-            status, _ = await client.select(folder)
+            status, _ = await self._with_retry(client.select, folder)
             if status != "OK":
                 return None
 
-            status, message_parts = await client.uid("FETCH", uid, "(RFC822)")
+            status, message_parts = await self._with_retry(client.uid, "FETCH", uid, "(RFC822)")
             if status != "OK" or not message_parts:
                 return None
 
@@ -277,7 +243,7 @@ class EmailToolKit(BaseToolKit[EmailSettings]):
         folder = folder or self.settings.default_folder
 
         async with self._create_imap_client() as client:
-            status, _ = await client.select(folder)
+            status, _ = await self._with_retry(client.select, folder)
             if status != "OK":
                 return []
 
@@ -303,7 +269,7 @@ class EmailToolKit(BaseToolKit[EmailSettings]):
             messages = []
             for uid in uid_list:
                 uid_str = uid.decode() if isinstance(uid, bytes) else uid
-                status, message_parts = await client.uid("FETCH", uid_str, "(RFC822)")
+                status, message_parts = await self._with_retry(client.uid, "FETCH", uid_str, "(RFC822)")
                 if status != "OK" or not message_parts:
                     continue
                 raw_message = b""
@@ -328,6 +294,9 @@ class EmailToolKit(BaseToolKit[EmailSettings]):
         """
         Delete an email messages by UIDs.
 
+        The agent must verify that all messages were successfully deleted
+        (e.g., by re-checking the folder or matching the number of removed messages).
+
         Args:
             uids: Messages UIDs to delete
             folder: Folder name (default: default_folder)
@@ -338,7 +307,7 @@ class EmailToolKit(BaseToolKit[EmailSettings]):
         folder = folder or self.settings.default_folder
 
         async with self._create_imap_client() as client:
-            status, _ = await client.select(folder)
+            status, _ = await self._with_retry(client.select, folder)
             if status != "OK":
                 return None
 
@@ -347,21 +316,11 @@ class EmailToolKit(BaseToolKit[EmailSettings]):
             if self.settings.delete_mode is PermissionModeEnum.REQUEST:
                 confirmation_messages = []
                 for uid in uids:
-                    status, message_parts = await client.uid(
-                        "FETCH", uid, "(RFC822.HEADER)"
+                    summary = await self._fetch_message_summary(client, uid)
+                    subject, from_addr = summary
+                    confirmation_messages.append(
+                        f"* {subject} (From: {from_addr})"
                     )
-                    if status == "OK" and message_parts:
-                        for part in message_parts:
-                            if isinstance(part, bytearray):
-                                raw_header = bytes(part)
-                                msg = email.message_from_bytes(raw_header)
-                                subject = self._decode_header(msg.get("Subject", ""))
-                                confirmation_messages.append(f"* {subject}")
-                                break
-                    else:
-                        confirmation_messages.append(
-                            f"* UID {uid} (unable to load details)"
-                        )
                 confirmation_text = "\n".join(confirmation_messages)
                 confirmation_request_text = (
                     f"Delete the following emails from {self.settings.username}?\n"
@@ -372,11 +331,11 @@ class EmailToolKit(BaseToolKit[EmailSettings]):
                     raise UserDeniedAction()
 
             for uid in uids:
-                status, _ = await client.uid("STORE", uid, "+FLAGS", r"(\Deleted)")
+                status, _ = await self._with_retry(client.uid, "STORE", uid, "+FLAGS", r"(\Deleted)")
                 if status != "OK":
                     return None
 
-            status, _ = await client.expunge()
+            status, _ = await self._with_retry(client.expunge)
 
     @tool
     async def move_message(
@@ -399,19 +358,19 @@ class EmailToolKit(BaseToolKit[EmailSettings]):
         source_folder = source_folder or self.settings.default_folder
 
         async with self._create_imap_client() as client:
-            status, _ = await client.select(source_folder)
+            status, _ = await self._with_retry(client.select, source_folder)
             if status != "OK":
                 return False
 
-            status, _ = await client.uid("COPY", uid, destination_folder)
+            status, _ = await self._with_retry(client.uid, "COPY", uid, destination_folder)
             if status != "OK":
                 return False
 
-            status, _ = await client.uid("STORE", uid, "+FLAGS", r"(\Deleted)")
+            status, _ = await self._with_retry(client.uid, "STORE", uid, "+FLAGS", r"(\Deleted)")
             if status != "OK":
                 return False
 
-            status, _ = await client.expunge()
+            status, _ = await self._with_retry(client.expunge)
             return status == "OK"
 
     @tool
@@ -429,11 +388,11 @@ class EmailToolKit(BaseToolKit[EmailSettings]):
         folder = folder or self.settings.default_folder
 
         async with self._create_imap_client() as client:
-            status, _ = await client.select(folder)
+            status, _ = await self._with_retry(client.select, folder)
             if status != "OK":
                 return False
 
-            status, _ = await client.uid("STORE", uid, "+FLAGS", r"(\Seen)")
+            status, _ = await self._with_retry(client.uid, "STORE", uid, "+FLAGS", r"(\Seen)")
             return status == "OK"
 
     @tool
@@ -451,11 +410,11 @@ class EmailToolKit(BaseToolKit[EmailSettings]):
         folder = folder or self.settings.default_folder
 
         async with self._create_imap_client() as client:
-            status, _ = await client.select(folder)
+            status, _ = await self._with_retry(client.select, folder)
             if status != "OK":
                 return False
 
-            status, _ = await client.uid("STORE", uid, "-FLAGS", r"(\Seen)")
+            status, _ = await self._with_retry(client.uid, "STORE", uid, "-FLAGS", r"(\Seen)")
             return status == "OK"
 
     @tool
@@ -540,12 +499,13 @@ class EmailToolKit(BaseToolKit[EmailSettings]):
 
         async with self._create_smtp_client() as client:
             recipients = to_list + cc_list + bcc_list
-            await client.send_message(msg, recipients=recipients)
+            await self._with_retry(client.send_message, msg, recipients=recipients)
 
             try:
                 async with self._create_imap_client() as imap_client:
                     msg_bytes = msg.as_bytes()
-                    await imap_client.append(
+                    await self._with_retry(
+                        imap_client.append,
                         self.settings.sent_folder,
                         r"(\Seen)",
                         None,
@@ -570,18 +530,99 @@ class EmailToolKit(BaseToolKit[EmailSettings]):
         folder = folder or self.settings.default_folder
 
         async with self._create_imap_client() as client:
-            status, _ = await client.select(folder)
+            status, _ = await self._with_retry(client.select, folder)
             if status != "OK":
                 return 0
 
             uids = await self._get_uids_by_search(client, "UNSEEN")
             return len(uids)
 
+    async def _with_retry(self, func, *args, **kwargs):
+        async for attempt in AsyncRetrying(
+            stop=stop_after_attempt(3),
+            wait=wait_exponential(multiplier=1, min=2, max=10),
+            retry=retry_if_exception_type(self._RETRYABLE_EXCEPTIONS),
+            reraise=True,
+            before_sleep=before_sleep_log(logger, "warning"),
+        ):
+            with attempt:
+                return await func(*args, **kwargs)
+
+    async def _fetch_message_summary(
+        self, client: aioimaplib.IMAP4, uid: str
+    ) -> tuple[str, str]:
+
+        status, message_parts = await self._with_retry(client.uid, "FETCH", uid, "(RFC822.HEADER)")
+        if status == "OK" and message_parts:
+            for part in message_parts:
+                if isinstance(part, bytearray):
+                    raw_header = bytes(part)
+                    msg = email.message_from_bytes(raw_header)
+                    subject = self._decode_header(msg.get("Subject", "unknown"))
+                    from_addr = self._decode_header(msg.get("From", "unknown"))
+                    return subject, from_addr
+        raise RuntimeError(f"Failed to fetch message summary for UID {uid}")
+
+    @asynccontextmanager
+    async def _create_imap_client(self) -> AsyncGenerator:
+        if self.settings.imap_tls_mode == TLSModeEnum.STARTTLS:
+            client = aioimaplib.IMAP4(
+                host=self.settings.imap_host,
+                port=self.settings.imap_port,
+                timeout=self.IMAP_TIMEOUT_SECONDS,
+            )
+            await self._with_retry(client.wait_hello_from_server)
+            await self._with_retry(client.starttls)
+        else:
+            client = aioimaplib.IMAP4_SSL(
+                host=self.settings.imap_host,
+                port=self.settings.imap_port,
+                timeout=self.IMAP_TIMEOUT_SECONDS,
+            )
+            if not self.settings.verify_ssl:
+                client.cert_reqs = None
+            await self._with_retry(client.wait_hello_from_server)
+        await self._with_retry(
+            client.login,
+            self.settings.username,
+            self.settings.password,
+        )
+        yield client
+
+    async def _ensure_imap_authenticated(self, client: aioimaplib.IMAP4) -> None:
+        status, _ = await self._with_retry(client.noop)
+        if status == "OK":
+            return
+        if client.state == "NONAUTH":
+            await self._with_retry(
+                client.login,
+                self.settings.username,
+                self.settings.password,
+            )
+
+    @asynccontextmanager
+    async def _create_smtp_client(self):
+        client = SMTP(
+            hostname=self.settings.smtp_host,
+            port=self.settings.smtp_port,
+            use_tls=self.settings.smtp_tls_mode == TLSModeEnum.SSL,
+            start_tls=self.settings.smtp_tls_mode == TLSModeEnum.STARTTLS,
+            validate_certs=self.settings.verify_ssl,
+        )
+        await self._with_retry(client.connect)
+        await self._with_retry(
+            client.login,
+            self.settings.username,
+            self.settings.password,
+        )
+        yield client
+        await client.quit()
+
     async def _get_uids_by_search(
         self, client: aioimaplib.IMAP4, *criteria: str
     ) -> list[str]:
         try:
-            status, data = await client.uid("SEARCH", *criteria)
+            status, data = await self._with_retry(client.uid, "SEARCH", *criteria)
             if status == "OK" and data and data[0]:
                 uid_line = data[0]
                 if isinstance(uid_line, bytes):
@@ -591,7 +632,7 @@ class EmailToolKit(BaseToolKit[EmailSettings]):
         except (aioimaplib.Error, Exception):
             pass
 
-        status, data = await client.search(*criteria)
+        status, data = await self._with_retry(client.search, *criteria)
         if status != "OK" or not data or not data[0]:
             return []
 
@@ -604,7 +645,7 @@ class EmailToolKit(BaseToolKit[EmailSettings]):
 
         uids = []
         for seq in seq_numbers:
-            status, fetch_data = await client.fetch(seq, "(UID)")
+            status, fetch_data = await self._with_retry(client.fetch, seq, "(UID)")
             if status != "OK" or not fetch_data:
                 continue
             uid = None

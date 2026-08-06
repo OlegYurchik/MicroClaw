@@ -1,9 +1,19 @@
-from microclaw.dto import DecisionEnum
-from langgraph.types import interrupt
+import asyncio
 from datetime import date, datetime
+
+from microclaw.dto import DecisionEnum
 
 from caldav.aio import AsyncDAVClient, AsyncPrincipal, AsyncCalendar, AsyncEvent
 from caldav.elements import dav
+from langgraph.types import interrupt
+from loguru import logger
+from tenacity import (
+    AsyncRetrying,
+    before_sleep_log,
+    retry_if_exception_type,
+    stop_after_attempt,
+    wait_exponential,
+)
 
 from microclaw.toolkits.base import BaseToolKit, tool
 from microclaw.toolkits.capabilities import DiscoveryCapability, ToolKitCapability
@@ -16,12 +26,20 @@ from .settings import CalDAVSettings
 
 class CalDAVToolKit(BaseToolKit[CalDAVSettings]):
     """Tools for managing calendars and events via CalDAV protocol."""
+
     required_capabilities: list[ToolKitCapability] = []
     write_capabilities: list[ToolKitCapability] = []
     discovery_capabilities: list[DiscoveryCapability] = []
 
     DATETIME_FORMAT = "%Y%m%dT%H%M%S"
     DATE_FORMAT = "%Y%m%d"
+
+    _RETRYABLE_EXCEPTIONS: tuple[type[Exception], ...] = (
+        ConnectionError,
+        TimeoutError,
+        asyncio.TimeoutError,
+        OSError,
+    )
 
     def __init__(self, key: str, settings: ToolKitSettings):
         super().__init__(key=key, settings=settings)
@@ -33,21 +51,6 @@ class CalDAVToolKit(BaseToolKit[CalDAVSettings]):
         )
         self._principal = None
 
-    async def get_principal(self) -> AsyncPrincipal:
-        if self._principal is None:
-            self._principal = await self._client.get_principal()
-        return self._principal
-
-    async def _get_calendar(self, calendar_url: str) -> AsyncCalendar:
-        dav_calendar = AsyncCalendar(client=self._client, url=calendar_url)
-        if self.settings.allowed_calendars is not None:
-            calendar_name = await dav_calendar.get_property(dav.DisplayName())
-            if calendar_name not in self.settings.allowed_calendars:
-                raise PermissionError(
-                    f"Calendar '{calendar_name}' is not in allowed calendars list"
-                )
-        return dav_calendar
-
     @tool
     async def get_calendars(self) -> list[Calendar]:
         """
@@ -57,7 +60,7 @@ class CalDAVToolKit(BaseToolKit[CalDAVSettings]):
             List of Calendar objects with url and name
         """
         principal = await self.get_principal()
-        dav_calendars = await principal.get_calendars()
+        dav_calendars = await self._with_retry(principal.get_calendars)
         calendars = []
         for dav_calendar in dav_calendars:
             calendar = await self._convert_calendar_to_dto(calendar=dav_calendar)
@@ -89,7 +92,8 @@ class CalDAVToolKit(BaseToolKit[CalDAVSettings]):
                 raise UserDeniedAction()
 
         principal = await self.get_principal()
-        dav_calendar = await principal.make_calendar(
+        dav_calendar = await self._with_retry(
+            principal.make_calendar,
             name=name,
             cal_id=None,
             supported_calendar_component_set=None,
@@ -112,7 +116,7 @@ class CalDAVToolKit(BaseToolKit[CalDAVSettings]):
         """
 
         dav_calendar = AsyncCalendar(client=self._client, url=url)
-        name = await dav_calendar.get_property(dav.DisplayName())
+        name = await self._with_retry(dav_calendar.get_property, dav.DisplayName())
         return Calendar(url=url, name=name or "")
 
     @tool
@@ -131,13 +135,13 @@ class CalDAVToolKit(BaseToolKit[CalDAVSettings]):
         if self.settings.write_mode is PermissionModeEnum.DENY:
             raise PermissionError("Write operations denied")
         if self.settings.write_mode is PermissionModeEnum.REQUEST:
-            calendar_name = await dav_calendar.get_property(dav.DisplayName())
+            calendar_name = await self._with_retry(dav_calendar.get_property, dav.DisplayName())
             confirmation_request_text = f"Delete calendar '{calendar_name}'?"
             decision = interrupt({"description": confirmation_request_text})
             if decision == DecisionEnum.REJECT.value:
                 raise UserDeniedAction()
 
-        await dav_calendar.delete()
+        await self._with_retry(dav_calendar.delete)
 
     @tool
     async def get_events(
@@ -149,6 +153,8 @@ class CalDAVToolKit(BaseToolKit[CalDAVSettings]):
     ) -> list[Event]:
         """
         Get a list of events in a calendar or all calendars.
+        When start and end dates are provided, recurring events are expanded—each
+        occurrence within the range is returned as a separate event.
 
         Args:
             calendar_url: Full URL of the calendar (optional, all calendars if not specified)
@@ -170,8 +176,7 @@ class CalDAVToolKit(BaseToolKit[CalDAVSettings]):
             dav_calendars = [await self._get_calendar(calendar_url)]
         else:
             principal = await self.get_principal()
-            dav_calendars = await principal.get_calendars()
-            # Filter by allowed calendars
+            dav_calendars = await self._with_retry(principal.get_calendars)
             filtered_calendars = []
             for cal in dav_calendars:
                 try:
@@ -184,13 +189,15 @@ class CalDAVToolKit(BaseToolKit[CalDAVSettings]):
         events = []
         for dav_calendar in dav_calendars:
             if start_dt and end_dt:
-                events_data = await dav_calendar.date_search(
+                events_data = await self._with_retry(
+                    dav_calendar.search,
                     start=start_dt,
                     end=end_dt,
-                    expand=False,
+                    event=True,
+                    expand=True,
                 )
             else:
-                events_data = await dav_calendar.get_events()
+                events_data = await self._with_retry(dav_calendar.get_events)
 
             for event in events_data[:max_results]:
                 events.append(await self._convert_event_to_dto(event))
@@ -228,7 +235,7 @@ class CalDAVToolKit(BaseToolKit[CalDAVSettings]):
         if self.settings.write_mode is PermissionModeEnum.DENY:
             raise PermissionError("Write operations denied")
         if self.settings.write_mode is PermissionModeEnum.REQUEST:
-            calendar_name = await dav_calendar.get_property(dav.DisplayName())
+            calendar_name = await self._with_retry(dav_calendar.get_property, dav.DisplayName())
             confirmation_request_text = (
                 f"Create event '{summary}' in calendar '{calendar_name}'?\n"
                 f"Start: {start}\n"
@@ -277,7 +284,7 @@ class CalDAVToolKit(BaseToolKit[CalDAVSettings]):
             event_data += f"LOCATION:{location}\n"
         event_data += "END:VEVENT\nEND:VCALENDAR\n"
 
-        dav_event = await dav_calendar.add_event(event_data)
+        dav_event = await self._with_retry(dav_calendar.add_event, event_data)
         return await self._convert_event_to_dto(dav_event)
 
     @tool
@@ -293,7 +300,7 @@ class CalDAVToolKit(BaseToolKit[CalDAVSettings]):
         """
 
         dav_event = AsyncEvent(client=self._client, url=url)
-        await dav_event.load()
+        await self._with_retry(dav_event.load)
         return await self._convert_event_to_dto(dav_event)
 
     @tool
@@ -324,7 +331,7 @@ class CalDAVToolKit(BaseToolKit[CalDAVSettings]):
         """
 
         dav_event = AsyncEvent(client=self._client, url=url)
-        await dav_event.load()
+        await self._with_retry(dav_event.load)
 
         if self.settings.write_mode is PermissionModeEnum.DENY:
             raise PermissionError("Write operations denied")
@@ -392,7 +399,8 @@ class CalDAVToolKit(BaseToolKit[CalDAVSettings]):
                         ).strftime(self.DATETIME_FORMAT)
 
         dav_event.data = event_instance.to_ical()
-        await self._client.put(
+        await self._with_retry(
+            self._client.put,
             url, dav_event.data, {"Content-Type": "text/calendar; charset=utf-8"}
         )
         return await self._convert_event_to_dto(dav_event)
@@ -415,7 +423,7 @@ class CalDAVToolKit(BaseToolKit[CalDAVSettings]):
             raise PermissionError("Write operations denied")
         if self.settings.write_mode is PermissionModeEnum.REQUEST:
             dav_event = AsyncEvent(client=self._client, url=url)
-            await dav_event.load()
+            await self._with_retry(dav_event.load)
             event_data = await self._convert_event_to_dto(dav_event)
             confirmation_request_text = f"Delete event '{event_data.summary}'?"
             decision = interrupt({"description": confirmation_request_text})
@@ -423,12 +431,40 @@ class CalDAVToolKit(BaseToolKit[CalDAVSettings]):
                 raise UserDeniedAction()
 
         dav_event = AsyncEvent(client=self._client, url=url)
-        await dav_event.delete()
+        await self._with_retry(dav_event.delete)
+
+    async def _with_retry(self, func, *args, **kwargs):
+        async for attempt in AsyncRetrying(
+            stop=stop_after_attempt(3),
+            wait=wait_exponential(multiplier=1, min=2, max=10),
+            retry=retry_if_exception_type(self._RETRYABLE_EXCEPTIONS),
+            reraise=True,
+            before_sleep=before_sleep_log(logger, "warning"),
+        ):
+            with attempt:
+                return await func(*args, **kwargs)
+
+    async def get_principal(self) -> AsyncPrincipal:
+        if self._principal is None:
+            self._principal = await self._with_retry(self._client.get_principal)
+        return self._principal
+
+    async def _get_calendar(self, calendar_url: str) -> AsyncCalendar:
+        dav_calendar = AsyncCalendar(client=self._client, url=calendar_url)
+        if self.settings.allowed_calendars is not None:
+            calendar_name = await self._with_retry(
+                dav_calendar.get_property, dav.DisplayName()
+            )
+            if calendar_name not in self.settings.allowed_calendars:
+                raise PermissionError(
+                    f"Calendar '{calendar_name}' is not in allowed calendars list"
+                )
+        return dav_calendar
 
     async def _convert_calendar_to_dto(self, calendar: AsyncCalendar) -> Calendar:
         return Calendar(
             url=str(calendar.url),
-            name=await calendar.get_property(dav.DisplayName()),
+            name=await self._with_retry(calendar.get_property, dav.DisplayName()),
         )
 
     async def _convert_event_to_dto(self, event: AsyncEvent) -> Event:

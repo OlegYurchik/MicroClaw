@@ -1,10 +1,20 @@
 from microclaw.dto import DecisionEnum
 from langgraph.types import interrupt
+import asyncio
 import tempfile
 from contextlib import asynccontextmanager
 from email.utils import parsedate_to_datetime
 from pathlib import Path
 from typing import Any
+
+from loguru import logger
+from tenacity import (
+    AsyncRetrying,
+    before_sleep_log,
+    retry_if_exception_type,
+    stop_after_attempt,
+    wait_exponential,
+)
 
 from aiodav import Client
 
@@ -20,19 +30,13 @@ class WebDAVToolKit(BaseToolKit[WebDAVSettings]):
     required_capabilities: list[ToolKitCapability] = []
     write_capabilities: list[ToolKitCapability] = []
     discovery_capabilities: list[DiscoveryCapability] = []
-    @asynccontextmanager
-    async def _create_client(self):
-        """Создает новый клиент WebDAV."""
-        client = Client(
-            hostname=self.settings.url,
-            login=self.settings.username,
-            password=self.settings.password,
-            insecure=not self.settings.verify_ssl,
-        )
-        try:
-            yield client
-        finally:
-            await client.close()
+
+    _RETRYABLE_EXCEPTIONS: tuple[type[Exception], ...] = (
+        ConnectionError,
+        TimeoutError,
+        asyncio.TimeoutError,
+        OSError,
+    )
 
     @tool
     async def list_files(self, path: str = "/") -> list[WebDAVObject]:
@@ -48,7 +52,7 @@ class WebDAVToolKit(BaseToolKit[WebDAVSettings]):
         path = path.lstrip("/").rstrip("/")
 
         async with self._create_client() as client:
-            items = await client.list(path or "/", get_info=True)
+            items = await self._with_retry(client.list, path or "/", get_info=True)
 
         return [
             self._parse_item_info(parent_path=path, item_info=item_info)
@@ -69,7 +73,7 @@ class WebDAVToolKit(BaseToolKit[WebDAVSettings]):
         path = path.lstrip("/")
 
         async with self._create_client() as client:
-            items = await client.list(path, get_info=True)
+            items = await self._with_retry(client.list, path, get_info=True)
         item_info = items[0]
         parent_path = "/".join(path.split("/")[:-1])
         return self._parse_item_info(parent_path=parent_path, item_info=item_info)
@@ -87,7 +91,7 @@ class WebDAVToolKit(BaseToolKit[WebDAVSettings]):
             None - indicates successful operation
         """
         async with self._create_client() as client:
-            await client.download_file(path, local_path)
+            await self._with_retry(client.download_file, path, local_path)
 
     @tool
     async def upload_file(self, path: str, local_path: str) -> None:
@@ -112,7 +116,7 @@ class WebDAVToolKit(BaseToolKit[WebDAVSettings]):
                 raise UserDeniedAction()
 
         async with self._create_client() as client:
-            await client.upload_file(path, local_path)
+            await self._with_retry(client.upload_file, path, local_path)
 
     @tool
     async def create_file_with_content(self, path: str, content: bytes) -> None:
@@ -140,15 +144,17 @@ class WebDAVToolKit(BaseToolKit[WebDAVSettings]):
             if decision == DecisionEnum.REJECT.value:
                 raise UserDeniedAction()
 
-        with tempfile.NamedTemporaryFile(delete=False) as temp_file:
-            temp_file.write(content)
-            temp_path = temp_file.name
+        def _write_temp(data: bytes) -> str:
+            with tempfile.NamedTemporaryFile(delete=False) as temp_file:
+                temp_file.write(data)
+                return temp_file.name
 
+        temp_path = await asyncio.to_thread(_write_temp, content)
         try:
             async with self._create_client() as client:
-                await client.upload_file(path, temp_path)
+                await self._with_retry(client.upload_file, path, temp_path)
         finally:
-            Path(temp_path).unlink(missing_ok=True)
+            await asyncio.to_thread(Path(temp_path).unlink, missing_ok=True)
 
     @tool
     async def delete_file(self, path: str) -> None:
@@ -173,7 +179,18 @@ class WebDAVToolKit(BaseToolKit[WebDAVSettings]):
                 raise UserDeniedAction()
 
         async with self._create_client() as client:
-            await client.delete(path)
+            await self._with_retry(client.delete, path)
+
+    async def _with_retry(self, func, *args, **kwargs):
+        async for attempt in AsyncRetrying(
+            stop=stop_after_attempt(3),
+            wait=wait_exponential(multiplier=1, min=2, max=10),
+            retry=retry_if_exception_type(self._RETRYABLE_EXCEPTIONS),
+            reraise=True,
+            before_sleep=before_sleep_log(logger, "warning"),
+        ):
+            with attempt:
+                return await func(*args, **kwargs)
 
     def _check_path_access(self, path: str) -> None:
         if self.settings.allowed_paths is None:
@@ -207,6 +224,19 @@ class WebDAVToolKit(BaseToolKit[WebDAVSettings]):
             size=int(item_info["size"]) if item_info.get("size") is not None else None,
             etag=item_info.get("etag"),
         )
+
+    @asynccontextmanager
+    async def _create_client(self):
+        client = Client(
+            hostname=self.settings.url,
+            login=self.settings.username,
+            password=self.settings.password,
+            insecure=not self.settings.verify_ssl,
+        )
+        try:
+            yield client
+        finally:
+            await client.close()
 
     async def __aenter__(self):
         return self

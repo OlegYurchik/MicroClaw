@@ -16,6 +16,7 @@ class LangChainToolkitAdapter(BaseToolKit[LangChainToolkitAdapterSettings]):
     optionally filters them by name, and applies the toolkit key prefix to each
     tool name so that they integrate seamlessly with the microclaw agent.
     """
+
     required_capabilities: list[ToolKitCapability] = []
     write_capabilities: list[ToolKitCapability] = []
     discovery_capabilities: list[DiscoveryCapability] = []

@@ -1,4 +1,14 @@
 from microclaw.dto import DecisionEnum
+import asyncio
+
+from loguru import logger
+from tenacity import (
+    AsyncRetrying,
+    before_sleep_log,
+    retry_if_exception_type,
+    stop_after_attempt,
+    wait_exponential,
+)
 from langgraph.types import interrupt
 from typing import Any
 import datetime
@@ -71,9 +81,19 @@ class XMLBuilder:
 
 class CardDAVToolKit(BaseToolKit[CardDAVSettings]):
     """Tools for managing address books and contacts via CardDAV protocol."""
+
     required_capabilities: list[ToolKitCapability] = []
     write_capabilities: list[ToolKitCapability] = []
     discovery_capabilities: list[DiscoveryCapability] = []
+
+    _RETRYABLE_EXCEPTIONS: tuple[type[Exception], ...] = (
+        ConnectionError,
+        TimeoutError,
+        asyncio.TimeoutError,
+        OSError,
+        aiohttp.ClientConnectionError,
+        aiohttp.ServerDisconnectedError,
+    )
 
     def __init__(self, key: str, settings: ToolKitSettings):
         super().__init__(key=key, settings=settings)
@@ -93,14 +113,13 @@ class CardDAVToolKit(BaseToolKit[CardDAVSettings]):
         address_books = []
         principal_url = await self._get_principal_url()
 
-        async with self._create_session() as session:
-            async with session.request(
-                method="PROPFIND",
-                url=principal_url,
-                data=self._xml.addressbook_home_set(),
-                headers={"Depth": "0"},
-            ) as response:
-                content = await response.text()
+        response = await self._request_with_retry(
+            method="PROPFIND",
+            url=principal_url,
+            data=self._xml.addressbook_home_set(),
+            headers={"Depth": "0"},
+        )
+        content = await response.text()
 
         if response.status != 207 or not content:
             return address_books
@@ -109,19 +128,17 @@ class CardDAVToolKit(BaseToolKit[CardDAVSettings]):
         if address_book_url is None:
             return address_books
 
-        async with self._create_session() as session:
-            async with session.request(
-                method="PROPFIND",
-                url=address_book_url,
-                data=self._xml.address_books_list(),
-                headers={"Depth": "1"},
-            ) as response:
-                content = await response.text()
+        response = await self._request_with_retry(
+            method="PROPFIND",
+            url=address_book_url,
+            data=self._xml.address_books_list(),
+            headers={"Depth": "1"},
+        )
+        content = await response.text()
 
         address_books = []
         if response.status == 207 and content:
             all_address_books = self._parse_address_books(content, address_book_url)
-            # Filter by allowed address books
             for address_book in all_address_books:
                 if (
                     self.settings.allowed_address_books is None
@@ -142,14 +159,13 @@ class CardDAVToolKit(BaseToolKit[CardDAVSettings]):
         Returns:
             AddressBook object with url and name
         """
-        async with self._create_session() as session:
-            async with session.request(
-                method="PROPFIND",
-                url=url,
-                data=self._xml.address_book(),
-                headers={"Depth": "0"},
-            ) as response:
-                content = await response.text()
+        response = await self._request_with_retry(
+            method="PROPFIND",
+            url=url,
+            data=self._xml.address_book(),
+            headers={"Depth": "0"},
+        )
+        content = await response.text()
 
         if response.status == 207 and content:
             display_name = self._parse_address_book(content)
@@ -180,22 +196,21 @@ class CardDAVToolKit(BaseToolKit[CardDAVSettings]):
             address_books = [AddressBook(url=address_book_url, name="")]
 
         contacts = []
-        async with self._create_session() as session:
-            for address_book in address_books:
-                async with session.request(
-                    method="REPORT",
-                    url=address_book.url,
-                    data=self._xml.contacts_report(),
-                    headers={"Depth": "1"},
-                ) as response:
-                    content = await response.text()
+        for address_book in address_books:
+            response = await self._request_with_retry(
+                method="REPORT",
+                url=address_book.url,
+                data=self._xml.contacts_report(),
+                headers={"Depth": "1"},
+            )
+            content = await response.text()
 
-                if response.status == 207 and content:
-                    parsed_contacts = self._parse_contacts(content, address_book.url)
-                    contacts.extend(parsed_contacts)
+            if response.status == 207 and content:
+                parsed_contacts = self._parse_contacts(content, address_book.url)
+                contacts.extend(parsed_contacts)
 
-                    if len(contacts) >= max_results:
-                        break
+                if len(contacts) >= max_results:
+                    break
 
         return contacts[:max_results]
 
@@ -210,13 +225,12 @@ class CardDAVToolKit(BaseToolKit[CardDAVSettings]):
         Returns:
             Contact object with full details
         """
-        async with self._create_session() as session:
-            async with session.request(
-                method="GET",
-                url=url,
-                headers={"Accept": "text/vcard"},
-            ) as response:
-                content = await response.text()
+        response = await self._request_with_retry(
+            method="GET",
+            url=url,
+            headers={"Accept": "text/vcard"},
+        )
+        content = await response.text()
 
         if response.status == 200 and content:
             contact = await self._parse_vcard(content)
@@ -280,14 +294,13 @@ class CardDAVToolKit(BaseToolKit[CardDAVSettings]):
             birthday=birthday,
         )
 
-        async with self._create_session() as session:
-            async with session.request(
-                method="PUT",
-                url=f"{address_book_url.rstrip('/')}/{display_name.replace(' ', '_')}.vcf",
-                data=vcard_data,
-                headers={"Content-Type": "text/vcard; charset=utf-8"},
-            ) as response:
-                await response.text()
+        response = await self._request_with_retry(
+            method="PUT",
+            url=f"{address_book_url.rstrip('/')}/{display_name.replace(' ', '_')}.vcf",
+            data=vcard_data,
+            headers={"Content-Type": "text/vcard; charset=utf-8"},
+        )
+        await response.text()
 
         if response.status in (201, 204):
             contact = self._parse_vcard_sync(vcard_data)
@@ -358,17 +371,15 @@ class CardDAVToolKit(BaseToolKit[CardDAVSettings]):
             if decision == DecisionEnum.REJECT.value:
                 raise UserDeniedAction()
 
-        # Check if contact's address book is allowed
         address_book_url = url.rsplit("/", 1)[0]
         await self._get_address_book(address_book_url)
 
-        async with self._create_session() as session:
-            async with session.request(
-                method="GET",
-                url=url,
-                headers={"Accept": "text/vcard"},
-            ) as response:
-                content = await response.text()
+        response = await self._request_with_retry(
+            method="GET",
+            url=url,
+            headers={"Accept": "text/vcard"},
+        )
+        content = await response.text()
 
         if response.status != 200 or not content:
             return None
@@ -390,14 +401,12 @@ class CardDAVToolKit(BaseToolKit[CardDAVSettings]):
 
         vcard_data = vcard.serialize()
 
-        async with self._create_session() as session:
-            async with session.request(
-                method="PUT",
-                url=url,
-                data=vcard_data,
-                headers={"Content-Type": "text/vcard; charset=utf-8"},
-            ) as response:
-                pass
+        response = await self._request_with_retry(
+            method="PUT",
+            url=url,
+            data=vcard_data,
+            headers={"Content-Type": "text/vcard; charset=utf-8"},
+        )
 
         if response.status in (200, 204):
             contact = await self._parse_vcard(vcard_data)
@@ -424,22 +433,49 @@ class CardDAVToolKit(BaseToolKit[CardDAVSettings]):
             if decision == DecisionEnum.REJECT.value:
                 raise UserDeniedAction()
 
-        # Check if contact's address book is allowed
         address_book_url = url.rsplit("/", 1)[0]
         await self._get_address_book(address_book_url)
 
-        async with self._create_session() as session:
-            async with session.request(method="DELETE", url=url):
-                pass
+        await self._request_with_retry(
+            method="DELETE",
+            url=url,
+        )
 
-    def _get_full_url(self, url: str) -> str:
-        """Convert relative URL to full URL."""
-        if url.startswith("http"):
-            return url
-        if url.startswith("/remote.php/"):
-            return self.settings.url.split("/remote.php")[0] + url
-        relative_url = url.lstrip("/")
-        return f"{self.settings.url.rstrip('/')}/{relative_url}"
+    async def _with_retry(self, func, *args, **kwargs):
+        async for attempt in AsyncRetrying(
+            stop=stop_after_attempt(3),
+            wait=wait_exponential(multiplier=1, min=2, max=10),
+            retry=retry_if_exception_type(self._RETRYABLE_EXCEPTIONS),
+            reraise=True,
+            before_sleep=before_sleep_log(logger, "warning"),
+        ):
+            with attempt:
+                return await func(*args, **kwargs)
+
+    async def _request_with_retry(
+        self,
+        method: str,
+        url: str,
+        data: str | None = None,
+        headers: dict[str, str] | None = None,
+    ) -> aiohttp.ClientResponse:
+        async for attempt in AsyncRetrying(
+            stop=stop_after_attempt(3),
+            wait=wait_exponential(multiplier=1, min=2, max=10),
+            retry=retry_if_exception_type(self._RETRYABLE_EXCEPTIONS),
+            reraise=True,
+            before_sleep=before_sleep_log(logger, "warning"),
+        ):
+            with attempt:
+                session = self._create_session()
+                async with session as s:
+                    response = await s.request(
+                        method=method,
+                        url=url,
+                        data=data,
+                        headers=headers or {},
+                    )
+                    return response
 
     def _create_vcard_data(
         self,
@@ -453,7 +489,6 @@ class CardDAVToolKit(BaseToolKit[CardDAVSettings]):
         note: str | None = None,
         birthday: str | None = None,
     ) -> str:
-        """Create vCard data string from contact details."""
         vcard = vobject.vCard()
         vcard.add("fn").value = display_name
 
@@ -492,7 +527,6 @@ class CardDAVToolKit(BaseToolKit[CardDAVSettings]):
         note: str | None = None,
         birthday: str | None = None,
     ) -> None:
-        """Update vCard fields with provided values."""
         if display_name:
             vcard.fn.value = display_name
         if first_name or last_name:
@@ -525,14 +559,13 @@ class CardDAVToolKit(BaseToolKit[CardDAVSettings]):
         if self._principal_url:
             return self._principal_url
 
-        async with self._create_session() as session:
-            async with session.request(
-                method="PROPFIND",
-                url=self.settings.url,
-                data=self._xml.principal(),
-                headers={"Depth": "0"},
-            ) as response:
-                content = await response.text()
+        response = await self._request_with_retry(
+            method="PROPFIND",
+            url=self.settings.url,
+            data=self._xml.principal(),
+            headers={"Depth": "0"},
+        )
+        content = await response.text()
 
         if response.status == 207 and content:
             root = ET.fromstring(content)
@@ -547,14 +580,13 @@ class CardDAVToolKit(BaseToolKit[CardDAVSettings]):
 
     async def _get_address_book(self, address_book_url: str) -> str:
         if self.settings.allowed_address_books is not None:
-            async with self._create_session() as session:
-                async with session.request(
-                    method="PROPFIND",
-                    url=address_book_url,
-                    data=self._xml.address_book(),
-                    headers={"Depth": "0"},
-                ) as response:
-                    content = await response.text()
+            response = await self._request_with_retry(
+                method="PROPFIND",
+                url=address_book_url,
+                data=self._xml.address_book(),
+                headers={"Depth": "0"},
+            )
+            content = await response.text()
 
             if response.status == 207 and content:
                 display_name = self._parse_address_book(content)
@@ -597,47 +629,6 @@ class CardDAVToolKit(BaseToolKit[CardDAVSettings]):
         if href_elem is not None:
             return self._get_full_url(href_elem.text)
 
-    def _parse_responses(self, content: str, base_url: str, parser: callable) -> list:
-        root = ET.fromstring(content)
-        ns = {"d": "DAV:", "card": "urn:ietf:params:xml:ns:carddav"}
-
-        results = []
-        for response in root.findall(".//d:response", ns):
-            result = parser(response, ns, base_url)
-            if result:
-                results.append(result)
-
-        return results
-
-    def _extract_address_book_from_response(
-        self,
-        response: Any,
-        ns: dict[str, str],
-        base_url: str,
-    ) -> AddressBook | None:
-        href_elem = response.find("d:href", ns)
-        if href_elem is None:
-            return None
-
-        href = href_elem.text
-
-        if href == base_url or href == base_url.rstrip("/") + "/":
-            return None
-
-        resourcetype_elem = response.find(
-            ".//d:propstat/d:prop/d:resourcetype/card:addressbook", ns
-        )
-        if resourcetype_elem is None:
-            return None
-
-        display_name_elem = response.find(".//d:propstat/d:prop/d:displayname", ns)
-        display_name = (
-            display_name_elem.text
-            if (display_name_elem is not None and display_name_elem.text)
-            else "Address Book"
-        )
-        return AddressBook(url=self._get_full_url(href), name=display_name)
-
     def _parse_address_books(self, content: str, base_url: str) -> list[AddressBook]:
         return self._parse_responses(
             content, base_url, self._extract_address_book_from_response
@@ -652,28 +643,6 @@ class CardDAVToolKit(BaseToolKit[CardDAVSettings]):
         if display_name_elem is not None and display_name_elem.text:
             return display_name_elem.text
         return "Address Book"
-
-    def _extract_contact_from_response(
-        self, response: Any, ns: dict[str, str], base_url: str
-    ) -> Contact | None:
-        href_elem = response.find("d:href", ns)
-        propstat = response.find("d:propstat", ns)
-
-        if href_elem is None or propstat is None:
-            return None
-
-        href = href_elem.text
-        address_data_elem = propstat.find(".//d:prop/card:address-data", ns)
-
-        if address_data_elem is None or not address_data_elem.text:
-            return None
-
-        contact = self._parse_vcard_sync(address_data_elem.text)
-        if href.startswith("http"):
-            contact.url = href
-        else:
-            contact.url = self._get_full_url(href)
-        return contact
 
     def _parse_contacts(self, content: str, base_url: str) -> list[Contact]:
         return self._parse_responses(
@@ -725,3 +694,74 @@ class CardDAVToolKit(BaseToolKit[CardDAVSettings]):
                 return value[0] if value else None
             return value
         return default
+
+    def _extract_address_book_from_response(
+        self,
+        response: Any,
+        ns: dict[str, str],
+        base_url: str,
+    ) -> AddressBook | None:
+        href_elem = response.find("d:href", ns)
+        if href_elem is None:
+            return None
+
+        href = href_elem.text
+
+        if href == base_url or href == base_url.rstrip("/") + "/":
+            return None
+
+        resourcetype_elem = response.find(
+            ".//d:propstat/d:prop/d:resourcetype/card:addressbook", ns
+        )
+        if resourcetype_elem is None:
+            return None
+
+        display_name_elem = response.find(".//d:propstat/d:prop/d:displayname", ns)
+        display_name = (
+            display_name_elem.text
+            if (display_name_elem is not None and display_name_elem.text)
+            else "Address Book"
+        )
+        return AddressBook(url=self._get_full_url(href), name=display_name)
+
+    def _extract_contact_from_response(
+        self, response: Any, ns: dict[str, str], base_url: str
+    ) -> Contact | None:
+        href_elem = response.find("d:href", ns)
+        propstat = response.find("d:propstat", ns)
+
+        if href_elem is None or propstat is None:
+            return None
+
+        href = href_elem.text
+        address_data_elem = propstat.find(".//d:prop/card:address-data", ns)
+
+        if address_data_elem is None or not address_data_elem.text:
+            return None
+
+        contact = self._parse_vcard_sync(address_data_elem.text)
+        if href.startswith("http"):
+            contact.url = href
+        else:
+            contact.url = self._get_full_url(href)
+        return contact
+
+    def _parse_responses(self, content: str, base_url: str, parser: callable) -> list:
+        root = ET.fromstring(content)
+        ns = {"d": "DAV:", "card": "urn:ietf:params:xml:ns:carddav"}
+
+        results = []
+        for response in root.findall(".//d:response", ns):
+            result = parser(response, ns, base_url)
+            if result:
+                results.append(result)
+
+        return results
+
+    def _get_full_url(self, url: str) -> str:
+        if url.startswith("http"):
+            return url
+        if url.startswith("/remote.php/"):
+            return self.settings.url.split("/remote.php")[0] + url
+        relative_url = url.lstrip("/")
+        return f"{self.settings.url.rstrip('/')}/{relative_url}"

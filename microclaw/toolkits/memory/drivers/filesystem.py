@@ -1,6 +1,9 @@
 import datetime
 import difflib
 import pathlib
+import uuid
+
+import aiofiles
 from typing import Literal
 
 from pydantic import Field
@@ -18,33 +21,46 @@ class FilesystemMemoryDriverSettings(MemoryDriverSettings):
 
 
 class FilesystemMemoryDriver(MemoryDriverInterface):
+    _MEMORY_SUBDIR = "memory"
+    _GENERAL_FILENAME = "MEMORY.md"
+
     def __init__(self, settings: FilesystemMemoryDriverSettings):
         self._workspace = pathlib.Path(settings.workspace)
         self._workspace.mkdir(parents=True, exist_ok=True)
-        self._memory_dir = self._workspace / "memory"
-        self._memory_dir.mkdir(parents=True, exist_ok=True)
-        self._general_memory_file = self._workspace / "MEMORY.md"
 
-    async def get_memory(self, date: datetime.date | None = None) -> str | None:
+    async def get_memory(
+        self, date: datetime.date | None = None, user_id: uuid.UUID | None = None
+    ) -> str | None:
+        workspace = self._get_user_workspace(user_id)
         if date is None:
-            return await self._read_file(self._general_memory_file)
-        filename = date.strftime("%Y-%m-%d.md")
-        return await self._read_file(self._memory_dir / filename)
+            return await self._read_file(workspace / self._GENERAL_FILENAME)
+        return await self._read_file(
+            workspace / self._MEMORY_SUBDIR / date.strftime("%Y-%m-%d.md")
+        )
 
     async def append_to_memory(
-        self, content: str, date: datetime.date | None = None
+        self,
+        content: str,
+        date: datetime.date | None = None,
+        user_id: uuid.UUID | None = None,
     ) -> None:
-        file_path = self._general_memory_file
-        if date is not None:
-            file_path = self._memory_dir / date.strftime("%Y-%m-%d.md")
-
+        workspace = self._get_user_workspace(user_id)
+        if date is None:
+            file_path = workspace / self._GENERAL_FILENAME
+        else:
+            file_path = workspace / self._MEMORY_SUBDIR / date.strftime("%Y-%m-%d.md")
         await self._append_file(file_path, content)
 
-    async def memory_search(self, query: str, limit: int = 10) -> list[str]:
+    async def memory_search(
+        self, query: str, limit: int = 10, user_id: uuid.UUID | None = None
+    ) -> list[str]:
+        workspace = self._get_user_workspace(user_id)
+        general_file = workspace / self._GENERAL_FILENAME
+        memory_dir = workspace / self._MEMORY_SUBDIR
         results_with_scores = []
         files = [
-            self._general_memory_file,
-            *sorted(self._memory_dir.glob("*.md"), reverse=True),
+            general_file,
+            *sorted(memory_dir.glob("*.md"), reverse=True),
         ]
         for file_path in files:
             content = await self._read_file(file_path)
@@ -57,12 +73,28 @@ class FilesystemMemoryDriver(MemoryDriverInterface):
         results_with_scores.sort(key=lambda x: x[0], reverse=True)
         return [content for _, content in results_with_scores[:limit]]
 
-    async def rewrite_memory(self, content: str, date: datetime.date | None = None):
-        file_path = self._general_memory_file
-        if date is not None:
-            file_path = self._memory_dir / date.strftime("%Y-%m-%d.md")
-
+    async def rewrite_memory(
+        self,
+        content: str,
+        date: datetime.date | None = None,
+        user_id: uuid.UUID | None = None,
+    ) -> None:
+        workspace = self._get_user_workspace(user_id)
+        if date is None:
+            file_path = workspace / self._GENERAL_FILENAME
+        else:
+            file_path = workspace / self._MEMORY_SUBDIR / date.strftime("%Y-%m-%d.md")
         await self._write_file(path=file_path, content=content)
+
+    def _get_user_workspace(self, user_id: uuid.UUID | None = None) -> pathlib.Path:
+        if user_id is None:
+            workspace = self._workspace
+        else:
+            workspace = self._workspace / str(user_id)
+        workspace.mkdir(parents=True, exist_ok=True)
+        memory_dir = workspace / self._MEMORY_SUBDIR
+        memory_dir.mkdir(parents=True, exist_ok=True)
+        return workspace
 
     def _calculate_similarity(self, query: str, content: str) -> float:
         matcher = difflib.SequenceMatcher(None, query.lower(), content.lower())
@@ -70,7 +102,8 @@ class FilesystemMemoryDriver(MemoryDriverInterface):
 
     async def _read_file(self, path: pathlib.Path) -> str | None:
         path.touch(exist_ok=True)
-        return path.read_text(encoding="utf-8")
+        async with aiofiles.open(path, encoding="utf-8") as f:
+            return await f.read()
 
     async def _append_file(self, path: pathlib.Path, content: str) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -79,5 +112,5 @@ class FilesystemMemoryDriver(MemoryDriverInterface):
 
     async def _write_file(self, path: pathlib.Path, content: str) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
-        with path.open("w", encoding="utf-8") as f:
-            f.write(content)
+        async with aiofiles.open(path, "w", encoding="utf-8") as f:
+            await f.write(content)
