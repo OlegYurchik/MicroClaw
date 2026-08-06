@@ -9,7 +9,7 @@ MicroClaw is a scalable framework for building personal AI assistants.
 Core concepts:
 
 - **Agents** — LLM entities with identity, tools, and optional subagents.
-- **Channels** — User-facing interfaces (Telegram, CLI, REST API, etc.).
+- **Channels** — User-facing interfaces (Telegram, TUI, REST API, etc.).
 - **Toolkits** — Modular integrations (calendar, email, files, smart home, etc.).
 - **Storages** — Pluggable persistence for sessions and users (filesystem, database, memory).
 - **Syncer** — Cross-instance state synchronization (Redis-backed memory syncer).
@@ -20,7 +20,7 @@ Core concepts:
 ```
 microclaw/
 ├── agents/              # Agent orchestration, prompts, subagents
-├── channels/            # Communication channels (telegram, cli, base)
+├── channels/            # Communication channels (telegram, tui, base)
 ├── toolkits/            # Agent toolkits (caldav, email, webdav, memory, etc.)
 ├── sessions_storages/   # Session persistence (filesystem, database, memory)
 ├── users_storages/      # User persistence (filesystem, database, memory)
@@ -60,6 +60,8 @@ tests/                   # pytest + pytest-asyncio tests
 
 ## Build & Run
 
+**Local interpreter**: `.venv/bin/python` — always use this for running the project locally. Set `PYTHONPATH` to the project root when importing `microclaw` directly (e.g. `PYTHONPATH=. .venv/bin/python ...`).
+
 Install dependencies (example with Telegram + OpenAI):
 
 ```bash
@@ -74,10 +76,10 @@ Run Telegram bot:
 python -m microclaw channels telegram
 ```
 
-Run CLI channel:
+Run TUI channel:
 
 ```bash
-python -m microclaw channels cli
+python -m microclaw channels tui
 ```
 
 Run full service:
@@ -241,6 +243,24 @@ Every toolkit operation can have mode: `ALLOW`, `REQUEST`, `DENY`.
 When mode is `REQUEST`, the channel asks user for confirmation before execution.
 Use `BaseToolKit.request_confirmation()` or check `PermissionModeEnum` in toolkit code.
 
+MCP and skills toolkits additionally support `SourceModeEnum`:
+- `ALL` (default) — users can enable global resources and add custom ones.
+- `GLOBAL` — users can only enable pre-configured global MCP servers and skills from `config.yaml`.
+- `MARKETPLACE` — for MCP: only `add_custom_mcp` is allowed (no global MCP). For skills: only install/update from marketplace is allowed (no global skills).
+
+**MCP Manager tools:**
+- `add_mode`, `remove_mode`: PermissionModeEnum for add/remove operations.
+- `source_mode`: SourceModeEnum (ALL / GLOBAL / MARKETPLACE).
+- `enable_mcp(name)` — enable a global MCP from `config.yaml` (blocked in `MARKETPLACE` mode).
+- `add_custom_mcp(config: MCPSettings)` — add a custom remote or stdio MCP using the same model type stored in `AgentSettings.mcp` (blocked in `GLOBAL` mode).
+- `remove_mcp(name)` / `list_global_mcp()` / `list_my_mcp()` / `test_mcp(name)` — utility tools.
+
+**Skills Manager tools:**
+- `install_mode`, `remove_mode`, `update_mode`, `enable_mode`: PermissionModeEnum for respective operations.
+- `source_mode`: SourceModeEnum (ALL / GLOBAL / MARKETPLACE).
+- `enable_skill(name)` — enable a global skill from `config.yaml` (blocked in `MARKETPLACE` mode).
+- `add_skill_to_my_agent(skill: str | SkillSettings)` — activate an installed skill by name or add a custom `SkillSettings` directly (same type as `AgentSettings.skills`). Both `enable_mode` and source restrictions apply.
+
 ### 7. Toolkit Execution Context
 
 Channels create `ToolkitExecutionContext` for each request based on toolkit capabilities:
@@ -267,8 +287,8 @@ user = await ctx.current_user_accessor.get()
 ```
 
 Context variables still exposed:
-- `BaseChannel.SESSION_ID_CONTEXT`
-- `BaseChannel.REQUEST_ID_CONTEXT`
+- `microclaw.utils.context.SESSION_ID_CONTEXT`
+- `microclaw.utils.context.REQUEST_ID_CONTEXT`
 
 ## Key Data Models
 
@@ -414,6 +434,7 @@ User tasks stored per-user in `UsersStorage`.
 - [ ] User input validated via Pydantic.
 - [ ] Toolkit sensitive operations use `PermissionModeEnum.REQUEST`.
 - [ ] Toolkit capabilities (`required_capabilities`, `write_capabilities`, `discovery_capabilities`) declared explicitly.
+- [ ] MCP and skills source restrictions (`source_mode`) configured where required.
 - [ ] No toolkits assume unrestricted access to users/sessions/discovery without appropriate capability flags.
 
 ## Common Commands
@@ -431,7 +452,7 @@ python -m microclaw run --config config.yaml --env .env
 
 # Run channel directly
 python -m microclaw channels telegram
-python -m microclaw channels cli
+python -m microclaw channels tui
 ```
 
 ---

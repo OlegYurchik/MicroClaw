@@ -1,5 +1,6 @@
 FROM python:3.13-slim
 
+ARG INCLUDE_NODE=true
 WORKDIR /app
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -7,6 +8,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libssl-dev \
     libffi-dev \
     git \
+    $( [ "$INCLUDE_NODE" = "true" ] && echo "nodejs npm" ) \
     && rm -rf /var/lib/apt/lists/*
 
 RUN pip install uv
