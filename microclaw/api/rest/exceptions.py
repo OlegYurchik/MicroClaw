@@ -32,6 +32,11 @@ class HTTPNotFound(HTTPException):
     DETAIL = "Not found."
 
 
+class HTTPBadRequest(HTTPException):
+    STATUS_CODE = fastapi.status.HTTP_400_BAD_REQUEST
+    DETAIL = "Bad request."
+
+
 class HTTPNotImplemented(HTTPException):
     STATUS_CODE = fastapi.status.HTTP_501_NOT_IMPLEMENTED
     DETAIL = "Not implemented."

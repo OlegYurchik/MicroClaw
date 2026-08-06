@@ -1,5 +1,3 @@
-import asyncio
-
 import facet
 
 from .channels import BaseChannel
@@ -11,15 +9,21 @@ from .settings import MicroclawSettings
 class MicroclawService(facet.AsyncioServiceMixin):
     def __init__(self, settings: MicroclawSettings):
         self._resolver = DependencyResolver(settings=settings)
-        self._channels: dict[str, BaseChannel] = asyncio.run(
-            self._resolver.resolve_channels(),
-        )
-        self._crons: dict[str, BaseCronTask] = asyncio.run(
-            self._resolver.resolve_crons(),
-        )
+        self._channels: dict[str, BaseChannel] | None = None
+        self._crons: dict[str, BaseCronTask] | None = None
+
+    async def run(self) -> None:
+        self._channels = await self._resolver.resolve_channels()
+        self._crons = await self._resolver.resolve_crons()
+        await super().run()
 
     @property
     def dependencies(self) -> list[facet.AsyncioServiceMixin]:
+        if self._channels is None or self._crons is None:
+            raise RuntimeError(
+                "Dependencies accessed before resolution. "
+                "Run the service via 'await service.run()'."
+            )
         return [
             *self._channels.values(),
             *self._crons.values(),

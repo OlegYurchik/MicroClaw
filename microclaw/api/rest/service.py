@@ -1,7 +1,7 @@
 import facet
-import uvicorn
-
 import fastapi
+import uvicorn
+from fastapi.middleware.cors import CORSMiddleware
 
 from microclaw.resolver import DependencyResolver
 from microclaw.sessions_storages import (
@@ -10,7 +10,10 @@ from microclaw.sessions_storages import (
 )
 from microclaw.users_storages import UsersStorageSettingsType, get_users_storage
 from microclaw.utils import get_by_key_or_first
-from . import sessions, users
+
+from . import agents, auth, crons, handlers, models, sessions, toolkits, users
+from .dependencies import auth as auth_dependency
+from .openai import get_router as get_openai_router
 from .settings import RESTAPISettings
 
 
@@ -21,16 +24,17 @@ class UvicornServer(uvicorn.Server):
 
 class RESTAPIService(facet.AsyncioServiceMixin):
     def __init__(
-        self,
-        settings: RESTAPISettings,
-        dependency_resolver: DependencyResolver,
+            self,
+            settings: RESTAPISettings,
+            dependency_resolver: DependencyResolver,
     ):
         self._settings = settings
         self._dependency_resolver = dependency_resolver
 
     async def start(self):
+        app = await self._build_app()
         config = uvicorn.Config(
-            app=self.get_app(),
+            app=app,
             host=self._settings.host,
             port=self._settings.port,
         )
@@ -38,33 +42,64 @@ class RESTAPIService(facet.AsyncioServiceMixin):
 
         self.add_task(server.serve())
 
-    async def get_app(self) -> fastapi.FastAPI:
-        app = fastapi.FastAPI(
-            root_url=self._settings.root_url,
-            root_path=self._settings.root_path,
-        )
-
-        await self.setup_app(app=app)
-
+    async def _build_app(self) -> fastapi.FastAPI:
+        app = fastapi.FastAPI()
+        await self._setup_app(app=app)
         return app
 
-    async def setup_app(self, app: fastapi.FastAPI):
+    async def _setup_app(self, app: fastapi.FastAPI):
         if isinstance(self._settings.users_storage, UsersStorageSettingsType):
-            app.users_storage = get_users_storage(settings=self._settings.users_storage)
+            app.state.users_storage = get_users_storage(
+                settings=self._settings.users_storage
+            )
         else:
-            app.users_storage = get_by_key_or_first(
+            app.state.users_storage = get_by_key_or_first(
                 storage=await self._dependency_resolver.resolve_users_storages(),
                 key=self._settings.users_storage,
             )
         if isinstance(self._settings.sessions_storage, SessionsStorageSettingsType):
-            app.sessions_storage = get_sessions_storage(
+            app.state.sessions_storage = get_sessions_storage(
                 settings=self._settings.sessions_storage
             )
         else:
-            app.sessions_storage = get_by_key_or_first(
+            app.state.sessions_storage = get_by_key_or_first(
                 storage=await self._dependency_resolver.resolve_sessions_storages(),
                 key=self._settings.sessions_storage,
             )
 
+        app.state.resolver = self._dependency_resolver
+
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=["*"],
+            allow_credentials=True,
+            allow_methods=["*"],
+            allow_headers=["*"],
+        )
+
+        app.include_router(
+            get_openai_router(app),
+            prefix="/openai",
+            dependencies=[fastapi.Depends(auth_dependency)],
+        )
+        app.include_router(auth.get_router(), prefix="/auth")
+        app.include_router(
+            agents.get_router(),
+            prefix="/agents",
+        )
+        app.include_router(
+            crons.get_router(),
+            prefix="/crons",
+        )
+        app.include_router(
+            models.get_router(),
+            prefix="/models",
+        )
+        app.include_router(
+            toolkits.get_router(),
+            prefix="/toolkits",
+        )
         app.include_router(users.get_router(), prefix="/users")
         app.include_router(sessions.get_router(), prefix="/sessions")
+
+        app.get("/health")(handlers.health)

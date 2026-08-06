@@ -2,9 +2,9 @@ import uuid
 
 import fastapi
 
-from microclaw.api.rest.dependencies import users_storage
-from microclaw.api.rest.exceptions import HTTPNotFound
-from microclaw.dto import User
+from microclaw.api.rest.dependencies import auth, users_storage
+from microclaw.api.rest.exceptions import HTTPForbidden, HTTPNotFound
+from microclaw.dto import User, UserRoleEnum
 from microclaw.users_storages import UsersStorageInterface
 
 
@@ -16,3 +16,12 @@ async def user(
     if user is None:
         raise HTTPNotFound()
     return user
+
+
+async def is_admin_or_self(
+    current_user: User = fastapi.Depends(auth),
+    target_user: User = fastapi.Depends(user),
+) -> User:
+    if current_user.role != UserRoleEnum.ADMIN and current_user.id != target_user.id:
+        raise HTTPForbidden()
+    return current_user
