@@ -3,20 +3,20 @@ import contextlib
 import sys
 import uuid
 
+from .printer import AgentMessagePrinter
+from .settings import TUIChannelSettings
+from .ui import RoleEnum, TUIApp
+from .ui.widgets.slash_commands import BaseSlashCommand, ExitCommand, ModelsCommand
 from loguru import logger
 from pydantic import BaseModel, ConfigDict
 
 from microclaw.agents import Agent
 from microclaw.channels.base import BaseChannel
-from microclaw.utils.context import set_current_request_id
 from microclaw.dto import AgentMessage, DecisionEnum, User
 from microclaw.sessions_storages.interfaces import SessionsStorageInterface
 from microclaw.syncers import SyncerInterface
 from microclaw.users_storages import UsersStorageInterface
-from .printer import AgentMessagePrinter
-from .settings import TUIChannelSettings
-from .ui import TUIApp, RoleEnum
-from .ui.widgets.slash_commands import BaseSlashCommand, ExitCommand, ModelsCommand
+from microclaw.utils.context import set_current_request_id
 
 
 class SlashCommandContext(BaseModel):

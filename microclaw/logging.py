@@ -1,5 +1,5 @@
+from collections.abc import Callable
 import logging
-from typing import Callable
 
 from loguru import logger
 

@@ -1,9 +1,9 @@
+from .database import DatabaseSessionsStorageSettings
 from .fabric import get_sessions_storage
 from .filesystem import FilesystemSessionsStorageSettings
 from .interfaces import SessionsStorageInterface
 from .memory import MemorySessionsStorageSettings
 from .settings import SessionsStorageSettings
-from .database import DatabaseSessionsStorageSettings
 
 
 SessionsStorageSettingsType = (

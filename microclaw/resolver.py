@@ -1,12 +1,7 @@
 import pathlib
 import shutil
-import uuid
 from types import NoneType
-
-from loguru import logger
-import skilly
-from skilly.skills import discover_github_skills
-from skilly.skillsmp.client import SkillsMp
+import uuid
 
 from .agents import (
     Agent,
@@ -23,17 +18,21 @@ from .sessions_storages import (
     SessionsStorageSettingsType,
     get_sessions_storage,
 )
+from .settings import MicroclawSettings
 from .skills import SkillRepositoryGitHubSettings, SkillRepositoryLocalSettings
-from .toolkits import BaseToolKit, ToolKitSettings, get_toolkit
 from .stt import STT, STTSettings
 from .syncers import SyncerInterface, get_syncer
+from .toolkits import BaseToolKit, ToolKitSettings, get_toolkit
 from .users_storages import (
     UsersStorageInterface,
     UsersStorageSettingsType,
     get_users_storage,
 )
-from .settings import MicroclawSettings
 from .utils import get_by_key_or_first
+from loguru import logger
+import skilly
+from skilly.skills import discover_github_skills
+from skilly.skillsmp.client import SkillsMp
 
 
 class DependencyResolver:

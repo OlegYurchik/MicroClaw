@@ -1,8 +1,8 @@
 """Tests for message queue batching and concurrency via _enqueue_and_process."""
 
 import asyncio
-import uuid
 from unittest.mock import AsyncMock, MagicMock
+import uuid
 
 import pytest
 

@@ -1,9 +1,9 @@
 from .enums import SkillRepositoryTypeEnum
 from .settings import (
-    SkillSettings,
     SkillRepositoryGitHubSettings,
     SkillRepositoryLocalSettings,
     SkillRepositorySettingsType,
+    SkillSettings,
 )
 
 

@@ -1,16 +1,15 @@
+from collections.abc import AsyncGenerator
 import uuid
-from typing import AsyncGenerator
 
+from .dto import SessionData
+from .filters import MessageFilter, SessionFilter
+from .tables import MessageTable, SessionTable
 from pydantic_filters import BaseSort
 from pydantic_filters.pagination import OffsetPagination as BasePagination
 
 from microclaw.dto import AgentMessage
 from microclaw.utils.database.base import BaseRepository
 from microclaw.utils.database.tables import BaseTable
-
-from .dto import SessionData
-from .filters import MessageFilter, SessionFilter
-from .tables import MessageTable, SessionTable
 
 
 class SessionsRepository(BaseRepository[SessionData, SessionFilter]):

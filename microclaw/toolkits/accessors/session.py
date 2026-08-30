@@ -1,5 +1,5 @@
+from collections.abc import AsyncGenerator
 import uuid
-from typing import AsyncGenerator
 
 from microclaw.dto import AgentMessage
 from microclaw.sessions_storages.filters import MessageFilter

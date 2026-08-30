@@ -224,7 +224,7 @@ Factories resolve settings strings to implementations:
 - `get_sessions_storage()`, `get_users_storage()`, `get_channel()`, `get_toolkit()`, `get_syncer()`, `get_cron_task()`.
 
 ### 5. Toolkit Plugin System
-Toolkits extend `BaseToolKit[SettingsType]` and expose tools via `@tool` decorator:
+Toolkits extend `BaseToolKit[ArgumentsType]` and expose tools via `@tool` decorator:
 
 ```python
 from microclaw.toolkits import BaseToolKit, tool
@@ -393,7 +393,7 @@ User tasks stored per-user in `UsersStorage`.
 
 ### Adding a New Toolkit
 1. Create directory under `microclaw/toolkits/<name>/`.
-2. Implement class extending `BaseToolKit[<SettingsType>]`.
+2. Implement class extending `BaseToolKit[<ArgumentsType>]`.
 3. Define settings model in `settings.py`.
 4. Declare capabilities if the toolkit needs users/sessions/discovery:
    ```python

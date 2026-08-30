@@ -5,9 +5,9 @@ import pytest
 from microclaw.agents.agent import Agent
 from microclaw.agents.settings import (
     AgentSettings,
+    APITypeEnum,
     ModelSettings,
     ProviderSettings,
-    APITypeEnum,
 )
 from microclaw.channels.telegram.base import BaseTelegramChannel
 from microclaw.channels.telegram.settings import TelegramSettings

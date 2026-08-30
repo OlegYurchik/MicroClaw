@@ -1,16 +1,5 @@
 import datetime
 
-import fastapi
-
-from microclaw.api.rest.schemas import TokenResponse, UserResponse
-from microclaw.api.rest.dependencies import is_admin, list_query_params, users_storage
-from microclaw.api.rest.schemas import ListQueryParams
-from microclaw.api.rest.exceptions import HTTPNotFound
-from microclaw.dto import User
-from microclaw.users_storages import UsersStorageInterface
-from microclaw.users_storages.filters import UserFilter
-from microclaw.utils import Empty
-
 from .dependencies import is_admin_or_self
 from .dependencies import user as user_dependency
 from .schemas import (
@@ -20,6 +9,15 @@ from .schemas import (
     UserSessionsResponse,
     UserUpdateRequest,
 )
+import fastapi
+
+from microclaw.api.rest.dependencies import is_admin, list_query_params, users_storage
+from microclaw.api.rest.exceptions import HTTPNotFound
+from microclaw.api.rest.schemas import ListQueryParams, TokenResponse, UserResponse
+from microclaw.dto import User
+from microclaw.users_storages import UsersStorageInterface
+from microclaw.users_storages.filters import UserFilter
+from microclaw.utils import Empty
 
 
 async def list_users(

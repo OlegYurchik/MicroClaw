@@ -2,11 +2,12 @@ import asyncio
 import json
 import uuid
 
+from .ui import RoleEnum
+
 from microclaw.agents import Agent
 from microclaw.channels.utils import AgentMessageCollector
 from microclaw.dto import AgentMessage
 from microclaw.sessions_storages import SessionsStorageInterface
-from .ui import RoleEnum
 
 
 class AgentMessagePrinter(AgentMessageCollector):

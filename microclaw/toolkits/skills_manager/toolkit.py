@@ -1,24 +1,23 @@
 import pathlib
-import uuid
 from typing import Any
+import uuid
 
-import skilly
+from .settings import SkillsManagerToolKitSettings
 from langgraph.types import interrupt
+import skilly
 from skilly.skills import discover_github_skills
 from skilly.skillsmp.client import SkillsMp
 
 from microclaw.agents.settings import AgentSettings
 from microclaw.dto import DecisionEnum
 from microclaw.skills import SkillSettings
-from microclaw.toolkits.base import BaseToolKit, tool
+from microclaw.toolkits.base import AgentSettingsMixin, BaseToolKit, tool
 from microclaw.toolkits.capabilities import DiscoveryCapability, ToolKitCapability
 from microclaw.toolkits.enums import PermissionModeEnum, SourceModeEnum
 from microclaw.toolkits.exceptions import UserDeniedAction
 
-from .settings import SkillsManagerToolKitSettings
 
-
-class SkillsManagerToolKit(BaseToolKit[SkillsManagerToolKitSettings]):
+class SkillsManagerToolKit(BaseToolKit[SkillsManagerToolKitSettings], AgentSettingsMixin):
     """Tools for managing skills marketplace, installation, and per-user activation.
 
     All tools that read or mutate a user's agent configuration accept an optional
@@ -114,9 +113,9 @@ class SkillsManagerToolKit(BaseToolKit[SkillsManagerToolKitSettings]):
             user_id: UUID of the target user.  If omitted, the skill is
                 installed for the **current** user.
         """
-        if self._settings.install_mode is PermissionModeEnum.DENY:
+        if self._arguments.install_mode is PermissionModeEnum.DENY:
             raise PermissionError("Skill installation is not allowed")
-        if self._settings.source_mode in (SourceModeEnum.GLOBAL, SourceModeEnum.EMPTY):
+        if self._arguments.source_mode in (SourceModeEnum.GLOBAL, SourceModeEnum.EMPTY):
             raise PermissionError(
                 "Installing skills from marketplace is not allowed. "
                 "No marketplace sources configured."
@@ -124,7 +123,7 @@ class SkillsManagerToolKit(BaseToolKit[SkillsManagerToolKitSettings]):
         if user_id is not None:
             await self._require_cross_user_write()
 
-        if self._settings.install_mode is PermissionModeEnum.REQUEST:
+        if self._arguments.install_mode is PermissionModeEnum.REQUEST:
             decision = interrupt({"description": f"Install skill '{name}'?"})
             if decision == DecisionEnum.REJECT.value:
                 raise UserDeniedAction()
@@ -157,12 +156,12 @@ class SkillsManagerToolKit(BaseToolKit[SkillsManagerToolKitSettings]):
             user_id: UUID of the target user.  If omitted, the skill is
                 removed from the **current** user.
         """
-        if self._settings.remove_mode is PermissionModeEnum.DENY:
+        if self._arguments.remove_mode is PermissionModeEnum.DENY:
             raise PermissionError("Skill removal is not allowed")
         if user_id is not None:
             await self._require_cross_user_write()
 
-        if self._settings.remove_mode is PermissionModeEnum.REQUEST:
+        if self._arguments.remove_mode is PermissionModeEnum.REQUEST:
             decision = interrupt({"description": f"Remove skill '{name}'?"})
             if decision == DecisionEnum.REJECT.value:
                 raise UserDeniedAction()
@@ -185,9 +184,9 @@ class SkillsManagerToolKit(BaseToolKit[SkillsManagerToolKitSettings]):
             user_id: UUID of the target user.  If omitted, the skill is
                 updated for the **current** user.
         """
-        if self._settings.update_mode is PermissionModeEnum.DENY:
+        if self._arguments.update_mode is PermissionModeEnum.DENY:
             raise PermissionError("Skill update is not allowed")
-        if self._settings.source_mode in (SourceModeEnum.GLOBAL, SourceModeEnum.EMPTY):
+        if self._arguments.source_mode in (SourceModeEnum.GLOBAL, SourceModeEnum.EMPTY):
             raise PermissionError(
                 "Updating skills from marketplace is not allowed. "
                 "No marketplace sources configured."
@@ -195,7 +194,7 @@ class SkillsManagerToolKit(BaseToolKit[SkillsManagerToolKitSettings]):
         if user_id is not None:
             await self._require_cross_user_write()
 
-        if self._settings.update_mode is PermissionModeEnum.REQUEST:
+        if self._arguments.update_mode is PermissionModeEnum.REQUEST:
             decision = interrupt({"description": f"Update skill '{name}'?"})
             if decision == DecisionEnum.REJECT.value:
                 raise UserDeniedAction()
@@ -229,9 +228,9 @@ class SkillsManagerToolKit(BaseToolKit[SkillsManagerToolKitSettings]):
             user_id: UUID of the target user.  If omitted, the skill is enabled
                 for the **current** user.
         """
-        if self._settings.enable_mode is PermissionModeEnum.DENY:
+        if self._arguments.enable_mode is PermissionModeEnum.DENY:
             raise PermissionError("Enabling skills is not allowed")
-        if self._settings.source_mode in (
+        if self._arguments.source_mode in (
             SourceModeEnum.MARKETPLACE,
             SourceModeEnum.EMPTY,
         ):
@@ -242,7 +241,7 @@ class SkillsManagerToolKit(BaseToolKit[SkillsManagerToolKitSettings]):
         if user_id is not None:
             await self._require_cross_user_write()
 
-        if self._settings.enable_mode is PermissionModeEnum.REQUEST:
+        if self._arguments.enable_mode is PermissionModeEnum.REQUEST:
             decision = interrupt({"description": f"Enable skill '{name}'?"})
             if decision == DecisionEnum.REJECT.value:
                 raise UserDeniedAction()
@@ -296,14 +295,14 @@ class SkillsManagerToolKit(BaseToolKit[SkillsManagerToolKitSettings]):
             user_id: UUID of the target user.  If omitted, the skill is added
                 to the **current** user.
         """
-        if self._settings.enable_mode is PermissionModeEnum.DENY:
+        if self._arguments.enable_mode is PermissionModeEnum.DENY:
             raise PermissionError("Adding skills to agent is not allowed")
-        if self._settings.source_mode is SourceModeEnum.EMPTY:
+        if self._arguments.source_mode is SourceModeEnum.EMPTY:
             raise PermissionError(
                 "Adding skills is not allowed. No sources configured."
             )
         if (
-            self._settings.source_mode is SourceModeEnum.GLOBAL
+            self._arguments.source_mode is SourceModeEnum.GLOBAL
             and isinstance(skill, SkillSettings)
         ):
             raise PermissionError(
@@ -312,7 +311,7 @@ class SkillsManagerToolKit(BaseToolKit[SkillsManagerToolKitSettings]):
         if user_id is not None:
             await self._require_cross_user_write()
 
-        if self._settings.enable_mode is PermissionModeEnum.REQUEST:
+        if self._arguments.enable_mode is PermissionModeEnum.REQUEST:
             name_preview = skill if isinstance(skill, str) else skill.name
             decision = interrupt(
                 {"description": f"Add skill '{name_preview}' to agent?"}
@@ -355,12 +354,12 @@ class SkillsManagerToolKit(BaseToolKit[SkillsManagerToolKitSettings]):
             user_id: UUID of the target user.  If omitted, the skill is
                 removed from the **current** user.
         """
-        if self._settings.remove_mode is PermissionModeEnum.DENY:
+        if self._arguments.remove_mode is PermissionModeEnum.DENY:
             raise PermissionError("Removing skills from agent is not allowed")
         if user_id is not None:
             await self._require_cross_user_write()
 
-        if self._settings.remove_mode is PermissionModeEnum.REQUEST:
+        if self._arguments.remove_mode is PermissionModeEnum.REQUEST:
             decision = interrupt(
                 {"description": f"Remove skill '{name}' from agent?"}
             )
@@ -413,7 +412,7 @@ class SkillsManagerToolKit(BaseToolKit[SkillsManagerToolKitSettings]):
             user = await ctx.all_users_accessor.get_by_id(target_user_id)
         if user is None:
             raise RuntimeError("User not found")
-        user_dir = pathlib.Path(self._settings.skills_directory) / str(user.id)
+        user_dir = pathlib.Path(self._arguments.skills_directory) / str(user.id)
         user_dir.mkdir(parents=True, exist_ok=True)
         return skilly.SkillRepository(directory=user_dir.resolve())
 

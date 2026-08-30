@@ -1,12 +1,13 @@
 import asyncio
+from collections.abc import AsyncGenerator
 import datetime
 import pathlib
 import secrets
 import uuid
-from typing import AsyncGenerator
 
+from .dto import TokenData, UserChannelData, UserData
+from .settings import FilesystemUsersStorageSettings
 import aiofiles
-
 from pydantic_filters import BaseSort, SortByOrder
 from pydantic_filters.pagination import OffsetPagination as BasePagination
 
@@ -14,8 +15,6 @@ from microclaw.dto import CronTask, TokenInfo, User, UserRoleEnum
 from microclaw.users_storages.filters import UserFilter
 from microclaw.users_storages.interfaces import UsersStorageInterface
 from microclaw.utils import Empty
-from .dto import TokenData, UserChannelData, UserData
-from .settings import FilesystemUsersStorageSettings
 
 
 class FilesystemUsersStorage(UsersStorageInterface):

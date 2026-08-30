@@ -1,15 +1,13 @@
-from collections.abc import Sequence
-from typing import Any, AsyncIterator
+from collections.abc import AsyncIterator
+from typing import Any
+import uuid
 
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import AIMessageChunk, BaseMessage
 from langchain_core.outputs import ChatGeneration, ChatGenerationChunk, ChatResult
 from pydantic import BaseModel, Field, PrivateAttr
-import uuid
 
-from microclaw.agents import Agent
 from microclaw.channels.base import BaseChannel
-from microclaw.dto import AgentMessage
 
 
 class AssistantReply(BaseModel):

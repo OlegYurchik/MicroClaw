@@ -1,19 +1,18 @@
 import asyncio
+from collections.abc import AsyncGenerator
 import datetime
 import pathlib
 import uuid
-from typing import AsyncGenerator
 
+from .dto import SessionData
+from .settings import FilesystemSessionsStorageSettings
 import aiofiles
-
 from pydantic_filters import BaseSort, SortByOrder
 from pydantic_filters.pagination import OffsetPagination as BasePagination
 
 from microclaw.dto import AgentMessage, SessionMetadata, Spending
+from microclaw.sessions_storages.filters import MessageFilter, SessionFilter
 from microclaw.sessions_storages.interfaces import SessionsStorageInterface
-from microclaw.sessions_storages.filters import SessionFilter, MessageFilter
-from .dto import SessionData
-from .settings import FilesystemSessionsStorageSettings
 
 
 class FilesystemSessionsStorage(SessionsStorageInterface):

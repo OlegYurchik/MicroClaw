@@ -3,36 +3,35 @@ import pathlib
 from types import NoneType
 from typing import Self
 
-import yaml
-import yaml_include
-from pydantic import Field, model_validator
-from pydantic_settings import BaseSettings
-from yaml_env_tag import construct_env_tag
-
 from .agents import (
-    APITypeEnum,
     AgentSettings,
+    APITypeEnum,
     InputTypeEnum,
     MCPSettings,
     ModelSettings,
     ProviderSettings,
 )
 from .api.rest import RESTAPISettings
-from .toolkits import ToolKitSettings
 from .channels.telegram.polling.settings import TelegramPollingSettings
 from .channels.telegram.webhook.settings import TelegramWebhookSettings
 from .channels.vk.polling.settings import VKPollingSettings
 from .channels.vk.webhook.settings import VKWebhookSettings
+from .cron import CronTaskSettings
 from .sessions_storages import SessionsStorageSettingsType
 from .sessions_storages.filesystem import FilesystemSessionsStorageSettings
-from .skills import SkillSettings, SkillRepositorySettingsType
+from .skills import SkillRepositorySettingsType, SkillSettings
 from .stt import STTSettings
 from .syncers import SyncerSettingsType
 from .syncers.memory import MemorySyncerSettings
-from .cron import CronTaskSettings
+from .toolkits import ToolKitSettings
 from .users_storages import UsersStorageSettingsType
 from .users_storages.filesystem import FilesystemUsersStorageSettings
 from .utils import get_by_key_or_first
+from pydantic import Field, model_validator
+from pydantic_settings import BaseSettings
+import yaml
+from yaml_env_tag import construct_env_tag
+import yaml_include
 
 
 ChannelSettingsType = (

@@ -1,16 +1,17 @@
-from microclaw.dto import DecisionEnum
-from langgraph.types import interrupt
 import asyncio
+from collections.abc import Iterable
 import shlex
 import shutil
-from typing import Iterable
 
+from .dto import CommandResult
+from .settings import CommandToolKitSettings
+from langgraph.types import interrupt
+
+from microclaw.dto import DecisionEnum
 from microclaw.toolkits.base import BaseToolKit, tool
 from microclaw.toolkits.capabilities import DiscoveryCapability, ToolKitCapability
 from microclaw.toolkits.enums import PermissionModeEnum
 from microclaw.toolkits.exceptions import UserDeniedAction
-from .dto import CommandResult
-from .settings import CommandToolKitSettings
 
 
 class CommandToolKit(BaseToolKit[CommandToolKitSettings]):
@@ -23,8 +24,8 @@ class CommandToolKit(BaseToolKit[CommandToolKitSettings]):
     def __init__(self, key: str, settings: CommandToolKitSettings):
         super().__init__(key=key, settings=settings)
         self._allowed_commands_set = (
-            set(self._settings.allowed_commands)
-            if self._settings.allowed_commands
+            set(self._arguments.allowed_commands)
+            if self._arguments.allowed_commands
             else None
         )
 
@@ -47,9 +48,9 @@ class CommandToolKit(BaseToolKit[CommandToolKitSettings]):
             CommandResult object with stdout, stderr, and return_code
         """
 
-        if self.settings.execute_mode is PermissionModeEnum.DENY:
+        if self.arguments.execute_mode is PermissionModeEnum.DENY:
             raise PermissionError("Command execution denied")
-        if self.settings.execute_mode is PermissionModeEnum.REQUEST:
+        if self.arguments.execute_mode is PermissionModeEnum.REQUEST:
             full_command = f"{command} {' '.join(args)}" if args else command
             confirmation_request_text = f"Execute command: {full_command}?"
             decision = interrupt({"description": confirmation_request_text})
@@ -93,7 +94,7 @@ class CommandToolKit(BaseToolKit[CommandToolKitSettings]):
         ):
             raise PermissionError(
                 f"Command '{base_command}' is not allowed. "
-                f"Allowed commands: {self._settings.allowed_commands}"
+                f"Allowed commands: {self._arguments.allowed_commands}"
             )
 
         command_path = shutil.which(base_command)

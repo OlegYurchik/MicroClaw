@@ -1,5 +1,6 @@
-import facet
 from typing import Any
+
+import facet
 
 
 class SyncerInterface(facet.AsyncioServiceMixin):

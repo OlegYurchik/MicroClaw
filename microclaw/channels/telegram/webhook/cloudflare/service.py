@@ -3,10 +3,9 @@ import os
 import platform
 import re
 
+from .settings import CloudflareTunnelSettings
 import facet
 from loguru import logger
-
-from .settings import CloudflareTunnelSettings
 
 
 class CloudflareTunnelService(facet.AsyncioServiceMixin):

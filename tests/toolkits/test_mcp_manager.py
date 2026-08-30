@@ -1,18 +1,18 @@
-import uuid
 from unittest.mock import AsyncMock, MagicMock, patch
+import uuid
 
 import pytest
 import pytest_asyncio
 
-from microclaw.agents.settings import AgentSettings, MCPRemoteSettings, MCPLocalSettings
+from microclaw.agents.settings import AgentSettings, MCPLocalSettings, MCPRemoteSettings
 from microclaw.dto import DecisionEnum, UserRoleEnum
 from microclaw.toolkits import ToolKitSettings
-from microclaw.toolkits.accessors import CurrentUserAccessor, AllUsersAccessor
+from microclaw.toolkits.accessors import AllUsersAccessor, CurrentUserAccessor
 from microclaw.toolkits.context import TOOLKIT_CONTEXT, ToolkitExecutionContext
 from microclaw.toolkits.dto import DiscoveryInfo
 from microclaw.toolkits.mcp_manager import MCPManagerToolKit
-from microclaw.users_storages.memory.storage import MemoryUsersStorage
 from microclaw.users_storages.memory.settings import MemoryUsersStorageSettings
+from microclaw.users_storages.memory.storage import MemoryUsersStorage
 
 
 @pytest.fixture

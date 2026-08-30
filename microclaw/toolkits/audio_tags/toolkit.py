@@ -1,19 +1,19 @@
-from microclaw.dto import DecisionEnum
-from langgraph.types import interrupt
 import base64
 import pathlib
 from typing import Any
 
+from .dto import AudioFileInfo, AudioTags, CoverImage
+from .settings import AudioTagsToolKitSettings
+from langgraph.types import interrupt
 from mutagen import File
 from mutagen.easyid3 import EasyID3
-from mutagen.id3 import ID3, APIC
+from mutagen.id3 import APIC, ID3
 
+from microclaw.dto import DecisionEnum
 from microclaw.toolkits.base import BaseToolKit, tool
 from microclaw.toolkits.capabilities import DiscoveryCapability, ToolKitCapability
 from microclaw.toolkits.enums import PermissionModeEnum
 from microclaw.toolkits.exceptions import UserDeniedAction
-from .dto import AudioFileInfo, AudioTags, CoverImage
-from .settings import AudioTagsToolKitSettings
 
 
 class AudioTagsToolKit(BaseToolKit[AudioTagsToolKitSettings]):
@@ -27,7 +27,7 @@ class AudioTagsToolKit(BaseToolKit[AudioTagsToolKitSettings]):
         super().__init__(key=key, settings=settings)
         self._allowed_paths = [
             pathlib.Path(directory).resolve()
-            for directory in self._settings.directories
+            for directory in self._arguments.directories
         ]
 
     @tool
@@ -107,7 +107,7 @@ class AudioTagsToolKit(BaseToolKit[AudioTagsToolKitSettings]):
         """
 
         self._get_audio_file(path)
-        if self._settings.write_mode is PermissionModeEnum.DENY:
+        if self._arguments.write_mode is PermissionModeEnum.DENY:
             raise PermissionError("Write data to files denied")
 
         audio = EasyID3(path)
@@ -144,7 +144,7 @@ class AudioTagsToolKit(BaseToolKit[AudioTagsToolKitSettings]):
                 del audio[target_key]
             audio[target_key] = str(value)
 
-        if self._settings.write_mode is PermissionModeEnum.REQUEST:
+        if self._arguments.write_mode is PermissionModeEnum.REQUEST:
             tags_text = "\n".join(f"{tag} = {value}" for tag, value in tags.items())
             confirmation_request_text = f"Write tags to {path}?\n\n{tags_text}\n"
             decision = interrupt({"description": confirmation_request_text})
@@ -169,7 +169,7 @@ class AudioTagsToolKit(BaseToolKit[AudioTagsToolKitSettings]):
             None - indicates successful operation
         """
         self._get_audio_file(path)
-        if self._settings.write_mode is PermissionModeEnum.DENY:
+        if self._arguments.write_mode is PermissionModeEnum.DENY:
             raise PermissionError("Write data to files denied")
 
         cover_bytes = base64.b64decode(image_data)
@@ -183,7 +183,7 @@ class AudioTagsToolKit(BaseToolKit[AudioTagsToolKitSettings]):
             data=cover_bytes,
         )
 
-        if self._settings.write_mode is PermissionModeEnum.REQUEST:
+        if self._arguments.write_mode is PermissionModeEnum.REQUEST:
             confirmation_request_text = f"Set cover to audio '{path}'?"
             decision = interrupt({"description": confirmation_request_text})
             if decision == DecisionEnum.REJECT.value:
@@ -203,14 +203,14 @@ class AudioTagsToolKit(BaseToolKit[AudioTagsToolKitSettings]):
             None - indicates successful operation
         """
         self._get_audio_file(path)
-        if self._settings.write_mode is PermissionModeEnum.DENY:
+        if self._arguments.write_mode is PermissionModeEnum.DENY:
             raise PermissionError("Write data to files denied")
 
         id3 = ID3(path)
         if "APIC:" not in id3:
             return
 
-        if self._settings.write_mode is PermissionModeEnum.REQUEST:
+        if self._arguments.write_mode is PermissionModeEnum.REQUEST:
             confirmation_request_text = f"Remove cover from audio '{path}'?"
             decision = interrupt({"description": confirmation_request_text})
             if decision == DecisionEnum.REJECT.value:
@@ -230,7 +230,7 @@ class AudioTagsToolKit(BaseToolKit[AudioTagsToolKitSettings]):
                 continue
         else:
             raise PermissionError(
-                f"Path '{path_str}' is not within allowed directories: {self._settings.directories}"
+                f"Path '{path_str}' is not within allowed directories: {self._arguments.directories}"
             )
 
         if not path.exists():

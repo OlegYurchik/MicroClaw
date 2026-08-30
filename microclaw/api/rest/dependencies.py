@@ -1,3 +1,5 @@
+from .exceptions import HTTPForbidden, HTTPUnauthorized
+from .schemas import ListQueryParams
 import fastapi
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
@@ -5,9 +7,6 @@ from microclaw.dto import User, UserRoleEnum
 from microclaw.resolver import DependencyResolver
 from microclaw.sessions_storages import SessionsStorageInterface
 from microclaw.users_storages import UsersStorageInterface
-
-from .exceptions import HTTPForbidden, HTTPUnauthorized
-from .schemas import ListQueryParams
 
 
 async def users_storage(

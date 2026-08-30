@@ -1,10 +1,10 @@
+from collections.abc import Iterable
+from typing import Any, Self
 import uuid
-from typing import Any, Iterable, Self
 
 from pydantic import BaseModel, Field
 
-from microclaw.api.rest.schemas import UserResponse
-from microclaw.api.rest.schemas import ListResponse
+from microclaw.api.rest.schemas import ListResponse, UserResponse
 from microclaw.dto import User, UserRoleEnum
 
 

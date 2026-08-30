@@ -1,8 +1,7 @@
+from . import handlers
 import fastapi
 
 from microclaw.api.rest.dependencies import is_admin
-
-from . import handlers
 
 
 def get_router() -> fastapi.APIRouter:

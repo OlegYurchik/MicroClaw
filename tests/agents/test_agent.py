@@ -1,8 +1,8 @@
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
-import pytest
 from langchain_core.tools import StructuredTool
+import pytest
 
 from microclaw.agents.agent import Agent
 from microclaw.dto import AgentMessage

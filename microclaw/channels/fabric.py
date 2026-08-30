@@ -1,12 +1,13 @@
+from .base import BaseChannel
+from .settings import ChannelSettings, ChannelTypeEnum
+from .telegram import get_telegram_channel
+from .vk import get_vk_channel
+
 from microclaw.agents import Agent
 from microclaw.sessions_storages import SessionsStorageInterface
 from microclaw.stt import STT
 from microclaw.syncers import SyncerInterface
 from microclaw.users_storages import UsersStorageInterface
-from .base import BaseChannel
-from .settings import ChannelSettings, ChannelTypeEnum
-from .telegram import get_telegram_channel
-from .vk import get_vk_channel
 
 
 def get_channel(

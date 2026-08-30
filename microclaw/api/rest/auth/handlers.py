@@ -1,14 +1,13 @@
 import datetime
 
+from .schemas import TokenCreateRequest
 import fastapi
 
-from microclaw.api.rest.schemas import TokenResponse, UserResponse
 from microclaw.api.rest.dependencies import auth, users_storage
 from microclaw.api.rest.exceptions import HTTPNotFound
+from microclaw.api.rest.schemas import TokenResponse, UserResponse
 from microclaw.dto import User
 from microclaw.users_storages import UsersStorageInterface
-
-from .schemas import TokenCreateRequest
 
 
 async def me(

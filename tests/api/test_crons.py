@@ -1,5 +1,5 @@
-import uuid
 from unittest.mock import patch
+import uuid
 
 import httpx
 import pytest

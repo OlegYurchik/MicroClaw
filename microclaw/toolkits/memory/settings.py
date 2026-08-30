@@ -1,8 +1,8 @@
+from .drivers import MemoryDriverSettingsType
+from .drivers.filesystem import FilesystemMemoryDriverSettings
 from pydantic import BaseModel, Field
 
 from microclaw.toolkits.enums import PermissionModeEnum
-from .drivers import MemoryDriverSettingsType
-from .drivers.filesystem import FilesystemMemoryDriverSettings
 
 
 class MemoryToolKitSettings(BaseModel):

@@ -1,6 +1,5 @@
-import fastapi
-
 from . import handlers
+import fastapi
 
 
 def get_router() -> fastapi.APIRouter:

@@ -1,6 +1,6 @@
 from typing import Literal
 
-from microclaw.channels.settings import ChannelTypeEnum, ChannelSettings
+from microclaw.channels.settings import ChannelSettings, ChannelTypeEnum
 
 
 class TUIChannelSettings(ChannelSettings):

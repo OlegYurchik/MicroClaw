@@ -1,9 +1,9 @@
 import asyncio
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
-from microclaw.dto import DecisionEnum
-
-from caldav.aio import AsyncDAVClient, AsyncPrincipal, AsyncCalendar, AsyncEvent
+from .dto import Calendar, Event, Reminder
+from .settings import CalDAVSettings
+from caldav.aio import AsyncCalendar, AsyncDAVClient, AsyncEvent, AsyncPrincipal
 from caldav.elements import dav
 from langgraph.types import interrupt
 from loguru import logger
@@ -15,13 +15,12 @@ from tenacity import (
     wait_exponential,
 )
 
+from microclaw.dto import DecisionEnum
 from microclaw.toolkits.base import BaseToolKit, tool
 from microclaw.toolkits.capabilities import DiscoveryCapability, ToolKitCapability
 from microclaw.toolkits.enums import PermissionModeEnum
 from microclaw.toolkits.exceptions import UserDeniedAction
 from microclaw.toolkits.settings import ToolKitSettings
-from .dto import Calendar, Event
-from .settings import CalDAVSettings
 
 
 class CalDAVToolKit(BaseToolKit[CalDAVSettings]):
@@ -41,13 +40,15 @@ class CalDAVToolKit(BaseToolKit[CalDAVSettings]):
         OSError,
     )
 
-    def __init__(self, key: str, settings: ToolKitSettings):
+    def __init__(
+        self, key: str, settings: ToolKitSettings, client: AsyncDAVClient | None = None
+    ):
         super().__init__(key=key, settings=settings)
-        self._client = AsyncDAVClient(
-            url=self.settings.url,
-            username=self.settings.username,
-            password=self.settings.password,
-            ssl_verify_cert=self.settings.verify_ssl,
+        self._client = client or AsyncDAVClient(
+            url=self.arguments.url,
+            username=self.arguments.username,
+            password=self.arguments.password,
+            ssl_verify_cert=self.arguments.verify_ssl,
         )
         self._principal = None
 
@@ -83,9 +84,9 @@ class CalDAVToolKit(BaseToolKit[CalDAVSettings]):
             Calendar object with url and name
         """
 
-        if self.settings.write_mode is PermissionModeEnum.DENY:
+        if self.arguments.write_mode is PermissionModeEnum.DENY:
             raise PermissionError("Write operations denied")
-        if self.settings.write_mode is PermissionModeEnum.REQUEST:
+        if self.arguments.write_mode is PermissionModeEnum.REQUEST:
             confirmation_request_text = f"Create calendar '{name}'?"
             decision = interrupt({"description": confirmation_request_text})
             if decision == DecisionEnum.REJECT.value:
@@ -132,10 +133,12 @@ class CalDAVToolKit(BaseToolKit[CalDAVSettings]):
         """
 
         dav_calendar = await self._get_calendar(url)
-        if self.settings.write_mode is PermissionModeEnum.DENY:
+        if self.arguments.write_mode is PermissionModeEnum.DENY:
             raise PermissionError("Write operations denied")
-        if self.settings.write_mode is PermissionModeEnum.REQUEST:
-            calendar_name = await self._with_retry(dav_calendar.get_property, dav.DisplayName())
+        if self.arguments.write_mode is PermissionModeEnum.REQUEST:
+            calendar_name = await self._with_retry(
+                dav_calendar.get_property, dav.DisplayName()
+            )
             confirmation_request_text = f"Delete calendar '{calendar_name}'?"
             decision = interrupt({"description": confirmation_request_text})
             if decision == DecisionEnum.REJECT.value:
@@ -214,6 +217,7 @@ class CalDAVToolKit(BaseToolKit[CalDAVSettings]):
         description: str | None = None,
         location: str | None = None,
         all_day: bool = False,
+        reminders: list[Reminder] | None = None,
     ) -> Event:
         """
         Create a new event. Use this tool only when user explicitly requests event creation.
@@ -226,16 +230,19 @@ class CalDAVToolKit(BaseToolKit[CalDAVSettings]):
             description: Event description (optional)
             location: Event location (optional)
             all_day: Whether this is an all-day event (optional, default: False)
+            reminders: List of reminders with minutes_before (optional)
 
         Returns:
             Created Event object
         """
 
         dav_calendar = await self._get_calendar(calendar_url)
-        if self.settings.write_mode is PermissionModeEnum.DENY:
+        if self.arguments.write_mode is PermissionModeEnum.DENY:
             raise PermissionError("Write operations denied")
-        if self.settings.write_mode is PermissionModeEnum.REQUEST:
-            calendar_name = await self._with_retry(dav_calendar.get_property, dav.DisplayName())
+        if self.arguments.write_mode is PermissionModeEnum.REQUEST:
+            calendar_name = await self._with_retry(
+                dav_calendar.get_property, dav.DisplayName()
+            )
             confirmation_request_text = (
                 f"Create event '{summary}' in calendar '{calendar_name}'?\n"
                 f"Start: {start}\n"
@@ -246,6 +253,11 @@ class CalDAVToolKit(BaseToolKit[CalDAVSettings]):
                 confirmation_request_text += f"\nDescription: {description}"
             if location is not None:
                 confirmation_request_text += f"\nLocation: {location}"
+            if reminders:
+                reminder_info = ", ".join(
+                    [f"{r.minutes_before} min before" for r in reminders]
+                )
+                confirmation_request_text += f"\nReminders: {reminder_info}"
             decision = interrupt({"description": confirmation_request_text})
             if decision == DecisionEnum.REJECT.value:
                 raise UserDeniedAction()
@@ -282,6 +294,15 @@ class CalDAVToolKit(BaseToolKit[CalDAVSettings]):
             event_data += f"DESCRIPTION:{description}\n"
         if location:
             event_data += f"LOCATION:{location}\n"
+
+        if reminders:
+            for reminder in reminders:
+                event_data += "BEGIN:VALARM\n"
+                event_data += f"TRIGGER:-PT{reminder.minutes_before}M\n"
+                event_data += "ACTION:DISPLAY\n"
+                event_data += "DESCRIPTION:Reminder\n"
+                event_data += "END:VALARM\n"
+
         event_data += "END:VEVENT\nEND:VCALENDAR\n"
 
         dav_event = await self._with_retry(dav_calendar.add_event, event_data)
@@ -313,6 +334,7 @@ class CalDAVToolKit(BaseToolKit[CalDAVSettings]):
         description: str | None = None,
         location: str | None = None,
         all_day: bool | None = None,
+        reminders: list[Reminder] | None = None,
     ) -> Event | None:
         """
         Update a calendar event. Use this tool only when user explicitly requests event update.
@@ -325,6 +347,7 @@ class CalDAVToolKit(BaseToolKit[CalDAVSettings]):
             description: New event description (optional)
             location: New event location (optional)
             all_day: Whether this is an all-day event (optional)
+            reminders: New list of reminders (optional)
 
         Returns:
             Updated Event object if successful, None otherwise
@@ -333,9 +356,9 @@ class CalDAVToolKit(BaseToolKit[CalDAVSettings]):
         dav_event = AsyncEvent(client=self._client, url=url)
         await self._with_retry(dav_event.load)
 
-        if self.settings.write_mode is PermissionModeEnum.DENY:
+        if self.arguments.write_mode is PermissionModeEnum.DENY:
             raise PermissionError("Write operations denied")
-        if self.settings.write_mode is PermissionModeEnum.REQUEST:
+        if self.arguments.write_mode is PermissionModeEnum.REQUEST:
             event_data = await self._convert_event_to_dto(dav_event)
             changes = []
             if summary is not None:
@@ -350,6 +373,11 @@ class CalDAVToolKit(BaseToolKit[CalDAVSettings]):
                 changes.append(f"location: {location}")
             if all_day is not None:
                 changes.append(f"all_day: {all_day}")
+            if reminders is not None:
+                reminder_info = ", ".join(
+                    [f"{r.minutes_before} min before" for r in reminders]
+                )
+                changes.append(f"reminders: {reminder_info}")
 
             changes_text = "\n".join(changes)
             confirmation_request_text = (
@@ -376,32 +404,54 @@ class CalDAVToolKit(BaseToolKit[CalDAVSettings]):
             if location is not None:
                 component["LOCATION"] = location
             if start is not None:
+                from icalendar import vDate, vDatetime
+
                 if all_day:
-                    component["DTSTART"] = start.strftime(self.DATE_FORMAT)
-                    component["DTSTART"].params = {"VALUE": "DATE"}
+                    start_date = vDate(start)
+                    component["DTSTART"] = start_date
                 else:
                     if isinstance(start, datetime):
-                        component["DTSTART"] = start.strftime(self.DATETIME_FORMAT)
+                        start_dt = vDatetime(start)
                     else:
-                        component["DTSTART"] = datetime.combine(
-                            start, datetime.min.time()
-                        ).strftime(self.DATETIME_FORMAT)
+                        start_dt = vDatetime(
+                            datetime.combine(start, datetime.min.time())
+                        )
+                    component["DTSTART"] = start_dt
             if end is not None:
+                from icalendar import vDate, vDatetime
+
                 if all_day:
-                    component["DTEND"] = end.strftime(self.DATE_FORMAT)
-                    component["DTEND"].params = {"VALUE": "DATE"}
+                    end_date = vDate(end)
+                    component["DTEND"] = end_date
                 else:
                     if isinstance(end, datetime):
-                        component["DTEND"] = end.strftime(self.DATETIME_FORMAT)
+                        end_dt = vDatetime(end)
                     else:
-                        component["DTEND"] = datetime.combine(
-                            end, datetime.min.time()
-                        ).strftime(self.DATETIME_FORMAT)
+                        end_dt = vDatetime(datetime.combine(end, datetime.min.time()))
+                    component["DTEND"] = end_dt
+
+            if reminders is not None:
+                existing_alarms = [
+                    sub for sub in component.subcomponents if sub.name == "VALARM"
+                ]
+                for alarm in existing_alarms:
+                    component.subcomponents.remove(alarm)
+
+                for reminder in reminders:
+                    from icalendar import Alarm
+
+                    alarm = Alarm()
+                    alarm["TRIGGER"] = f"-PT{reminder.minutes_before}M"
+                    alarm["ACTION"] = "DISPLAY"
+                    alarm["DESCRIPTION"] = "Reminder"
+                    component.add_component(alarm)
 
         dav_event.data = event_instance.to_ical()
         await self._with_retry(
             self._client.put,
-            url, dav_event.data, {"Content-Type": "text/calendar; charset=utf-8"}
+            url,
+            dav_event.data,
+            {"Content-Type": "text/calendar; charset=utf-8"},
         )
         return await self._convert_event_to_dto(dav_event)
 
@@ -419,9 +469,9 @@ class CalDAVToolKit(BaseToolKit[CalDAVSettings]):
 
         calendar_url = url.rsplit("/", 1)[0]
         await self._get_calendar(calendar_url)
-        if self.settings.write_mode is PermissionModeEnum.DENY:
+        if self.arguments.write_mode is PermissionModeEnum.DENY:
             raise PermissionError("Write operations denied")
-        if self.settings.write_mode is PermissionModeEnum.REQUEST:
+        if self.arguments.write_mode is PermissionModeEnum.REQUEST:
             dav_event = AsyncEvent(client=self._client, url=url)
             await self._with_retry(dav_event.load)
             event_data = await self._convert_event_to_dto(dav_event)
@@ -451,11 +501,11 @@ class CalDAVToolKit(BaseToolKit[CalDAVSettings]):
 
     async def _get_calendar(self, calendar_url: str) -> AsyncCalendar:
         dav_calendar = AsyncCalendar(client=self._client, url=calendar_url)
-        if self.settings.allowed_calendars is not None:
+        if self.arguments.allowed_calendars is not None:
             calendar_name = await self._with_retry(
                 dav_calendar.get_property, dav.DisplayName()
             )
-            if calendar_name not in self.settings.allowed_calendars:
+            if calendar_name not in self.arguments.allowed_calendars:
                 raise PermissionError(
                     f"Calendar '{calendar_name}' is not in allowed calendars list"
                 )
@@ -485,6 +535,29 @@ class CalDAVToolKit(BaseToolKit[CalDAVSettings]):
             start = component["DTSTART"]
             end = component.get("DTEND")
 
+            reminders: list[Reminder] = []
+            for subcomponent in component.subcomponents:
+                if subcomponent.name == "VALARM":
+                    trigger = subcomponent.get("TRIGGER")
+                    if trigger and trigger.dt:
+                        if isinstance(trigger.dt, timedelta):
+                            minutes_before = int(trigger.dt.total_seconds() / 60)
+                            if minutes_before < 0:
+                                minutes_before = abs(minutes_before)
+                                reminders.append(
+                                    Reminder(minutes_before=minutes_before)
+                                )
+                        elif isinstance(trigger.dt, str):
+                            if trigger.dt.startswith("-PT") and trigger.dt.endswith(
+                                "M"
+                            ):
+                                try:
+                                    minutes_str = trigger.dt[3:-1]
+                                    minutes = int(minutes_str)
+                                    reminders.append(Reminder(minutes_before=minutes))
+                                except (ValueError, IndexError):
+                                    pass
+
             return Event(
                 uid=str(component.get("UID", "")),
                 url=str(event.url),
@@ -494,6 +567,7 @@ class CalDAVToolKit(BaseToolKit[CalDAVSettings]):
                 start=start.dt,
                 end=end.dt if end else None,
                 all_day=not isinstance(start.dt, datetime),
+                reminders=reminders,
             )
 
         return Event(

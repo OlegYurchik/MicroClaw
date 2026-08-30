@@ -1,6 +1,11 @@
-from microclaw.dto import DecisionEnum
 import asyncio
+from datetime import date, datetime
 
+from .dto import Task, TaskList
+from .settings import TasksSettings
+from caldav.aio import AsyncCalendar, AsyncDAVClient, AsyncPrincipal, AsyncTodo
+from caldav.elements import dav
+from langgraph.types import interrupt
 from loguru import logger
 from tenacity import (
     AsyncRetrying,
@@ -9,19 +14,13 @@ from tenacity import (
     stop_after_attempt,
     wait_exponential,
 )
-from langgraph.types import interrupt
-from datetime import datetime, date
 
-from caldav.aio import AsyncDAVClient, AsyncPrincipal, AsyncCalendar, AsyncTodo
-from caldav.elements import dav
-
+from microclaw.dto import DecisionEnum
 from microclaw.toolkits.base import BaseToolKit, tool
 from microclaw.toolkits.capabilities import DiscoveryCapability, ToolKitCapability
 from microclaw.toolkits.enums import PermissionModeEnum
 from microclaw.toolkits.exceptions import UserDeniedAction
 from microclaw.toolkits.settings import ToolKitSettings
-from .dto import TaskList, Task
-from .settings import TasksSettings
 
 
 class TasksToolKit(BaseToolKit[TasksSettings]):
@@ -41,10 +40,10 @@ class TasksToolKit(BaseToolKit[TasksSettings]):
     def __init__(self, key: str, settings: ToolKitSettings):
         super().__init__(key=key, settings=settings)
         self._client = AsyncDAVClient(
-            url=self.settings.url,
-            username=self.settings.username,
-            password=self.settings.password,
-            ssl_verify_cert=self.settings.verify_ssl,
+            url=self.arguments.url,
+            username=self.arguments.username,
+            password=self.arguments.password,
+            ssl_verify_cert=self.arguments.verify_ssl,
         )
         self._principal = None
 
@@ -62,8 +61,8 @@ class TasksToolKit(BaseToolKit[TasksSettings]):
         for calendar in calendars:
             task_list = await self._convert_calendar_to_dto(calendar=calendar)
             if (
-                self.settings.allowed_task_lists is None
-                or task_list.name in self.settings.allowed_task_lists
+                self.arguments.allowed_task_lists is None
+                or task_list.name in self.arguments.allowed_task_lists
             ):
                 task_lists.append(task_list)
         return task_lists
@@ -80,9 +79,9 @@ class TasksToolKit(BaseToolKit[TasksSettings]):
             TaskList object with url and name
         """
 
-        if self.settings.write_mode is PermissionModeEnum.DENY:
+        if self.arguments.write_mode is PermissionModeEnum.DENY:
             raise PermissionError("Write operations denied")
-        if self.settings.write_mode is PermissionModeEnum.REQUEST:
+        if self.arguments.write_mode is PermissionModeEnum.REQUEST:
             confirmation_request_text = f"Create task list '{name}'?"
             decision = interrupt({"description": confirmation_request_text})
             if decision == DecisionEnum.REJECT.value:
@@ -125,9 +124,9 @@ class TasksToolKit(BaseToolKit[TasksSettings]):
             None - indicates successful operation
         """
         calendar = await self._get_task_list(url)
-        if self.settings.write_mode is PermissionModeEnum.DENY:
+        if self.arguments.write_mode is PermissionModeEnum.DENY:
             raise PermissionError("Write operations denied")
-        if self.settings.write_mode is PermissionModeEnum.REQUEST:
+        if self.arguments.write_mode is PermissionModeEnum.REQUEST:
             task_list_name = await self._with_retry(calendar.get_property, dav.DisplayName())
             confirmation_request_text = f"Delete task list '{task_list_name}'?"
             decision = interrupt({"description": confirmation_request_text})
@@ -220,9 +219,9 @@ class TasksToolKit(BaseToolKit[TasksSettings]):
             Created Task object
         """
         calendar = await self._get_task_list(task_list_url)
-        if self.settings.write_mode is PermissionModeEnum.DENY:
+        if self.arguments.write_mode is PermissionModeEnum.DENY:
             raise PermissionError("Write operations denied")
-        if self.settings.write_mode is PermissionModeEnum.REQUEST:
+        if self.arguments.write_mode is PermissionModeEnum.REQUEST:
             task_list_name = await self._with_retry(calendar.get_property, dav.DisplayName())
             confirmation_request_text = (
                 f"Create task '{summary}' in task list '{task_list_name}'?"
@@ -285,9 +284,9 @@ class TasksToolKit(BaseToolKit[TasksSettings]):
         if not todo:
             raise ValueError(f"Task with UID {task_uid} not found")
 
-        if self.settings.write_mode is PermissionModeEnum.DENY:
+        if self.arguments.write_mode is PermissionModeEnum.DENY:
             raise PermissionError("Write operations denied")
-        if self.settings.write_mode is PermissionModeEnum.REQUEST:
+        if self.arguments.write_mode is PermissionModeEnum.REQUEST:
             task_data = await self._convert_todo_to_dto(todo=todo)
             changes = []
             if summary is not None:
@@ -357,9 +356,9 @@ class TasksToolKit(BaseToolKit[TasksSettings]):
         if not todo:
             raise ValueError(f"Task with UID {task_uid} not found")
 
-        if self.settings.write_mode is PermissionModeEnum.DENY:
+        if self.arguments.write_mode is PermissionModeEnum.DENY:
             raise PermissionError("Write operations denied")
-        if self.settings.write_mode is PermissionModeEnum.REQUEST:
+        if self.arguments.write_mode is PermissionModeEnum.REQUEST:
             task_data = await self._convert_todo_to_dto(todo=todo)
             confirmation_request_text = f"Delete task '{task_data.summary}'?"
             decision = interrupt({"description": confirmation_request_text})
@@ -404,11 +403,11 @@ class TasksToolKit(BaseToolKit[TasksSettings]):
 
     async def _get_task_list(self, task_list_url: str) -> AsyncCalendar:
         calendar = AsyncCalendar(client=self._client, url=task_list_url)
-        if self.settings.allowed_task_lists is not None:
+        if self.arguments.allowed_task_lists is not None:
             calendar_name = await self._with_retry(
                 calendar.get_property, dav.DisplayName()
             )
-            if calendar_name not in self.settings.allowed_task_lists:
+            if calendar_name not in self.arguments.allowed_task_lists:
                 raise PermissionError(
                     f"Task list '{calendar_name}' is not in allowed task lists list"
                 )

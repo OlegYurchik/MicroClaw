@@ -1,13 +1,13 @@
 import uuid
 
+from .input import UserInput
+from .messages import ActionMessageBox, BaseMessageBox, MessageBox
+from .slash_commands import BaseSlashCommand, SlashCommandSuggest
+from .status import StatusBar
 from textual.app import ComposeResult
 from textual.containers import Vertical
 
 from microclaw.channels.tui.ui.enums import RoleEnum
-from .input import UserInput
-from .messages import BaseMessageBox, MessageBox, ActionMessageBox
-from .slash_commands import BaseSlashCommand, SlashCommandSuggest
-from .status import StatusBar
 
 
 class ChatWidget(Vertical):

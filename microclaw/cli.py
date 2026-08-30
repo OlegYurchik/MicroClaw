@@ -3,14 +3,13 @@ import logging
 import pathlib
 import sys
 
-import typer
-from loguru import logger
-
 from .channels.tui.cli import get_cli as get_tui_cli
 from .cron import get_cli as get_cron_cli
 from .logging import InterceptHandler, generate_formatter
 from .service import MicroclawService
 from .settings import MicroclawSettings
+from loguru import logger
+import typer
 
 
 def callback(

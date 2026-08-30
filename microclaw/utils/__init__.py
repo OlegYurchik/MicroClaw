@@ -1,5 +1,5 @@
 from .types import Empty
-from .utils import get_by_key_or_first, suppress_exception
+from .utils import get_by_key_or_first, suppress_exception, utcnow
 
 
 __all__ = (
@@ -8,4 +8,5 @@ __all__ = (
     # utils
     "get_by_key_or_first",
     "suppress_exception",
+    "utcnow",
 )

@@ -1,7 +1,7 @@
+from .database import DatabaseUsersStorage
+from .filesystem import FilesystemUsersStorage
 from .interfaces import UsersStorageInterface
 from .memory import MemoryUsersStorage
-from .filesystem import FilesystemUsersStorage
-from .database import DatabaseUsersStorage
 from .settings import UsersStorageSettings, UsersStorageTypeEnum
 
 

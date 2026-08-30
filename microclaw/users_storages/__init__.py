@@ -1,8 +1,8 @@
 from .fabric import get_users_storage
+from .filesystem import FilesystemUsersStorageSettings
 from .interfaces import UsersStorageInterface
 from .memory import MemoryUsersStorageSettings
 from .settings import UsersStorageSettings
-from .filesystem import FilesystemUsersStorageSettings
 
 
 UsersStorageSettingsType = MemoryUsersStorageSettings | FilesystemUsersStorageSettings

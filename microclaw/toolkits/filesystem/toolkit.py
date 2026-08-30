@@ -1,16 +1,16 @@
-from microclaw.dto import DecisionEnum
-from langgraph.types import interrupt
 import asyncio
 import pathlib
 
+from .dto import DirectoryInfo, FilesystemItemType
+from .settings import FileSystemToolKitSettings
 import aiofiles
+from langgraph.types import interrupt
 
+from microclaw.dto import DecisionEnum
 from microclaw.toolkits.base import BaseToolKit, tool
 from microclaw.toolkits.capabilities import DiscoveryCapability, ToolKitCapability
 from microclaw.toolkits.enums import PermissionModeEnum
 from microclaw.toolkits.exceptions import UserDeniedAction
-from .dto import DirectoryInfo, FilesystemItemType
-from .settings import FileSystemToolKitSettings
 
 
 class FileSystemToolKit(BaseToolKit[FileSystemToolKitSettings]):
@@ -25,7 +25,7 @@ class FileSystemToolKit(BaseToolKit[FileSystemToolKitSettings]):
 
         self._allowed_paths = [
             pathlib.Path(directory).resolve()
-            for directory in self._settings.directories
+            for directory in self._arguments.directories
         ]
 
     @tool
@@ -98,9 +98,9 @@ class FileSystemToolKit(BaseToolKit[FileSystemToolKitSettings]):
             None - indicates successful operation
         """
 
-        if self.settings.write_mode is PermissionModeEnum.DENY:
+        if self.arguments.write_mode is PermissionModeEnum.DENY:
             raise PermissionError("File writing is not allowed")
-        if self.settings.write_mode is PermissionModeEnum.REQUEST:
+        if self.arguments.write_mode is PermissionModeEnum.REQUEST:
             confirmation_request_text = f"Write content to file '{path}'?"
             decision = interrupt({"description": confirmation_request_text})
             if decision == DecisionEnum.REJECT.value:
@@ -122,5 +122,5 @@ class FileSystemToolKit(BaseToolKit[FileSystemToolKitSettings]):
                 continue
 
         raise PermissionError(
-            f"Path '{path_str}' is not within allowed directories: {self._settings.directories}"
+            f"Path '{path_str}' is not within allowed directories: {self._arguments.directories}"
         )

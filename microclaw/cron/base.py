@@ -1,23 +1,21 @@
-from typing import TypeVar, Generic
-
 import asyncio
-import facet
-from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from loguru import logger
-
-from pydantic import BaseModel
+from typing import Generic, TypeVar
 
 from .settings import CronTaskSettings
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+import facet
+from loguru import logger
+from pydantic import BaseModel
 
 
-SettingsType = TypeVar("SettingsType")
+ArgumentsType = TypeVar("ArgumentsType")
 
 
 class EmptySettings(BaseModel):
     pass
 
 
-class BaseCronTask(facet.AsyncioServiceMixin, Generic[SettingsType]):
+class BaseCronTask(facet.AsyncioServiceMixin, Generic[ArgumentsType]):
     _scheduler: AsyncIOScheduler | None = None
     _tasks: dict[str, "BaseCronTask"] = {}
 
@@ -29,11 +27,11 @@ class BaseCronTask(facet.AsyncioServiceMixin, Generic[SettingsType]):
     ):
         self._key = key
         self._cron = settings.cron
-        self._settings = self.get_settings_class()(**settings.args)
+        self._arguments = self.get_settings_class()(**settings.args)
         self._resolver = resolver
 
     @classmethod
-    def get_settings_class(cls) -> type[SettingsType] | type[EmptySettings]:
+    def get_settings_class(cls) -> type[ArgumentsType] | type[EmptySettings]:
         for base in cls.__orig_bases__:
             origin = getattr(base, "__origin__", None)
             if isinstance(origin, type) and issubclass(origin, BaseCronTask):

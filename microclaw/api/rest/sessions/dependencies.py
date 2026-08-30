@@ -4,7 +4,11 @@ import fastapi
 
 from microclaw.api.rest.dependencies import (
     auth,
+)
+from microclaw.api.rest.dependencies import (
     sessions_storage as sessions_storage_dep,
+)
+from microclaw.api.rest.dependencies import (
     users_storage as users_storage_dep,
 )
 from microclaw.api.rest.exceptions import HTTPForbidden, HTTPNotFound

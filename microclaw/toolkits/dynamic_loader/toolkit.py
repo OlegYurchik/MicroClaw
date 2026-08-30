@@ -1,11 +1,12 @@
 from typing import Any
 
+from .dto import ToolInfo, ToolKitInfo
+from .settings import DynamicLoaderToolKitSettings
+
+from microclaw.toolkits import ToolKitSettings
 from microclaw.toolkits.base import BaseToolKit, tool
 from microclaw.toolkits.capabilities import DiscoveryCapability, ToolKitCapability
 from microclaw.toolkits.fabric import get_toolkit
-from microclaw.toolkits import ToolKitSettings
-from .dto import ToolKitInfo, ToolInfo
-from .settings import DynamicLoaderToolKitSettings
 
 
 class DynamicLoaderToolKit(BaseToolKit[DynamicLoaderToolKitSettings]):
@@ -24,7 +25,7 @@ class DynamicLoaderToolKit(BaseToolKit[DynamicLoaderToolKitSettings]):
         """List all available toolkits."""
         results = []
 
-        for toolkit_name, toolkit_config in self._settings.toolkits.items():
+        for toolkit_name, toolkit_config in self._arguments.toolkits.items():
             toolkit = self._load_toolkit(toolkit_name, toolkit_config)
             tools = toolkit.get_tools()
             results.append(
@@ -40,13 +41,13 @@ class DynamicLoaderToolKit(BaseToolKit[DynamicLoaderToolKitSettings]):
     @tool
     async def load_tools(self, toolkit_name: str) -> list[ToolInfo]:
         """Get all tools from a specific toolkit."""
-        if toolkit_name not in self._settings.toolkits:
+        if toolkit_name not in self._arguments.toolkits:
             raise ValueError(
                 f"Toolkit '{toolkit_name}' not found in available toolkits"
             )
 
         toolkit = self._load_toolkit(
-            toolkit_name, self._settings.toolkits[toolkit_name]
+            toolkit_name, self._arguments.toolkits[toolkit_name]
         )
         tools = toolkit.get_tools()
 
@@ -66,13 +67,13 @@ class DynamicLoaderToolKit(BaseToolKit[DynamicLoaderToolKitSettings]):
         **kwargs: Any,
     ) -> str:
         """Call a specific tool from a loaded toolkit."""
-        if toolkit_name not in self._settings.toolkits:
+        if toolkit_name not in self._arguments.toolkits:
             raise ValueError(
                 f"Toolkit '{toolkit_name}' not found in available toolkits"
             )
 
         toolkit = self._load_toolkit(
-            toolkit_name, self._settings.toolkits[toolkit_name]
+            toolkit_name, self._arguments.toolkits[toolkit_name]
         )
 
         expected_tool_name = f"{toolkit_name}_{tool_name}"

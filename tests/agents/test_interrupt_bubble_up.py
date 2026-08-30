@@ -1,6 +1,5 @@
 import uuid
 
-import pytest
 from langchain.agents import create_agent
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import AIMessage
@@ -8,6 +7,7 @@ from langchain_core.tools import tool
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.errors import GraphBubbleUp, GraphInterrupt
 from langgraph.types import Command, interrupt
+import pytest
 
 from microclaw.agents.agent import _handle_tool_errors
 

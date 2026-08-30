@@ -1,5 +1,6 @@
 from typing import Any
 
+from .settings import AgentsToolKitSettings
 from langgraph.types import interrupt
 
 from microclaw.agents.settings import AgentSettings
@@ -8,7 +9,6 @@ from microclaw.toolkits.base import BaseToolKit, tool
 from microclaw.toolkits.capabilities import DiscoveryCapability, ToolKitCapability
 from microclaw.toolkits.enums import PermissionModeEnum
 from microclaw.toolkits.exceptions import UserDeniedAction
-from .settings import AgentsToolKitSettings
 
 
 class AgentsToolKit(BaseToolKit[AgentsToolKitSettings]):
@@ -52,9 +52,9 @@ class AgentsToolKit(BaseToolKit[AgentsToolKitSettings]):
     @tool
     async def set_agent_model(self, model_name: str) -> str:
         """Set the model for the agent by selecting one of the globally available models."""
-        if self._settings.set_mode is PermissionModeEnum.DENY:
+        if self._arguments.set_mode is PermissionModeEnum.DENY:
             raise PermissionError("Setting agent model is not allowed")
-        if self._settings.set_mode is PermissionModeEnum.REQUEST:
+        if self._arguments.set_mode is PermissionModeEnum.REQUEST:
             decision = interrupt({"description": f"Set model to '{model_name}'?"})
             if decision == DecisionEnum.REJECT.value:
                 raise UserDeniedAction()
@@ -76,9 +76,9 @@ class AgentsToolKit(BaseToolKit[AgentsToolKitSettings]):
         description: str | None = None,
     ) -> str:
         """Update the agent's identity (name, emoji, creature, vibe, description)."""
-        if self._settings.set_mode is PermissionModeEnum.DENY:
+        if self._arguments.set_mode is PermissionModeEnum.DENY:
             raise PermissionError("Setting agent identity is not allowed")
-        if self._settings.set_mode is PermissionModeEnum.REQUEST:
+        if self._arguments.set_mode is PermissionModeEnum.REQUEST:
             decision = interrupt({"description": "Update agent identity?"})
             if decision == DecisionEnum.REJECT.value:
                 raise UserDeniedAction()
@@ -99,9 +99,9 @@ class AgentsToolKit(BaseToolKit[AgentsToolKitSettings]):
     @tool
     async def set_agent_subagents(self, subagent_names: list[str]) -> str:
         """Set the list of active subagents for the agent."""
-        if self._settings.set_mode is PermissionModeEnum.DENY:
+        if self._arguments.set_mode is PermissionModeEnum.DENY:
             raise PermissionError("Setting agent subagents is not allowed")
-        if self._settings.set_mode is PermissionModeEnum.REQUEST:
+        if self._arguments.set_mode is PermissionModeEnum.REQUEST:
             decision = interrupt({"description": f"Set subagents to {subagent_names}?"})
             if decision == DecisionEnum.REJECT.value:
                 raise UserDeniedAction()
@@ -143,9 +143,9 @@ class AgentsToolKit(BaseToolKit[AgentsToolKitSettings]):
 
         The subagent model must be a globally available model name.
         """
-        if self._settings.set_mode is PermissionModeEnum.DENY:
+        if self._arguments.set_mode is PermissionModeEnum.DENY:
             raise PermissionError("Adding custom subagents is not allowed")
-        if self._settings.set_mode is PermissionModeEnum.REQUEST:
+        if self._arguments.set_mode is PermissionModeEnum.REQUEST:
             decision = interrupt(
                 {"description": f"Add custom subagent '{config.identity.name}'?"}
             )
@@ -177,9 +177,9 @@ class AgentsToolKit(BaseToolKit[AgentsToolKitSettings]):
     @tool
     async def remove_subagent(self, name: str) -> str:
         """Remove a subagent from the active list by name."""
-        if self._settings.set_mode is PermissionModeEnum.DENY:
+        if self._arguments.set_mode is PermissionModeEnum.DENY:
             raise PermissionError("Removing subagents is not allowed")
-        if self._settings.set_mode is PermissionModeEnum.REQUEST:
+        if self._arguments.set_mode is PermissionModeEnum.REQUEST:
             decision = interrupt({"description": f"Remove subagent '{name}'?"})
             if decision == DecisionEnum.REJECT.value:
                 raise UserDeniedAction()
@@ -210,9 +210,9 @@ class AgentsToolKit(BaseToolKit[AgentsToolKitSettings]):
     @tool
     async def set_agent_temperature(self, temperature: float) -> str:
         """Set the temperature for the agent's model."""
-        if self._settings.set_mode is PermissionModeEnum.DENY:
+        if self._arguments.set_mode is PermissionModeEnum.DENY:
             raise PermissionError("Setting agent temperature is not allowed")
-        if self._settings.set_mode is PermissionModeEnum.REQUEST:
+        if self._arguments.set_mode is PermissionModeEnum.REQUEST:
             decision = interrupt({"description": f"Set temperature to {temperature}?"})
             if decision == DecisionEnum.REJECT.value:
                 raise UserDeniedAction()
@@ -224,9 +224,9 @@ class AgentsToolKit(BaseToolKit[AgentsToolKitSettings]):
     @tool
     async def set_agent_max_tool_calls(self, max_tool_calls: int) -> str:
         """Set the maximum number of tool calls per request."""
-        if self._settings.set_mode is PermissionModeEnum.DENY:
+        if self._arguments.set_mode is PermissionModeEnum.DENY:
             raise PermissionError("Setting max_tool_calls is not allowed")
-        if self._settings.set_mode is PermissionModeEnum.REQUEST:
+        if self._arguments.set_mode is PermissionModeEnum.REQUEST:
             decision = interrupt({"description": f"Set max_tool_calls to {max_tool_calls}?"})
             if decision == DecisionEnum.REJECT.value:
                 raise UserDeniedAction()
@@ -238,9 +238,9 @@ class AgentsToolKit(BaseToolKit[AgentsToolKitSettings]):
     @tool
     async def set_agent_max_model_calls(self, max_model_calls: int) -> str:
         """Set the maximum number of model calls per request."""
-        if self._settings.set_mode is PermissionModeEnum.DENY:
+        if self._arguments.set_mode is PermissionModeEnum.DENY:
             raise PermissionError("Setting max_model_calls is not allowed")
-        if self._settings.set_mode is PermissionModeEnum.REQUEST:
+        if self._arguments.set_mode is PermissionModeEnum.REQUEST:
             decision = interrupt({"description": f"Set max_model_calls to {max_model_calls}?"})
             if decision == DecisionEnum.REJECT.value:
                 raise UserDeniedAction()
@@ -252,9 +252,9 @@ class AgentsToolKit(BaseToolKit[AgentsToolKitSettings]):
     @tool
     async def set_agent_summarization(self, enable_summarization: bool) -> str:
         """Enable or disable automatic dialog summarization."""
-        if self._settings.set_mode is PermissionModeEnum.DENY:
+        if self._arguments.set_mode is PermissionModeEnum.DENY:
             raise PermissionError("Setting summarization is not allowed")
-        if self._settings.set_mode is PermissionModeEnum.REQUEST:
+        if self._arguments.set_mode is PermissionModeEnum.REQUEST:
             decision = interrupt({"description": f"Set summarization to {enable_summarization}?"})
             if decision == DecisionEnum.REJECT.value:
                 raise UserDeniedAction()
@@ -266,9 +266,9 @@ class AgentsToolKit(BaseToolKit[AgentsToolKitSettings]):
     @tool
     async def set_agent_memory_flush(self, enable_memory_flush: bool) -> str:
         """Enable or disable automatic memory flush."""
-        if self._settings.set_mode is PermissionModeEnum.DENY:
+        if self._arguments.set_mode is PermissionModeEnum.DENY:
             raise PermissionError("Setting memory flush is not allowed")
-        if self._settings.set_mode is PermissionModeEnum.REQUEST:
+        if self._arguments.set_mode is PermissionModeEnum.REQUEST:
             decision = interrupt({"description": f"Set memory flush to {enable_memory_flush}?"})
             if decision == DecisionEnum.REJECT.value:
                 raise UserDeniedAction()
@@ -282,9 +282,9 @@ class AgentsToolKit(BaseToolKit[AgentsToolKitSettings]):
         self, max_memory_flush_tokens: int
     ) -> str:
         """Set the maximum number of tokens for memory flush."""
-        if self._settings.set_mode is PermissionModeEnum.DENY:
+        if self._arguments.set_mode is PermissionModeEnum.DENY:
             raise PermissionError("Setting max_memory_flush_tokens is not allowed")
-        if self._settings.set_mode is PermissionModeEnum.REQUEST:
+        if self._arguments.set_mode is PermissionModeEnum.REQUEST:
             decision = interrupt({"description": f"Set max_memory_flush_tokens to {max_memory_flush_tokens}?"})
             if decision == DecisionEnum.REJECT.value:
                 raise UserDeniedAction()
@@ -296,9 +296,9 @@ class AgentsToolKit(BaseToolKit[AgentsToolKitSettings]):
     @tool
     async def set_agent_max_tool_output_chars(self, max_tool_output_chars: int) -> str:
         """Set the maximum number of characters for tool output."""
-        if self._settings.set_mode is PermissionModeEnum.DENY:
+        if self._arguments.set_mode is PermissionModeEnum.DENY:
             raise PermissionError("Setting max_tool_output_chars is not allowed")
-        if self._settings.set_mode is PermissionModeEnum.REQUEST:
+        if self._arguments.set_mode is PermissionModeEnum.REQUEST:
             decision = interrupt({"description": f"Set max_tool_output_chars to {max_tool_output_chars}?"})
             if decision == DecisionEnum.REJECT.value:
                 raise UserDeniedAction()
@@ -310,9 +310,9 @@ class AgentsToolKit(BaseToolKit[AgentsToolKitSettings]):
     @tool
     async def set_agent_model_max_retries(self, model_max_retries: int) -> str:
         """Set the maximum number of model retries."""
-        if self._settings.set_mode is PermissionModeEnum.DENY:
+        if self._arguments.set_mode is PermissionModeEnum.DENY:
             raise PermissionError("Setting model_max_retries is not allowed")
-        if self._settings.set_mode is PermissionModeEnum.REQUEST:
+        if self._arguments.set_mode is PermissionModeEnum.REQUEST:
             decision = interrupt({"description": f"Set model_max_retries to {model_max_retries}?"})
             if decision == DecisionEnum.REJECT.value:
                 raise UserDeniedAction()
@@ -326,9 +326,9 @@ class AgentsToolKit(BaseToolKit[AgentsToolKitSettings]):
         self, model_retry_backoff_factor: float
     ) -> str:
         """Set the backoff factor for model retries."""
-        if self._settings.set_mode is PermissionModeEnum.DENY:
+        if self._arguments.set_mode is PermissionModeEnum.DENY:
             raise PermissionError("Setting model_retry_backoff_factor is not allowed")
-        if self._settings.set_mode is PermissionModeEnum.REQUEST:
+        if self._arguments.set_mode is PermissionModeEnum.REQUEST:
             decision = interrupt({"description": f"Set model_retry_backoff_factor to {model_retry_backoff_factor}?"})
             if decision == DecisionEnum.REJECT.value:
                 raise UserDeniedAction()
@@ -342,9 +342,9 @@ class AgentsToolKit(BaseToolKit[AgentsToolKitSettings]):
         self, model_retry_initial_delay: float
     ) -> str:
         """Set the initial delay for model retries."""
-        if self._settings.set_mode is PermissionModeEnum.DENY:
+        if self._arguments.set_mode is PermissionModeEnum.DENY:
             raise PermissionError("Setting model_retry_initial_delay is not allowed")
-        if self._settings.set_mode is PermissionModeEnum.REQUEST:
+        if self._arguments.set_mode is PermissionModeEnum.REQUEST:
             decision = interrupt({"description": f"Set model_retry_initial_delay to {model_retry_initial_delay}?"})
             if decision == DecisionEnum.REJECT.value:
                 raise UserDeniedAction()
@@ -356,9 +356,9 @@ class AgentsToolKit(BaseToolKit[AgentsToolKitSettings]):
     @tool
     async def reset_agent_settings(self) -> str:
         """Reset agent configuration to channel defaults."""
-        if self._settings.reset_mode is PermissionModeEnum.DENY:
+        if self._arguments.reset_mode is PermissionModeEnum.DENY:
             raise PermissionError("Reset is not allowed")
-        if self._settings.reset_mode is PermissionModeEnum.REQUEST:
+        if self._arguments.reset_mode is PermissionModeEnum.REQUEST:
             decision = interrupt(
                 {"description": "Reset agent configuration to defaults?"}
             )

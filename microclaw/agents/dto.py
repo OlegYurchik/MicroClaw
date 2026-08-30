@@ -1,9 +1,9 @@
 from dataclasses import dataclass, field
 
+from .settings import AgentIdentity
 from langchain_core.tools import BaseTool
 from pydantic import AwareDatetime, BaseModel
 
-from .settings import AgentIdentity
 from microclaw.toolkits.base import BaseToolKit
 
 

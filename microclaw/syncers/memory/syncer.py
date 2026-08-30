@@ -3,9 +3,10 @@ import fnmatch
 import time
 from typing import Any
 
-from microclaw.syncers.interfaces import SyncerInterface
 from .dto import StorageItem
 from .settings import MemorySyncerSettings
+
+from microclaw.syncers.interfaces import SyncerInterface
 
 
 class MemorySyncer(SyncerInterface):

@@ -1,8 +1,27 @@
+import asyncio
 from datetime import datetime
 from typing import Any
 
-import asyncio
-
+from .dto import (
+    Context,
+    Entity,
+    Service,
+    State,
+    StateHistory,
+)
+from .settings import HomeAssistantSettings
+from homeassistant_api import Client
+from homeassistant_api.models import (
+    Entity as HAEntity,
+)
+from homeassistant_api.models import (
+    Service as HAService,
+)
+from homeassistant_api.models import (
+    State as HAState,
+)
+from homeassistant_api.models.states import Context as HAContext
+from langgraph.types import interrupt
 from loguru import logger
 from tenacity import (
     AsyncRetrying,
@@ -12,29 +31,12 @@ from tenacity import (
     wait_exponential,
 )
 
-from homeassistant_api import Client
-from homeassistant_api.models import (
-    Entity as HAEntity,
-    Service as HAService,
-    State as HAState,
-)
-from homeassistant_api.models.states import Context as HAContext
-
 from microclaw.dto import DecisionEnum
-from langgraph.types import interrupt
 from microclaw.toolkits.base import BaseToolKit, tool
 from microclaw.toolkits.capabilities import DiscoveryCapability, ToolKitCapability
 from microclaw.toolkits.enums import PermissionModeEnum
 from microclaw.toolkits.exceptions import UserDeniedAction
 from microclaw.toolkits.settings import ToolKitSettings
-from .dto import (
-    Context,
-    Entity,
-    Service,
-    State,
-    StateHistory,
-)
-from .settings import HomeAssistantSettings
 
 
 class HomeAssistantToolKit(BaseToolKit[HomeAssistantSettings]):
@@ -220,9 +222,9 @@ class HomeAssistantToolKit(BaseToolKit[HomeAssistantSettings]):
         Returns:
             None - indicates successful operation
         """
-        if self.settings.control_mode is PermissionModeEnum.DENY:
+        if self.arguments.control_mode is PermissionModeEnum.DENY:
             raise PermissionError("Controlling Home Assistant entities is not allowed")
-        if self.settings.control_mode is PermissionModeEnum.REQUEST:
+        if self.arguments.control_mode is PermissionModeEnum.REQUEST:
             decision = interrupt({"description": f"Turn on '{entity_id}'?"})
             if decision == DecisionEnum.REJECT.value:
                 raise UserDeniedAction()
@@ -245,9 +247,9 @@ class HomeAssistantToolKit(BaseToolKit[HomeAssistantSettings]):
         Returns:
             None - indicates successful operation
         """
-        if self.settings.control_mode is PermissionModeEnum.DENY:
+        if self.arguments.control_mode is PermissionModeEnum.DENY:
             raise PermissionError("Controlling Home Assistant entities is not allowed")
-        if self.settings.control_mode is PermissionModeEnum.REQUEST:
+        if self.arguments.control_mode is PermissionModeEnum.REQUEST:
             decision = interrupt({"description": f"Turn off '{entity_id}'?"})
             if decision == DecisionEnum.REJECT.value:
                 raise UserDeniedAction()
@@ -269,9 +271,9 @@ class HomeAssistantToolKit(BaseToolKit[HomeAssistantSettings]):
         Returns:
             None - indicates successful operation
         """
-        if self.settings.control_mode is PermissionModeEnum.DENY:
+        if self.arguments.control_mode is PermissionModeEnum.DENY:
             raise PermissionError("Controlling Home Assistant entities is not allowed")
-        if self.settings.control_mode is PermissionModeEnum.REQUEST:
+        if self.arguments.control_mode is PermissionModeEnum.REQUEST:
             decision = interrupt({"description": f"Toggle '{entity_id}'?"})
             if decision == DecisionEnum.REJECT.value:
                 raise UserDeniedAction()
@@ -302,9 +304,9 @@ class HomeAssistantToolKit(BaseToolKit[HomeAssistantSettings]):
         Returns:
             None - indicates successful operation
         """
-        if self.settings.control_mode is PermissionModeEnum.DENY:
+        if self.arguments.control_mode is PermissionModeEnum.DENY:
             raise PermissionError("Calling Home Assistant services is not allowed")
-        if self.settings.control_mode is PermissionModeEnum.REQUEST:
+        if self.arguments.control_mode is PermissionModeEnum.REQUEST:
             decision = interrupt({"description": f"Call service '{domain}.{service}'?"})
             if decision == DecisionEnum.REJECT.value:
                 raise UserDeniedAction()
@@ -404,9 +406,9 @@ class HomeAssistantToolKit(BaseToolKit[HomeAssistantSettings]):
     async def _get_client(self) -> Client:
         if self._client is None:
             self._client = Client(
-                api_url=self.settings.url,
-                token=self.settings.token,
+                api_url=self.arguments.url,
+                token=self.arguments.token,
                 use_async=True,
-                verify_ssl=self.settings.verify_ssl,
+                verify_ssl=self.arguments.verify_ssl,
             )
         return self._client

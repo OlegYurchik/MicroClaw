@@ -1,8 +1,8 @@
 """Tests for AgentCronTask execution flow and session handling."""
 
 import asyncio
-import uuid
 from unittest.mock import AsyncMock, MagicMock
+import uuid
 
 import pytest
 

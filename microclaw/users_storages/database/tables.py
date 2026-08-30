@@ -1,12 +1,12 @@
-import uuid
 from typing import Self
+import uuid
 
+from .dto import CronData, SessionData, UserData
 from pydantic import AwareDatetime
-from sqlmodel import Column, DateTime, Field, Index, JSON, Relationship, Text
+from sqlmodel import JSON, Column, DateTime, Field, Index, Relationship, Text
 
 from microclaw.dto import UserRoleEnum
 from microclaw.utils.database.tables import BaseTable
-from .dto import CronData, SessionData, UserData
 
 
 class UserTable(BaseTable, table=True):

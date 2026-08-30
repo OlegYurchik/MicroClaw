@@ -1,12 +1,12 @@
-import uuid
 from datetime import datetime
 from typing import Self
+import uuid
 
-from sqlmodel import Column, Field, JSON, Relationship, Text
+from .dto import SessionData
+from sqlmodel import JSON, Column, Field, Relationship, Text
 
 from microclaw.dto import AgentMessage, Spending
 from microclaw.utils.database.tables import BaseTable
-from .dto import SessionData
 
 
 class SessionTable(BaseTable, table=True):

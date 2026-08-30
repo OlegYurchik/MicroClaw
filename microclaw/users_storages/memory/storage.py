@@ -1,9 +1,10 @@
+from collections import defaultdict
+from collections.abc import AsyncGenerator
 import datetime
 import secrets
 import uuid
-from collections import defaultdict
-from typing import AsyncGenerator
 
+from .settings import MemoryUsersStorageSettings
 from pydantic_filters import BaseSort, SortByOrder
 from pydantic_filters.pagination import OffsetPagination as BasePagination
 
@@ -11,7 +12,6 @@ from microclaw.dto import CronTask, TokenInfo, User, UserChannelID, UserRoleEnum
 from microclaw.users_storages.filters import UserFilter
 from microclaw.users_storages.interfaces import UsersStorageInterface
 from microclaw.utils import Empty
-from .settings import MemoryUsersStorageSettings
 
 
 class MemoryUsersStorage(UsersStorageInterface):

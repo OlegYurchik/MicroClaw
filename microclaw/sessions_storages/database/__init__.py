@@ -5,6 +5,7 @@ from .settings import DatabaseSessionsStorageSettings
 from .storage import DatabaseSessionsStorage
 from .tables import MessageTable, SessionTable
 
+
 __all__ = (
     # dto
     "SessionData",

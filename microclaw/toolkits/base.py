@@ -1,26 +1,24 @@
-from __future__ import annotations
+from collections.abc import Callable, Sequence
 import functools
 import random
 import string
-from typing import Any, Callable, Generic, Sequence, TypeVar, get_args, get_origin
-
-from langchain_core.tools import StructuredTool as LangChainStructuredTool
-from pydantic import BaseModel
+from typing import Any, Generic, TypeVar, get_args, get_origin
+import uuid
 
 from .capabilities import DiscoveryCapability, ToolKitCapability
 from .settings import ToolKitSettings
+from langchain_core.tools import StructuredTool as LangChainStructuredTool
+from pydantic import BaseModel
 
 
-
-
-SettingsType = TypeVar("SettingsType")
+ArgumentsType = TypeVar("ArgumentsType")
 
 
 class EmptySettings(BaseModel):
     pass
 
 
-class BaseToolKit(Generic[SettingsType]):
+class BaseToolKit(Generic[ArgumentsType]):
     required_capabilities: Sequence[ToolKitCapability] = ()
     write_capabilities: Sequence[ToolKitCapability] = ()
     discovery_capabilities: Sequence[DiscoveryCapability] = ()
@@ -28,7 +26,7 @@ class BaseToolKit(Generic[SettingsType]):
     def __init__(self, key: str, settings: ToolKitSettings):
         self._prefix = key + "_"
         self._prompt = settings.prompt
-        self._settings = self.get_settings_class()(**settings.args)
+        self._arguments = self.get_settings_class()(**settings.args)
 
         # Override class defaults with instance settings if provided
         self.required_capabilities = (
@@ -60,11 +58,11 @@ class BaseToolKit(Generic[SettingsType]):
         return self._prompt
 
     @property
-    def settings(self) -> SettingsType:
-        return self._settings
+    def arguments(self) -> ArgumentsType:
+        return self._arguments
 
     @classmethod
-    def get_settings_class(cls) -> SettingsType | type[EmptySettings]:
+    def get_settings_class(cls) -> ArgumentsType | type[EmptySettings]:
         for base in cls.__orig_bases__:
             origin = get_origin(base)
             if isinstance(origin, type) and issubclass(origin, BaseToolKit):
@@ -123,3 +121,88 @@ def _return_dict(function: Callable) -> Callable:
         return convert(response=await function(*args, **kwargs))
 
     return wrapper
+
+
+class AgentSettingsMixin:
+    """Mixin for toolkits that need to load/save per-user agent settings."""
+
+    async def _resolve_target_user_id(self, user_id: str | None) -> uuid.UUID | None:
+        if user_id is None:
+            return None
+        ctx = self._require_context()
+        if ctx.all_users_accessor is None:
+            raise PermissionError("Cross-user access not granted")
+        return uuid.UUID(user_id)
+
+    async def _require_cross_user_write(self) -> None:
+        ctx = self._require_context()
+        if ctx.all_users_accessor is None:
+            raise PermissionError("Cross-user access not granted")
+        if not ctx.all_users_accessor.writable:
+            raise PermissionError("Cross-user write access not granted")
+
+    async def _load_agent_settings(
+        self, target_user_id: uuid.UUID | None = None
+    ) -> Any:
+        from microclaw.agents.settings import AgentSettings
+
+        ctx = self._require_context()
+        if target_user_id is None:
+            user = await ctx.current_user_accessor.get()
+        else:
+            if ctx.all_users_accessor is None:
+                raise PermissionError("Cross-user access not granted")
+            user = await ctx.all_users_accessor.get_by_id(target_user_id)
+        if user is None:
+            raise RuntimeError("User not found")
+        if user.agent:
+            return AgentSettings.model_validate(user.agent)
+        if ctx.channel_agent_settings:
+            return AgentSettings.model_validate(ctx.channel_agent_settings)
+        return AgentSettings()
+
+    async def _save_agent_settings(
+        self,
+        agent_settings: Any,
+        target_user_id: uuid.UUID | None = None,
+    ) -> None:
+        from microclaw.agents.settings import AgentSettings
+
+        ctx = self._require_context()
+
+        def _merge_with_channel(base: Any) -> Any:
+            if ctx.channel_agent_settings is None:
+                return base
+            merged = AgentSettings.model_validate(ctx.channel_agent_settings)
+            for field_name in AgentSettings.model_fields:
+                override_value = getattr(base, field_name)
+                if override_value is not None:
+                    setattr(merged, field_name, override_value)
+            return merged
+
+        if target_user_id is None:
+            user = await ctx.current_user_accessor.get()
+            if user is None:
+                raise RuntimeError("User not found")
+            if user.agent is None and ctx.channel_agent_settings is not None:
+                agent_settings = _merge_with_channel(agent_settings)
+            validated = AgentSettings.model_validate(
+                agent_settings.model_dump(mode="json")
+            )
+            await ctx.current_user_accessor.update_agent_settings(validated)
+        else:
+            if ctx.all_users_accessor is None:
+                raise PermissionError("Cross-user access not granted")
+            if not ctx.all_users_accessor.writable:
+                raise PermissionError("Cross-user write access not granted")
+            user = await ctx.all_users_accessor.get_by_id(target_user_id)
+            if user is None:
+                raise RuntimeError("User not found")
+            if user.agent is None and ctx.channel_agent_settings is not None:
+                agent_settings = _merge_with_channel(agent_settings)
+            validated = AgentSettings.model_validate(
+                agent_settings.model_dump(mode="json")
+            )
+            await ctx.all_users_accessor.update_agent_settings(
+                target_user_id, validated
+            )

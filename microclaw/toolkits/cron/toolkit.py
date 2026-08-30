@@ -1,6 +1,8 @@
-from langgraph.types import interrupt
-import uuid
 from typing import Any
+import uuid
+
+from .settings import CronSettings
+from langgraph.types import interrupt
 
 from microclaw.dto import CronTask, DecisionEnum
 from microclaw.toolkits.base import BaseToolKit, tool
@@ -8,7 +10,6 @@ from microclaw.toolkits.capabilities import ToolKitCapability
 from microclaw.toolkits.context import get_toolkit_context
 from microclaw.toolkits.enums import PermissionModeEnum
 from microclaw.toolkits.exceptions import UserDeniedAction
-from .settings import CronSettings
 
 
 class CronToolKit(BaseToolKit[CronSettings]):
@@ -104,7 +105,7 @@ class CronToolKit(BaseToolKit[CronSettings]):
             Created cron task with its ID
         """
         self._require_confirm(
-            self.settings.create_mode,
+            self.arguments.create_mode,
             f"Create cron task with path '{path}' and schedule '{cron}'?",
         )
 
@@ -152,7 +153,7 @@ class CronToolKit(BaseToolKit[CronSettings]):
             None - indicates successful operation
         """
         self._require_confirm(
-            self.settings.delete_mode,
+            self.arguments.delete_mode,
             f"Remove cron task with ID '{cron_id}'?",
         )
 

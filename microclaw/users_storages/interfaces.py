@@ -1,14 +1,14 @@
+from collections.abc import AsyncGenerator
 import datetime
 import uuid
-from typing import AsyncGenerator
 
+from .filters import UserFilter
 import facet
 from pydantic_filters import BaseSort
 from pydantic_filters.pagination import OffsetPagination as BasePagination
 
 from microclaw.dto import CronTask, TokenInfo, User, UserRoleEnum
 from microclaw.utils import Empty
-from .filters import UserFilter
 
 
 class UsersMixin:

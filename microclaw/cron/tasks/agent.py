@@ -5,9 +5,9 @@ from pydantic import BaseModel, model_validator
 
 from microclaw.agents import Agent, AgentSettings
 from microclaw.channels.base import BaseChannel
-from microclaw.dto import AgentMessage
 from microclaw.cron.base import BaseCronTask
 from microclaw.cron.settings import CronTaskSettings
+from microclaw.dto import AgentMessage
 from microclaw.utils import get_by_key_or_first
 
 
@@ -39,21 +39,21 @@ class AgentCronTask(BaseCronTask[AgentCronTaskSettings]):
         self._agent: Agent | None = None
 
     async def do_before(self):
-        if self._settings.channel is not None:
+        if self._arguments.channel is not None:
             channels = await self._resolver.resolve_channels()
             self._channel = get_by_key_or_first(
-                storage=channels, key=self._settings.channel
+                storage=channels, key=self._arguments.channel
             )
             if self._channel is None:
                 raise RuntimeError(f"Channel not found for task '{self._key}'")
 
         agents = await self._resolver.resolve_agents()
-        if isinstance(self._settings.agent, AgentSettings):
+        if isinstance(self._arguments.agent, AgentSettings):
             self._agent = await self._resolver.resolve_agent(
-                agent_settings=self._settings.agent
+                agent_settings=self._arguments.agent
             )
         else:
-            self._agent = get_by_key_or_first(storage=agents, key=self._settings.agent)
+            self._agent = get_by_key_or_first(storage=agents, key=self._arguments.agent)
 
         if self._agent is None:
             raise RuntimeError(f"Agent not found for task '{self._key}'")
@@ -64,7 +64,7 @@ class AgentCronTask(BaseCronTask[AgentCronTaskSettings]):
         task_text = (
             "This is an automated scheduled task triggered by cron. "
             "Please execute the following instruction accordingly.\n\n"
-            f"{self._settings.task}"
+            f"{self._arguments.task}"
         )
         new_messages = [
             AgentMessage(role="user", text=task_text),
@@ -75,7 +75,7 @@ class AgentCronTask(BaseCronTask[AgentCronTaskSettings]):
             await self._execute_without_channel(new_messages)
 
     async def _execute_with_channel(self, new_messages: list[AgentMessage]):
-        if self._settings.channel is None or self._settings.channel_internal_id is None:
+        if self._arguments.channel is None or self._arguments.channel_internal_id is None:
             raise RuntimeError(
                 f"Channel and channel_internal_id must be set for task '{self._key}'"
             )
@@ -84,29 +84,29 @@ class AgentCronTask(BaseCronTask[AgentCronTaskSettings]):
         users_storage = self._channel.get_users_storage()
 
         user = await users_storage.get_user_by_channel(
-            channel_key=self._settings.channel,
-            channel_internal_id=self._settings.channel_internal_id,
+            channel_key=self._arguments.channel,
+            channel_internal_id=self._arguments.channel_internal_id,
         )
         if user is None:
             user = await users_storage.create_user()
 
         session_id = await users_storage.get_actual_session(
             user_id=user.id,
-            channel_key=self._settings.channel,
-            channel_internal_id=self._settings.channel_internal_id,
+            channel_key=self._arguments.channel,
+            channel_internal_id=self._arguments.channel_internal_id,
         )
-        if self._settings.create_new_session or session_id is None:
+        if self._arguments.create_new_session or session_id is None:
             session_id = uuid.uuid4()
             await sessions_storage.create_session(session_id=session_id)
             await users_storage.attach_session_to_user(
                 user_id=user.id,
                 session_id=session_id,
-                channel_key=self._settings.channel,
-                channel_internal_id=self._settings.channel_internal_id,
+                channel_key=self._arguments.channel,
+                channel_internal_id=self._arguments.channel_internal_id,
             )
 
         await self._channel.start_conversation(
-            channel_internal_id=self._settings.channel_internal_id,
+            channel_internal_id=self._arguments.channel_internal_id,
             session_id=session_id,
             new_messages=new_messages,
             agent=self._agent,

@@ -2,12 +2,12 @@ import base64
 import datetime
 import json
 from typing import Any, Generic, Self, TypeVar
-
 import uuid
 
 from pydantic import BaseModel, Field
 
 from microclaw.dto import User, UserRoleEnum
+
 
 T = TypeVar("T")
 

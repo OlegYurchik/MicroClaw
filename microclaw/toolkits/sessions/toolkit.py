@@ -1,12 +1,13 @@
 import datetime
-import uuid
 from difflib import SequenceMatcher
+import uuid
+
+from .dto import MessageInfo, SessionInfo
+from .settings import SessionsToolKitSettings
 
 from microclaw.toolkits.base import BaseToolKit, tool
 from microclaw.toolkits.capabilities import ToolKitCapability
 from microclaw.toolkits.context import get_toolkit_context
-from .dto import SessionInfo, MessageInfo
-from .settings import SessionsToolKitSettings
 
 
 class SessionsToolKit(BaseToolKit[SessionsToolKitSettings]):
@@ -78,7 +79,7 @@ class SessionsToolKit(BaseToolKit[SessionsToolKitSettings]):
         if ctx.all_users_accessor is None:
             return []
 
-        limit = limit or self._settings.max_results
+        limit = limit or self._arguments.max_results
         results_with_scores = []
 
         session_gen = ctx.sessions_accessor.get_sessions()

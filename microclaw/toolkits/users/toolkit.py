@@ -1,10 +1,11 @@
-import uuid
 from typing import Any
+import uuid
+
+from .settings import UsersToolKitSettings
 
 from microclaw.toolkits.base import BaseToolKit, tool
 from microclaw.toolkits.capabilities import ToolKitCapability
 from microclaw.toolkits.context import get_toolkit_context
-from .settings import UsersToolKitSettings
 
 
 class UsersToolKit(BaseToolKit[UsersToolKitSettings]):

@@ -1,7 +1,7 @@
+from .database import DatabaseSessionsStorage
+from .filesystem import FilesystemSessionsStorage
 from .interfaces import SessionsStorageInterface
 from .memory import MemorySessionsStorage
-from .filesystem import FilesystemSessionsStorage
-from .database import DatabaseSessionsStorage
 from .settings import SessionsStorageSettings, SessionsStorageTypeEnum
 
 

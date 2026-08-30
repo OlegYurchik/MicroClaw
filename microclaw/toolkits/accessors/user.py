@@ -1,5 +1,5 @@
+from collections.abc import AsyncGenerator, Callable
 import uuid
-from typing import AsyncGenerator, Callable
 
 from microclaw.agents.settings import AgentSettings
 from microclaw.dto import CronTask, User

@@ -1,13 +1,7 @@
-import uuid
-from typing import Any
-
 import contextlib
+from typing import Any
+import uuid
 
-from microclaw.utils.context import (
-    REQUEST_ID_CONTEXT,
-    SESSION_ID_CONTEXT,
-)
-from microclaw.toolkits.context import TOOLKIT_CONTEXT, ToolkitExecutionContext
 from microclaw.api.rest.exceptions import HTTPBadRequest, HTTPNotFound
 from microclaw.api.rest.openai.adapter import OpenAIMessageAdapter
 from microclaw.channels.utils import AgentMessageSaver
@@ -15,6 +9,11 @@ from microclaw.dto import DecisionEnum
 from microclaw.resolver import DependencyResolver
 from microclaw.sessions_storages.filters import MessageFilter
 from microclaw.sessions_storages.interfaces import SessionsStorageInterface
+from microclaw.toolkits.context import TOOLKIT_CONTEXT, ToolkitExecutionContext
+from microclaw.utils.context import (
+    REQUEST_ID_CONTEXT,
+    SESSION_ID_CONTEXT,
+)
 
 
 @contextlib.asynccontextmanager

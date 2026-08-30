@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import enum
 
 from pydantic import (
@@ -105,7 +103,7 @@ class AgentSettings(BaseModel):
     toolkits: list[ToolKitSettings | str] | None = None
     mcp: list[MCPSettings | str] | None = None
     skills: list[SkillSettings | str] | None = None
-    subagents: list[str | AgentSettings] = Field(default_factory=list)
+    subagents: "list[str | AgentSettings]" = Field(default_factory=list)
     temperature: Temperature | None = None
     max_tool_calls: conint(ge=1, le=1000) = 25
     max_model_calls: conint(ge=1, le=1000) = 50

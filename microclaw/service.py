@@ -1,9 +1,8 @@
-import facet
-
 from .channels import BaseChannel
 from .cron import BaseCronTask
 from .resolver import DependencyResolver
 from .settings import MicroclawSettings
+import facet
 
 
 class MicroclawService(facet.AsyncioServiceMixin):

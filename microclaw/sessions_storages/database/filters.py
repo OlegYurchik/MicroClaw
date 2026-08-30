@@ -1,5 +1,5 @@
-import uuid
 from datetime import date
+import uuid
 
 from pydantic_filters import BaseFilter
 

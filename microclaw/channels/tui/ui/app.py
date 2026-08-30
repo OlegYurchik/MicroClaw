@@ -1,9 +1,8 @@
 import uuid
 
-from textual.app import App, ComposeResult
-
 from .enums import RoleEnum
-from .widgets import ChatWidget, MessageBox, ActionMessageBox
+from .widgets import ActionMessageBox, ChatWidget, MessageBox
+from textual.app import App, ComposeResult
 
 
 class TUIApp(App):

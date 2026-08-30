@@ -1,17 +1,16 @@
+from collections.abc import AsyncGenerator
 import datetime
 import uuid
-from typing import AsyncGenerator
 
+from .dto import CronData, SessionData, TokenData, UserData
+from .filters import CronFilter, SessionFilter, TokenFilter, UserFilter
+from .tables import CronTable, SessionTable, TokenTable, UserTable
 from pydantic_filters import BasePagination, BaseSort
 
 from microclaw.dto import CronTask, UserRoleEnum
 from microclaw.utils import Empty
 from microclaw.utils.database.base import BaseRepository
 from microclaw.utils.database.tables import BaseTable
-
-from .dto import CronData, SessionData, TokenData, UserData
-from .filters import CronFilter, SessionFilter, TokenFilter, UserFilter
-from .tables import CronTable, SessionTable, TokenTable, UserTable
 
 
 class UsersRepository(BaseRepository[UserData, UserFilter]):

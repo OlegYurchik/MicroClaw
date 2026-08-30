@@ -1,64 +1,66 @@
+from collections.abc import AsyncGenerator, Sequence
 import contextlib
 import datetime
 import json
 import pathlib
 import traceback
+from typing import Any
 import uuid
-from typing import Any, AsyncGenerator, Sequence
 
-import deepagents.graph
-import tiktoken
+from .checkpointer import SyncerCheckpointer
+from .dto import (
+    AgentPromptValues,
+    SummaryMemoryValues,
+    SummaryValues,
+    SystemValues,
+)
 from deepagents import create_deep_agent
+import deepagents.graph
 from evolution_langchain import EvolutionInference
 from jinja2 import Template
-from langchain_core.messages import (
-    AIMessage,
-    BaseMessage,
-    HumanMessage,
-    SystemMessage,
-)
-from langchain_mcp_adapters.client import MultiServerMCPClient
-from langchain_openai import ChatOpenAI
-from langchain_ollama import ChatOllama
-from langchain_core.runnables import RunnableLambda
-from langchain.agents.middleware import wrap_tool_call, wrap_model_call
 from langchain.agents.middleware import (
     ModelCallLimitMiddleware,
     ModelRetryMiddleware,
     ToolCallLimitMiddleware,
+    wrap_model_call,
+    wrap_tool_call,
 )
 from langchain.agents.middleware.types import (
     AgentMiddleware,
     ModelRequest,
 )
 from langchain.messages import ToolMessage
-from langgraph.types import Command
+from langchain_core.messages import (
+    AIMessage,
+    BaseMessage,
+    HumanMessage,
+    SystemMessage,
+)
+from langchain_core.runnables import RunnableLambda
+from langchain_mcp_adapters.client import MultiServerMCPClient
+from langchain_ollama import ChatOllama
+from langchain_openai import ChatOpenAI
 from langgraph.errors import GraphBubbleUp
+from langgraph.types import Command
 from loguru import logger
+import tiktoken
 
 from microclaw.agents.settings import (
     AgentSettings,
-    ModelSettings,
-    ProviderSettings,
     APITypeEnum,
     MCPLocalSettings,
     MCPRemoteSettings,
     MCPSettings,
+    ModelSettings,
+    ProviderSettings,
 )
 from microclaw.dto import AgentMessage, DecisionEnum, InterruptEntry, Spending
 from microclaw.syncers import SyncerInterface
+from microclaw.toolkits import BaseToolKit
+from microclaw.toolkits.memory import MemoryToolKit
 from microclaw.utils.context import (
     get_current_request_id,
     get_current_session_id,
-)
-from microclaw.toolkits import BaseToolKit
-from microclaw.toolkits.memory import MemoryToolKit
-from .checkpointer import SyncerCheckpointer
-from .dto import (
-    SummaryValues,
-    SummaryMemoryValues,
-    AgentPromptValues,
-    SystemValues,
 )
 
 

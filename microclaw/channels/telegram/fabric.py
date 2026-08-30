@@ -1,12 +1,13 @@
+from .base import BaseTelegramChannel
+from .polling import TelegramPollingChannel
+from .settings import TelegramMethodEnum, TelegramSettings
+from .webhook import TelegramWebhookChannel
+
 from microclaw.agents import Agent
 from microclaw.sessions_storages import SessionsStorageInterface
 from microclaw.stt import STT
 from microclaw.syncers import SyncerInterface
 from microclaw.users_storages import UsersStorageInterface
-from .base import BaseTelegramChannel
-from .polling import TelegramPollingChannel
-from .settings import TelegramMethodEnum, TelegramSettings
-from .webhook import TelegramWebhookChannel
 
 
 def get_telegram_channel(

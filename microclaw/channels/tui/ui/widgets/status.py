@@ -1,8 +1,7 @@
-from textual.app import ComposeResult
-from textual.containers import Horizontal
-
 from .loader import ThinkingIndicator
 from .stats import StatsWidget
+from textual.app import ComposeResult
+from textual.containers import Horizontal
 
 
 class StatusBar(Horizontal):

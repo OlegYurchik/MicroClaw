@@ -1,6 +1,12 @@
-from microclaw.dto import DecisionEnum
 import asyncio
+import datetime
+from typing import Any
+import xml.etree.ElementTree as ET
 
+from .dto import AddressBook, Contact
+from .settings import CardDAVSettings
+import aiohttp
+from langgraph.types import interrupt
 from loguru import logger
 from tenacity import (
     AsyncRetrying,
@@ -9,20 +15,13 @@ from tenacity import (
     stop_after_attempt,
     wait_exponential,
 )
-from langgraph.types import interrupt
-from typing import Any
-import datetime
-import xml.etree.ElementTree as ET
-
-import aiohttp
 import vobject
 
+from microclaw.dto import DecisionEnum
 from microclaw.toolkits import BaseToolKit, ToolKitSettings, tool
 from microclaw.toolkits.capabilities import DiscoveryCapability, ToolKitCapability
 from microclaw.toolkits.enums import PermissionModeEnum
 from microclaw.toolkits.exceptions import UserDeniedAction
-from .dto import AddressBook, Contact
-from .settings import CardDAVSettings
 
 
 class XMLBuilder:
@@ -141,8 +140,8 @@ class CardDAVToolKit(BaseToolKit[CardDAVSettings]):
             all_address_books = self._parse_address_books(content, address_book_url)
             for address_book in all_address_books:
                 if (
-                    self.settings.allowed_address_books is None
-                    or address_book.name in self.settings.allowed_address_books
+                    self.arguments.allowed_address_books is None
+                    or address_book.name in self.arguments.allowed_address_books
                 ):
                     address_books.append(address_book)
 
@@ -270,9 +269,9 @@ class CardDAVToolKit(BaseToolKit[CardDAVSettings]):
             Created Contact object
         """
 
-        if self.settings.write_mode is PermissionModeEnum.DENY:
+        if self.arguments.write_mode is PermissionModeEnum.DENY:
             raise PermissionError("Write operations denied")
-        if self.settings.write_mode is PermissionModeEnum.REQUEST:
+        if self.arguments.write_mode is PermissionModeEnum.REQUEST:
             confirmation_request_text = (
                 f"Create contact '{display_name}' in address book '{address_book_url}'?"
             )
@@ -342,9 +341,9 @@ class CardDAVToolKit(BaseToolKit[CardDAVSettings]):
             Updated Contact object if successful, None otherwise
         """
 
-        if self.settings.write_mode is PermissionModeEnum.DENY:
+        if self.arguments.write_mode is PermissionModeEnum.DENY:
             raise PermissionError("Write operations denied")
-        if self.settings.write_mode is PermissionModeEnum.REQUEST:
+        if self.arguments.write_mode is PermissionModeEnum.REQUEST:
             changes = []
             if display_name is not None:
                 changes.append(f"display_name: {display_name}")
@@ -425,9 +424,9 @@ class CardDAVToolKit(BaseToolKit[CardDAVSettings]):
             None - indicates successful operation
         """
 
-        if self.settings.write_mode is PermissionModeEnum.DENY:
+        if self.arguments.write_mode is PermissionModeEnum.DENY:
             raise PermissionError("Write operations denied")
-        if self.settings.write_mode is PermissionModeEnum.REQUEST:
+        if self.arguments.write_mode is PermissionModeEnum.REQUEST:
             confirmation_request_text = f"Delete contact '{url}'?"
             decision = interrupt({"description": confirmation_request_text})
             if decision == DecisionEnum.REJECT.value:
@@ -547,8 +546,8 @@ class CardDAVToolKit(BaseToolKit[CardDAVSettings]):
     def _create_session(self) -> aiohttp.ClientSession:
         return aiohttp.ClientSession(
             auth=(
-                aiohttp.BasicAuth(self.settings.username, self.settings.password)
-                if self.settings.username and self.settings.password
+                aiohttp.BasicAuth(self.arguments.username, self.arguments.password)
+                if self.arguments.username and self.arguments.password
                 else None
             ),
             headers={"Content-Type": "application/xml"},
@@ -561,7 +560,7 @@ class CardDAVToolKit(BaseToolKit[CardDAVSettings]):
 
         response = await self._request_with_retry(
             method="PROPFIND",
-            url=self.settings.url,
+            url=self.arguments.url,
             data=self._xml.principal(),
             headers={"Depth": "0"},
         )
@@ -575,11 +574,11 @@ class CardDAVToolKit(BaseToolKit[CardDAVSettings]):
                 self._principal_url = self._get_full_url(principal_elem.text)
                 return self._principal_url
 
-        self._principal_url = self.settings.url.rstrip("/") + "/"
+        self._principal_url = self.arguments.url.rstrip("/") + "/"
         return self._principal_url
 
     async def _get_address_book(self, address_book_url: str) -> str:
-        if self.settings.allowed_address_books is not None:
+        if self.arguments.allowed_address_books is not None:
             response = await self._request_with_retry(
                 method="PROPFIND",
                 url=address_book_url,
@@ -590,7 +589,7 @@ class CardDAVToolKit(BaseToolKit[CardDAVSettings]):
 
             if response.status == 207 and content:
                 display_name = self._parse_address_book(content)
-                if display_name not in self.settings.allowed_address_books:
+                if display_name not in self.arguments.allowed_address_books:
                     raise PermissionError(
                         f"Address book '{display_name}' is not in allowed address books list"
                     )
@@ -762,6 +761,6 @@ class CardDAVToolKit(BaseToolKit[CardDAVSettings]):
         if url.startswith("http"):
             return url
         if url.startswith("/remote.php/"):
-            return self.settings.url.split("/remote.php")[0] + url
+            return self.arguments.url.split("/remote.php")[0] + url
         relative_url = url.lstrip("/")
-        return f"{self.settings.url.rstrip('/')}/{relative_url}"
+        return f"{self.arguments.url.rstrip('/')}/{relative_url}"

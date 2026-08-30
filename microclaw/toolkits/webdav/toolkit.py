@@ -1,12 +1,17 @@
-from microclaw.dto import DecisionEnum
-from langgraph.types import interrupt
 import asyncio
-import tempfile
+from collections.abc import Callable
 from contextlib import asynccontextmanager
 from email.utils import parsedate_to_datetime
 from pathlib import Path
+import tempfile
 from typing import Any
+from urllib.parse import quote, unquote
 
+from .dto import Directory, File, WebDAVObject
+from .settings import WebDAVSettings
+from aiodav import Client
+import aiofiles
+from langgraph.types import interrupt
 from loguru import logger
 from tenacity import (
     AsyncRetrying,
@@ -16,17 +21,20 @@ from tenacity import (
     wait_exponential,
 )
 
-from aiodav import Client
-
+from microclaw.dto import DecisionEnum
 from microclaw.toolkits.base import BaseToolKit, tool
 from microclaw.toolkits.capabilities import DiscoveryCapability, ToolKitCapability
 from microclaw.toolkits.enums import PermissionModeEnum
 from microclaw.toolkits.exceptions import UserDeniedAction
-from .dto import File, Directory, WebDAVObject
-from .settings import WebDAVSettings
 
 
 class WebDAVToolKit(BaseToolKit[WebDAVSettings]):
+    def __init__(
+        self, key: str, settings: WebDAVSettings, client_factory: Callable | None = None
+    ):
+        super().__init__(key=key, settings=settings)
+        self._client_factory = client_factory
+
     required_capabilities: list[ToolKitCapability] = []
     write_capabilities: list[ToolKitCapability] = []
     discovery_capabilities: list[DiscoveryCapability] = []
@@ -90,8 +98,28 @@ class WebDAVToolKit(BaseToolKit[WebDAVSettings]):
         Returns:
             None - indicates successful operation
         """
+        # aiodav has two bugs with non-ASCII paths:
+        # 1. download_to/download_iter call is_directory() which fails to match
+        #    percent-encoded hrefs returned by some servers, causing OptionNotValid.
+        # 2. Urn.__init__ applies quote() unconditionally, so passing an already
+        #    encoded path results in double-encoding (e.g. %20 -> %2520).
+        # We bypass both by encoding the raw path ourselves exactly once and
+        # issuing the GET request directly via the client's private executor.
+        raw_path = unquote(path).lstrip("/")
+        encoded_path = "/" + quote(raw_path, safe="/")
+
         async with self._create_client() as client:
-            await self._with_retry(client.download_file, path, local_path)
+            async def _download() -> None:
+                response = await client._execute_request(
+                    action="download", path=encoded_path
+                )
+                async with aiofiles.open(local_path, "wb") as file:
+                    async for chunk in response.content.iter_chunked(
+                        client._chunk_size
+                    ):
+                        await file.write(chunk)
+
+            await self._with_retry(_download)
 
     @tool
     async def upload_file(self, path: str, local_path: str) -> None:
@@ -106,9 +134,9 @@ class WebDAVToolKit(BaseToolKit[WebDAVSettings]):
             None - indicates successful operation
         """
         self._check_path_access(path)
-        if self.settings.write_mode is PermissionModeEnum.DENY:
+        if self.arguments.write_mode is PermissionModeEnum.DENY:
             raise PermissionError("Write operations are disabled")
-        if self.settings.write_mode is PermissionModeEnum.REQUEST:
+        if self.arguments.write_mode is PermissionModeEnum.REQUEST:
             decision = interrupt(
                 {"description": f"Upload file '{local_path}' to WebDAV path '{path}'?"}
             )
@@ -132,10 +160,10 @@ class WebDAVToolKit(BaseToolKit[WebDAVSettings]):
         """
         path = path.lstrip("/")
         self._check_path_access(path)
-        if self.settings.write_mode is PermissionModeEnum.DENY:
+        if self.arguments.write_mode is PermissionModeEnum.DENY:
             raise PermissionError("Write operations are disabled")
 
-        if self.settings.write_mode is PermissionModeEnum.REQUEST:
+        if self.arguments.write_mode is PermissionModeEnum.REQUEST:
             decision = interrupt(
                 {
                     "description": f"Create file at WebDAV path '{path}' with {len(content)} bytes of content?"
@@ -168,10 +196,10 @@ class WebDAVToolKit(BaseToolKit[WebDAVSettings]):
             None - indicates successful operation
         """
         self._check_path_access(path)
-        if self.settings.write_mode is PermissionModeEnum.DENY:
+        if self.arguments.write_mode is PermissionModeEnum.DENY:
             raise PermissionError("Write operations are disabled")
 
-        if self.settings.write_mode is PermissionModeEnum.REQUEST:
+        if self.arguments.write_mode is PermissionModeEnum.REQUEST:
             decision = interrupt(
                 {"description": f"Delete file at WebDAV path '{path}'?"}
             )
@@ -193,11 +221,11 @@ class WebDAVToolKit(BaseToolKit[WebDAVSettings]):
                 return await func(*args, **kwargs)
 
     def _check_path_access(self, path: str) -> None:
-        if self.settings.allowed_paths is None:
+        if self.arguments.allowed_paths is None:
             return
 
         normalized_path = path.lstrip("/").rstrip("/")
-        for allowed_path in self.settings.allowed_paths:
+        for allowed_path in self.arguments.allowed_paths:
             normalized_allowed = allowed_path.lstrip("/").rstrip("/")
             if normalized_path == normalized_allowed or normalized_path.startswith(
                 normalized_allowed + "/"
@@ -227,12 +255,15 @@ class WebDAVToolKit(BaseToolKit[WebDAVSettings]):
 
     @asynccontextmanager
     async def _create_client(self):
-        client = Client(
-            hostname=self.settings.url,
-            login=self.settings.username,
-            password=self.settings.password,
-            insecure=not self.settings.verify_ssl,
-        )
+        if self._client_factory is not None:
+            client = self._client_factory()
+        else:
+            client = Client(
+                hostname=self.arguments.url,
+                login=self.arguments.username,
+                password=self.arguments.password,
+                insecure=not self.arguments.verify_ssl,
+            )
         try:
             yield client
         finally:

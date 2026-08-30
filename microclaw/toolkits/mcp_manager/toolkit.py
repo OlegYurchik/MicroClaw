@@ -1,6 +1,7 @@
 from typing import Any
 import uuid
 
+from .settings import MCPManagerToolKitSettings
 from langchain_mcp_adapters.client import MultiServerMCPClient
 from langgraph.types import interrupt
 
@@ -11,15 +12,13 @@ from microclaw.agents.settings import (
     MCPSettings,
 )
 from microclaw.dto import DecisionEnum
-from microclaw.toolkits.base import BaseToolKit, tool
+from microclaw.toolkits.base import AgentSettingsMixin, BaseToolKit, tool
 from microclaw.toolkits.capabilities import DiscoveryCapability, ToolKitCapability
 from microclaw.toolkits.enums import PermissionModeEnum, SourceModeEnum
 from microclaw.toolkits.exceptions import UserDeniedAction
 
-from .settings import MCPManagerToolKitSettings
 
-
-class MCPManagerToolKit(BaseToolKit[MCPManagerToolKitSettings]):
+class MCPManagerToolKit(BaseToolKit[MCPManagerToolKitSettings], AgentSettingsMixin):
     """Tools for managing per-user MCP servers.
 
     All tools that read or mutate a user's agent configuration accept an optional
@@ -84,9 +83,9 @@ class MCPManagerToolKit(BaseToolKit[MCPManagerToolKitSettings]):
             user_id: UUID of the target user.  If omitted, the server is added
                 to the **current** user's configuration.
         """
-        if self._settings.add_mode is PermissionModeEnum.DENY:
+        if self._arguments.add_mode is PermissionModeEnum.DENY:
             raise PermissionError("Adding MCP servers is not allowed")
-        if self._settings.source_mode in (SourceModeEnum.GLOBAL, SourceModeEnum.EMPTY):
+        if self._arguments.source_mode in (SourceModeEnum.GLOBAL, SourceModeEnum.EMPTY):
             raise PermissionError(
                 "Adding custom MCP servers is not allowed. "
                 "No custom sources configured."
@@ -94,7 +93,7 @@ class MCPManagerToolKit(BaseToolKit[MCPManagerToolKitSettings]):
         if user_id is not None:
             await self._require_cross_user_write()
 
-        if self._settings.add_mode is PermissionModeEnum.REQUEST:
+        if self._arguments.add_mode is PermissionModeEnum.REQUEST:
             decision = interrupt(
                 {"description": f"Add custom MCP server '{config.name}'?"}
             )
@@ -123,9 +122,9 @@ class MCPManagerToolKit(BaseToolKit[MCPManagerToolKitSettings]):
             user_id: UUID of the target user.  If omitted, the server is enabled
                 for the **current** user.
         """
-        if self._settings.add_mode is PermissionModeEnum.DENY:
+        if self._arguments.add_mode is PermissionModeEnum.DENY:
             raise PermissionError("Enabling MCP servers is not allowed")
-        if self._settings.source_mode in (
+        if self._arguments.source_mode in (
             SourceModeEnum.MARKETPLACE,
             SourceModeEnum.EMPTY,
         ):
@@ -136,7 +135,7 @@ class MCPManagerToolKit(BaseToolKit[MCPManagerToolKitSettings]):
         if user_id is not None:
             await self._require_cross_user_write()
 
-        if self._settings.add_mode is PermissionModeEnum.REQUEST:
+        if self._arguments.add_mode is PermissionModeEnum.REQUEST:
             decision = interrupt({"description": f"Enable global MCP server '{name}'?"})
             if decision == DecisionEnum.REJECT.value:
                 raise UserDeniedAction()
@@ -172,12 +171,12 @@ class MCPManagerToolKit(BaseToolKit[MCPManagerToolKitSettings]):
             user_id: UUID of the target user.  If omitted, the server is removed
                 from the **current** user's configuration.
         """
-        if self._settings.remove_mode is PermissionModeEnum.DENY:
+        if self._arguments.remove_mode is PermissionModeEnum.DENY:
             raise PermissionError("Removing MCP servers is not allowed")
         if user_id is not None:
             await self._require_cross_user_write()
 
-        if self._settings.remove_mode is PermissionModeEnum.REQUEST:
+        if self._arguments.remove_mode is PermissionModeEnum.REQUEST:
             decision = interrupt({"description": f"Remove MCP server '{name}'?"})
             if decision == DecisionEnum.REJECT.value:
                 raise UserDeniedAction()

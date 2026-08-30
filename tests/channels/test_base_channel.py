@@ -1,7 +1,7 @@
 from unittest.mock import AsyncMock, MagicMock
+import uuid
 
 import pytest
-import uuid
 
 from microclaw.agents import Agent
 from microclaw.dto import AgentMessage, Spending, User

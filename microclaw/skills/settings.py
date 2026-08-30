@@ -1,10 +1,9 @@
 import pathlib
 from typing import Literal
 
-from pydantic import BaseModel
-
 from .enums import SkillRepositoryTypeEnum
 from .types import SkillNameType
+from pydantic import BaseModel
 
 
 class SkillRepositoryBaseSettings(BaseModel):

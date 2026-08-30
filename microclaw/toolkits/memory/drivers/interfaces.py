@@ -1,6 +1,6 @@
 import datetime
-import uuid
 from typing import Protocol
+import uuid
 
 
 class MemoryDriverInterface(Protocol):

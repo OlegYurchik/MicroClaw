@@ -1,6 +1,12 @@
-from datetime import datetime, date
+from datetime import date, datetime
 
 from pydantic import BaseModel, Field
+
+
+class Reminder(BaseModel):
+    minutes_before: int = Field(
+        description="Minutes before the event to trigger the reminder"
+    )
 
 
 class Calendar(BaseModel):
@@ -22,4 +28,7 @@ class Event(BaseModel):
     )
     all_day: bool = Field(
         default=False, description="Whether the event is an all-day event"
+    )
+    reminders: list[Reminder] = Field(
+        default_factory=list, description="List of reminders for the event"
     )

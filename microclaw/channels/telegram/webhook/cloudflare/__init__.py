@@ -1,5 +1,5 @@
-from .settings import CloudflareTunnelSettings
 from .service import CloudflareTunnelService
+from .settings import CloudflareTunnelSettings
 
 
 CloudflareTunnelSettingsType = CloudflareTunnelSettings

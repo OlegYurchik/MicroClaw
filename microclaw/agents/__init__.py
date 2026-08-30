@@ -1,8 +1,8 @@
 from .agent import Agent
 from .settings import (
-    APITypeEnum,
     AgentIdentity,
     AgentSettings,
+    APITypeEnum,
     InputTypeEnum,
     MCPLocalSettings,
     MCPRemoteSettings,

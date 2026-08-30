@@ -1,11 +1,10 @@
+from .schemas import AgentListResponse, AgentResponse
 import fastapi
 
 from microclaw.api.rest.dependencies import auth as auth_dependency
 from microclaw.api.rest.dependencies import resolver
 from microclaw.api.rest.exceptions import HTTPNotFound
 from microclaw.resolver import DependencyResolver
-
-from .schemas import AgentListResponse, AgentResponse
 
 
 async def list_agents(

@@ -6,10 +6,10 @@ from pydantic import BaseModel
 
 from microclaw.channels.base import BaseChannel
 from microclaw.cron.base import BaseCronTask
-from microclaw.dto import User
 from microclaw.cron.settings import CronTaskSettings
+from microclaw.dto import User
+from microclaw.sessions_storages.filters import MessageFilter, SessionFilter
 from microclaw.sessions_storages.interfaces import SessionsStorageInterface
-from microclaw.sessions_storages.filters import SessionFilter, MessageFilter
 from microclaw.toolkits.memory.toolkit import MemorySizeExceeded
 from microclaw.utils import get_by_key_or_first
 

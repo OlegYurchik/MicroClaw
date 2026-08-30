@@ -1,3 +1,4 @@
+from .settings import TelegramToolKitSettings
 import aiogram
 from aiogram.exceptions import (
     TelegramNetworkError,
@@ -12,7 +13,6 @@ from tenacity import (
 )
 
 from microclaw.toolkits.base import BaseToolKit, tool
-from .settings import TelegramToolKitSettings
 
 
 class TelegramToolKit(BaseToolKit[TelegramToolKitSettings]):
@@ -35,7 +35,7 @@ class TelegramToolKit(BaseToolKit[TelegramToolKitSettings]):
             message_id: The ID of the message to react to
             emoji: The emoji reaction to add (e.g., "👍", "❤️", "🎉")
         """
-        bot = aiogram.Bot(token=self.settings.bot_token)
+        bot = aiogram.Bot(token=self.arguments.bot_token)
 
         _set_reaction = retry(
             retry=retry_if_exception_type(

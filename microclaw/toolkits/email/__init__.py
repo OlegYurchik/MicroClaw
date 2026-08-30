@@ -1,6 +1,7 @@
+from .dto import EmailAttachment, EmailFolder, EmailMessage
 from .settings import EmailSettings
-from .dto import EmailFolder, EmailMessage, EmailAttachment
 from .toolkit import EmailToolKit
+
 
 __all__ = (
     # settings

@@ -2,6 +2,7 @@ import contextlib
 import contextvars
 import uuid
 
+
 SESSION_ID_CONTEXT = contextvars.ContextVar("session_id", default=None)
 REQUEST_ID_CONTEXT = contextvars.ContextVar("request_id", default=None)
 

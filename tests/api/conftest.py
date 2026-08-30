@@ -1,10 +1,12 @@
+from unittest.mock import AsyncMock, MagicMock
+
 import fastapi
 import httpx
 import pytest
 import pytest_asyncio
-from unittest.mock import AsyncMock, MagicMock
 
-from microclaw.api.rest import auth, agents, crons, handlers as rest_handlers, models, sessions, toolkits, users
+from microclaw.api.rest import agents, auth, crons, models, sessions, toolkits, users
+from microclaw.api.rest import handlers as rest_handlers
 from microclaw.dto import UserRoleEnum
 from microclaw.sessions_storages.memory.settings import MemorySessionsStorageSettings
 from microclaw.sessions_storages.memory.storage import MemorySessionsStorage

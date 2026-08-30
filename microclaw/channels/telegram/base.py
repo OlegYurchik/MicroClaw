@@ -1,10 +1,14 @@
 import contextlib
+import contextvars
 import socket
 import uuid
-from typing import Sequence
 
+from .middlewares.auth import AuthMiddleware
+from .middlewares.typing import TypingMiddleware
+from .printer import AgentMessagePrinter
+from .settings import TelegramIPFamilyEnum, TelegramSettings
+from .toolkit import TelegramToolKit
 import aiogram
-import contextvars
 from aiogram.client.session.aiohttp import AiohttpSession
 from aiogram.enums import ParseMode
 from aiogram.exceptions import (
@@ -23,26 +27,16 @@ from tenacity import (
 
 from microclaw.agents import Agent
 from microclaw.channels.base import BaseChannel
-from microclaw.utils.context import (
-    get_current_request_id,
-    set_current_request_id,
-    set_current_session_id,
-)
-
-from microclaw.channels.utils import AgentMessageSaver
 from microclaw.dto import AgentMessage, DecisionEnum
 from microclaw.sessions_storages import SessionsStorageInterface
-from microclaw.sessions_storages.filters import MessageFilter
 from microclaw.stt import STT
 from microclaw.syncers import SyncerInterface
-from microclaw.users_storages import UsersStorageInterface
 from microclaw.toolkits import ToolKitSettings
+from microclaw.users_storages import UsersStorageInterface
 from microclaw.utils import suppress_exception
-from .middlewares.auth import AuthMiddleware
-from .middlewares.typing import TypingMiddleware
-from .printer import AgentMessagePrinter
-from .settings import TelegramIPFamilyEnum, TelegramSettings
-from .toolkit import TelegramToolKit
+from microclaw.utils.context import (
+    set_current_request_id,
+)
 
 
 class ConfirmationCallbackData(CallbackData, prefix="confirm"):

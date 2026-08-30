@@ -1,13 +1,7 @@
+from collections.abc import AsyncGenerator
 import datetime
 import secrets
 import uuid
-from typing import AsyncGenerator
-
-from microclaw.dto import CronTask, TokenInfo, User, UserRoleEnum
-from microclaw.users_storages.interfaces import UsersStorageInterface
-from microclaw.utils import Empty
-from pydantic_filters import BaseSort
-from pydantic_filters.pagination import OffsetPagination as BasePagination
 
 from .filters import SessionFilter, TokenFilter, UserFilter
 from .repositories import (
@@ -18,6 +12,12 @@ from .repositories import (
 )
 from .settings import DatabaseUsersStorageSettings
 from .tables import UserTable
+from pydantic_filters import BaseSort
+from pydantic_filters.pagination import OffsetPagination as BasePagination
+
+from microclaw.dto import CronTask, TokenInfo, User, UserRoleEnum
+from microclaw.users_storages.interfaces import UsersStorageInterface
+from microclaw.utils import Empty
 
 
 class DatabaseUsersStorage(UsersStorageInterface):

@@ -1,5 +1,11 @@
+from collections.abc import Callable
+import datetime
 import functools
-from typing import Any, Callable
+from typing import Any
+
+
+def utcnow() -> datetime.datetime:
+    return datetime.datetime.now(datetime.timezone.utc)
 
 
 def get_by_key_or_first(storage: dict[str, Any], key: str | None = None) -> Any | None:

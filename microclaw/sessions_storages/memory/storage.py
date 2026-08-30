@@ -1,13 +1,13 @@
+from collections.abc import AsyncGenerator
 import uuid
-from typing import AsyncGenerator
 
+from .settings import MemorySessionsStorageSettings
 from pydantic_filters import BaseSort, SortByOrder
 from pydantic_filters.pagination import OffsetPagination as BasePagination
 
 from microclaw.dto import AgentMessage, SessionMetadata, Spending
+from microclaw.sessions_storages.filters import MessageFilter, SessionFilter
 from microclaw.sessions_storages.interfaces import SessionsStorageInterface
-from microclaw.sessions_storages.filters import SessionFilter, MessageFilter
-from .settings import MemorySessionsStorageSettings
 
 
 class MemorySessionsStorage(SessionsStorageInterface):

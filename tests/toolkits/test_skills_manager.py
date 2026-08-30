@@ -1,5 +1,5 @@
-import uuid
 from unittest.mock import AsyncMock, MagicMock
+import uuid
 
 import pytest
 import pytest_asyncio
@@ -8,12 +8,12 @@ import skilly
 from microclaw.agents.settings import AgentSettings
 from microclaw.dto import DecisionEnum, UserRoleEnum
 from microclaw.toolkits import ToolKitSettings
-from microclaw.toolkits.accessors import CurrentUserAccessor, AllUsersAccessor
+from microclaw.toolkits.accessors import AllUsersAccessor, CurrentUserAccessor
 from microclaw.toolkits.context import TOOLKIT_CONTEXT, ToolkitExecutionContext
 from microclaw.toolkits.dto import DiscoveryInfo
 from microclaw.toolkits.skills_manager import SkillsManagerToolKit
-from microclaw.users_storages.memory.storage import MemoryUsersStorage
 from microclaw.users_storages.memory.settings import MemoryUsersStorageSettings
+from microclaw.users_storages.memory.storage import MemoryUsersStorage
 
 
 @pytest.fixture
@@ -89,8 +89,11 @@ async def test_list_installed_skills__empty(skills_manager_toolkit, toolkit_cont
 @pytest.mark.asyncio
 async def test_search_skills(skills_manager_toolkit, toolkit_context, monkeypatch):
     from skilly.skillsmp.client import (
-        SkillsMpFilters, SkillsMpPagination, SkillsMpSearchData,
-        SkillsMpSearchResult, SkillsMpSkill,
+        SkillsMpFilters,
+        SkillsMpPagination,
+        SkillsMpSearchData,
+        SkillsMpSearchResult,
+        SkillsMpSkill,
     )
     def mock_search(self, query):
         return SkillsMpSearchResult(
@@ -198,8 +201,8 @@ async def test_update_skill__success(skills_manager_toolkit, toolkit_context, mo
 
 @pytest.mark.asyncio
 async def test_enable_skill__success(skills_manager_toolkit, toolkit_context, users_storage):
-    from microclaw.toolkits.enums import PermissionModeEnum
     from microclaw.toolkits.context import TOOLKIT_CONTEXT
+    from microclaw.toolkits.enums import PermissionModeEnum
     skills_manager_toolkit._settings.enable_mode = PermissionModeEnum.ALLOW
 
     ctx = ToolkitExecutionContext(
@@ -288,8 +291,8 @@ async def test_update_skill__empty_denied(skills_manager_toolkit, toolkit_contex
 
 @pytest.mark.asyncio
 async def test_enable_skill__marketplace_denied(skills_manager_toolkit, toolkit_context):
-    from microclaw.toolkits.enums import PermissionModeEnum, SourceModeEnum
     from microclaw.toolkits.context import TOOLKIT_CONTEXT
+    from microclaw.toolkits.enums import PermissionModeEnum, SourceModeEnum
     skills_manager_toolkit._settings.enable_mode = PermissionModeEnum.ALLOW
     skills_manager_toolkit._settings.source_mode = SourceModeEnum.MARKETPLACE
 
@@ -311,8 +314,8 @@ async def test_enable_skill__marketplace_denied(skills_manager_toolkit, toolkit_
 
 @pytest.mark.asyncio
 async def test_enable_skill__empty_denied(skills_manager_toolkit, toolkit_context):
-    from microclaw.toolkits.enums import PermissionModeEnum, SourceModeEnum
     from microclaw.toolkits.context import TOOLKIT_CONTEXT
+    from microclaw.toolkits.enums import PermissionModeEnum, SourceModeEnum
     skills_manager_toolkit._settings.enable_mode = PermissionModeEnum.ALLOW
     skills_manager_toolkit._settings.source_mode = SourceModeEnum.EMPTY
 

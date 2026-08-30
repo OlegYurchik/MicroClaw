@@ -1,9 +1,9 @@
 from typing import Literal
 
+from .cloudflare.settings import CloudflareTunnelSettings
 from pydantic import HttpUrl, conint, field_validator
 
 from microclaw.channels.telegram.settings import TelegramMethodEnum, TelegramSettings
-from .cloudflare.settings import CloudflareTunnelSettings
 
 
 class TelegramWebhookSettings(TelegramSettings):

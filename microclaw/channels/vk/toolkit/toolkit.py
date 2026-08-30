@@ -1,3 +1,4 @@
+from .settings import VKToolKitSettings
 from aiohttp import ClientError
 from tenacity import (
     retry,
@@ -9,7 +10,6 @@ from vkbottle.bot import Bot
 from vkbottle.exception_factory import VKAPIError
 
 from microclaw.toolkits.base import BaseToolKit, tool
-from .settings import VKToolKitSettings
 
 
 class VKToolKit(BaseToolKit[VKToolKitSettings]):

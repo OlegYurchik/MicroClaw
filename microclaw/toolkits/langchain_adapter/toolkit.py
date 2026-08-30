@@ -1,12 +1,11 @@
 import importlib
 from typing import Any
 
-from langchain_core.tools import BaseToolkit, BaseTool
+from .settings import LangChainToolkitAdapterSettings
+from langchain_core.tools import BaseTool, BaseToolkit
 
 from microclaw.toolkits.base import BaseToolKit
 from microclaw.toolkits.capabilities import DiscoveryCapability, ToolKitCapability
-
-from .settings import LangChainToolkitAdapterSettings
 
 
 class LangChainToolkitAdapter(BaseToolKit[LangChainToolkitAdapterSettings]):
@@ -22,21 +21,21 @@ class LangChainToolkitAdapter(BaseToolKit[LangChainToolkitAdapterSettings]):
     discovery_capabilities: list[DiscoveryCapability] = []
 
     def get_tools(self) -> list[BaseTool]:
-        toolkit_cls = self._import_class(self._settings.toolkit_class)
+        toolkit_cls = self._import_class(self._arguments.toolkit_class)
 
         if not isinstance(toolkit_cls, type) or not issubclass(
             toolkit_cls, BaseToolkit
         ):
             raise TypeError(
-                f"Class '{self._settings.toolkit_class}' must be a subclass of "
+                f"Class '{self._arguments.toolkit_class}' must be a subclass of "
                 f"langchain_core.tools.BaseToolkit"
             )
 
-        lc_toolkit = toolkit_cls(**self._settings.args)
+        lc_toolkit = toolkit_cls(**self._arguments.args)
         tools = lc_toolkit.get_tools()
 
-        if self._settings.selected_tools is not None:
-            allowed = set(self._settings.selected_tools)
+        if self._arguments.selected_tools is not None:
+            allowed = set(self._arguments.selected_tools)
             available = {tool.name for tool in tools}
             for name in allowed:
                 if name not in available:

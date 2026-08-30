@@ -1,5 +1,5 @@
-import uuid
 from typing import Any, Self
+import uuid
 
 from pydantic import BaseModel, Field, field_validator
 

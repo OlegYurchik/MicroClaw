@@ -1,8 +1,7 @@
 import asyncio
 
-import fastapi
-import uvicorn
 from aiohttp import ClientError
+import fastapi
 from fastapi import Request
 from fastapi.responses import PlainTextResponse
 from tenacity import (
@@ -11,8 +10,9 @@ from tenacity import (
     stop_after_attempt,
     wait_exponential,
 )
-from vkbottle.callback import BotCallback
+import uvicorn
 from vkbottle.bot import Bot
+from vkbottle.callback import BotCallback
 from vkbottle.exception_factory import VKAPIError
 
 from microclaw.channels.vk.base import BaseVKChannel

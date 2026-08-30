@@ -1,13 +1,12 @@
+from collections.abc import AsyncGenerator
 import uuid
-from typing import AsyncGenerator
 
+from .filters import MessageFilter, SessionFilter
 import facet
-
 from pydantic_filters import BaseSort
 from pydantic_filters.pagination import OffsetPagination as BasePagination
 
 from microclaw.dto import AgentMessage, SessionMetadata, Spending
-from .filters import SessionFilter, MessageFilter
 
 
 class SessionsStorageInterface(facet.AsyncioServiceMixin):

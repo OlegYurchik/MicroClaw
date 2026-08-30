@@ -1,9 +1,10 @@
 import uuid
-from microclaw.channels.tui.ui.enums import RoleEnum
 
 from textual.app import ComposeResult
 from textual.containers import Horizontal
 from textual.widgets import Button, Static
+
+from microclaw.channels.tui.ui.enums import RoleEnum
 
 
 class BaseMessageBox(Static):

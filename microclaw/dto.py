@@ -1,8 +1,8 @@
 import base64
 import datetime
 import enum
-import uuid
 from typing import Any, Self
+import uuid
 
 from pydantic import BaseModel, Field, field_serializer, field_validator
 

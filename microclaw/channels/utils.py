@@ -1,6 +1,6 @@
 import asyncio
-import uuid
 from typing import Self
+import uuid
 
 from microclaw.dto import AgentMessage
 from microclaw.sessions_storages import SessionsStorageInterface

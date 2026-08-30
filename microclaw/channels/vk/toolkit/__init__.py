@@ -1,5 +1,5 @@
-from .toolkit import VKToolKit
 from .settings import VKToolKitSettings
+from .toolkit import VKToolKit
 
 
 __all__ = (

@@ -1,13 +1,15 @@
 import asyncio
+import builtins
+from collections.abc import AsyncIterator, Iterator, Sequence
 import time
-from typing import Any, AsyncIterator, Iterator, List, Sequence, Tuple
+from typing import Any
 
 from langgraph.checkpoint.base import (
     BaseCheckpointSaver,
+    ChannelVersions,
     Checkpoint,
     CheckpointMetadata,
     CheckpointTuple,
-    ChannelVersions,
     RunnableConfig,
 )
 
@@ -283,10 +285,10 @@ class SyncerCheckpointer(BaseCheckpointSaver[str]):
         thread_id: str,
         checkpoint_ns: str,
         checkpoint_id: str,
-    ) -> List[Tuple[str, str, Any]]:
+    ) -> builtins.list[tuple[str, str, Any]]:
         prefix = f"checkpoint_writes:{thread_id}:{checkpoint_ns}:{checkpoint_id}:"
         keys = await self._syncer.scan_keys(prefix + "*")
-        pending_writes: List[Tuple[str, str, Any]] = []
+        pending_writes: list[tuple[str, str, Any]] = []
         for key in keys:
             if not key.startswith(prefix):
                 continue

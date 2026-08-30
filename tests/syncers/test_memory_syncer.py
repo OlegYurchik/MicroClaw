@@ -2,8 +2,8 @@ import asyncio
 
 import pytest
 
-from microclaw.syncers.memory.syncer import MemorySyncer
 from microclaw.syncers.memory.settings import MemorySyncerSettings
+from microclaw.syncers.memory.syncer import MemorySyncer
 
 
 @pytest.fixture

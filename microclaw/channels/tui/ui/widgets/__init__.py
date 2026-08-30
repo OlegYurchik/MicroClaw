@@ -1,9 +1,9 @@
 from .chat import ChatWidget
 from .input import UserInput
 from .loader import ThinkingIndicator
-from .messages import BaseMessageBox, MessageBox, ActionMessageBox
-from .status import StatusBar
+from .messages import ActionMessageBox, BaseMessageBox, MessageBox
 from .stats import StatsWidget
+from .status import StatusBar
 
 
 __all__ = (

@@ -1,9 +1,10 @@
 import datetime
 import uuid
 
-import tiktoken
-
+from .drivers.fabric import get_memory_driver
+from .settings import MemoryToolKitSettings
 from langgraph.types import interrupt
+import tiktoken
 
 from microclaw.dto import DecisionEnum
 from microclaw.toolkits.base import BaseToolKit, tool
@@ -11,8 +12,6 @@ from microclaw.toolkits.capabilities import DiscoveryCapability, ToolKitCapabili
 from microclaw.toolkits.context import get_toolkit_context
 from microclaw.toolkits.enums import PermissionModeEnum
 from microclaw.toolkits.exceptions import UserDeniedAction
-from .drivers.fabric import get_memory_driver
-from .settings import MemoryToolKitSettings
 
 
 class MemorySizeExceeded(Exception):
@@ -40,7 +39,7 @@ class MemoryToolKit(BaseToolKit[MemoryToolKitSettings]):
 
     def __init__(self, key: str, settings: MemoryToolKitSettings):
         super().__init__(key=key, settings=settings)
-        self._driver = get_memory_driver(settings=self._settings.driver)
+        self._driver = get_memory_driver(settings=self._arguments.driver)
 
     @tool
     async def get_memory(
@@ -87,7 +86,7 @@ class MemoryToolKit(BaseToolKit[MemoryToolKitSettings]):
         Raises:
             MemorySizeExceeded: If memory size limit is exceeded
         """
-        if self._settings.edit_mode is PermissionModeEnum.DENY:
+        if self._arguments.edit_mode is PermissionModeEnum.DENY:
             raise PermissionError("Memory editing is not allowed")
 
         target_id = await self._resolve_target_id(user_id)
@@ -99,7 +98,7 @@ class MemoryToolKit(BaseToolKit[MemoryToolKitSettings]):
             ):
                 raise PermissionError("Cross-user memory write access not granted")
 
-        if self._settings.edit_mode is PermissionModeEnum.REQUEST:
+        if self._arguments.edit_mode is PermissionModeEnum.REQUEST:
             decision = interrupt({"description": "Append to memory?"})
             if decision == DecisionEnum.REJECT.value:
                 raise UserDeniedAction()
@@ -107,7 +106,7 @@ class MemoryToolKit(BaseToolKit[MemoryToolKitSettings]):
         current_content = await self._driver.get_memory(date, user_id=target_id) or ""
         current_tokens = self._get_tokens_count(current_content)
         new_tokens = self._get_tokens_count(content)
-        max_tokens = self._settings.max_memory_tokens
+        max_tokens = self._arguments.max_memory_tokens
         if current_tokens + new_tokens > max_tokens:
             raise MemorySizeExceeded(max_tokens=max_tokens, date=date)
 
@@ -157,7 +156,7 @@ class MemoryToolKit(BaseToolKit[MemoryToolKitSettings]):
         Returns:
             None - indicates successful operation
         """
-        if self._settings.edit_mode is PermissionModeEnum.DENY:
+        if self._arguments.edit_mode is PermissionModeEnum.DENY:
             raise PermissionError("Memory editing is not allowed")
 
         target_id = await self._resolve_target_id(user_id)
@@ -169,7 +168,7 @@ class MemoryToolKit(BaseToolKit[MemoryToolKitSettings]):
             ):
                 raise PermissionError("Cross-user memory write access not granted")
 
-        if self._settings.edit_mode is PermissionModeEnum.REQUEST:
+        if self._arguments.edit_mode is PermissionModeEnum.REQUEST:
             decision = interrupt({"description": "Rewrite memory?"})
             if decision == DecisionEnum.REJECT.value:
                 raise UserDeniedAction()

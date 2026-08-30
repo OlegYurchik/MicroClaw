@@ -1,7 +1,11 @@
+from . import agents, auth, crons, handlers, models, sessions, toolkits, users
+from .dependencies import auth as auth_dependency
+from .openai import get_router as get_openai_router
+from .settings import RESTAPISettings
 import facet
 import fastapi
-import uvicorn
 from fastapi.middleware.cors import CORSMiddleware
+import uvicorn
 
 from microclaw.resolver import DependencyResolver
 from microclaw.sessions_storages import (
@@ -10,11 +14,6 @@ from microclaw.sessions_storages import (
 )
 from microclaw.users_storages import UsersStorageSettingsType, get_users_storage
 from microclaw.utils import get_by_key_or_first
-
-from . import agents, auth, crons, handlers, models, sessions, toolkits, users
-from .dependencies import auth as auth_dependency
-from .openai import get_router as get_openai_router
-from .settings import RESTAPISettings
 
 
 class UvicornServer(uvicorn.Server):

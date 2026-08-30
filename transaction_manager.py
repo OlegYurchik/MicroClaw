@@ -5,18 +5,19 @@ Transaction Manager CLI
 """
 
 import asyncio
-import uuid
 from datetime import datetime
 from enum import Enum
 from typing import Optional
+import uuid
 
 import aiohttp
 import asyncpg
-import typer
 from rich.console import Console
-from rich.table import Table
 from rich.panel import Panel
 from rich.progress import Progress, SpinnerColumn, TextColumn
+from rich.table import Table
+import typer
+
 
 app = typer.Typer(help="Transaction Manager CLI - управление транзакциями brt-api_core")
 console = Console()

@@ -1,8 +1,7 @@
 from typing import Any
 
-from pydantic import BaseModel, Field
-
 from .capabilities import DiscoveryCapability, ToolKitCapability
+from pydantic import BaseModel, Field
 
 
 class ToolKitSettings(BaseModel):

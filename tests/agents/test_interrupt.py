@@ -1,7 +1,7 @@
 """Tests for Agent interrupt/resume public API."""
 
-import uuid
 from unittest.mock import AsyncMock, MagicMock, patch
+import uuid
 
 import pytest
 

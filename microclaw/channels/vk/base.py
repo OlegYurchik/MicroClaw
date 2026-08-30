@@ -4,6 +4,10 @@ import json
 import random
 import uuid
 
+from .middlewares.typing import VKTypingMiddleware
+from .printer import VKAgentMessagePrinter
+from .settings import VKSettings
+from .toolkit import VKToolKit
 import aiohttp
 from aiohttp import ClientError
 from loguru import logger
@@ -20,17 +24,13 @@ from vkbottle_types.events import GroupEventType
 
 from microclaw.agents import Agent
 from microclaw.channels.base import BaseChannel
-from microclaw.utils.context import get_current_request_id, set_current_request_id
 from microclaw.dto import AgentMessage, DecisionEnum
 from microclaw.sessions_storages import SessionsStorageInterface
 from microclaw.stt import STT
 from microclaw.syncers import SyncerInterface
-from microclaw.users_storages import UsersStorageInterface
 from microclaw.toolkits import ToolKitSettings
-from .settings import VKSettings
-from .printer import VKAgentMessagePrinter
-from .toolkit import VKToolKit
-from .middlewares.typing import VKTypingMiddleware
+from microclaw.users_storages import UsersStorageInterface
+from microclaw.utils.context import get_current_request_id, set_current_request_id
 
 
 class BaseVKChannel(BaseChannel):

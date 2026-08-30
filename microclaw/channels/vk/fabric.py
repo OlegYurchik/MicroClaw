@@ -1,12 +1,13 @@
+from .base import BaseVKChannel
+from .polling import VKPollingChannel
+from .settings import VKMethodEnum, VKSettings
+from .webhook import VKWebhookChannel
+
 from microclaw.agents import Agent
 from microclaw.sessions_storages import SessionsStorageInterface
 from microclaw.stt import STT
 from microclaw.syncers import SyncerInterface
 from microclaw.users_storages import UsersStorageInterface
-from .base import BaseVKChannel
-from .polling import VKPollingChannel
-from .settings import VKMethodEnum, VKSettings
-from .webhook import VKWebhookChannel
 
 
 def get_vk_channel(

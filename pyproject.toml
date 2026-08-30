@@ -89,3 +89,31 @@ nextcloud_tasks = [
 homeassistant = [
     "homeassistant-api>=4.3.0",
 ]
+
+[tool.ruff]
+target-version = "py313"
+
+[tool.ruff.lint]
+select = [
+    "E",      # pycodestyle errors
+    "F",      # Pyflakes
+    "I",      # isort
+    "UP006",  # list[] instead of List[]
+    "UP007",  # X | None instead of Optional[X]
+    "UP010",  # no unnecessary from __future__
+    "UP035",  # collections.abc instead of typing aliases
+]
+ignore = [
+    "E501",   # line too long — handled by formatter
+]
+
+[tool.ruff.lint.isort]
+section-order = ["standard-library", "third-party", "first-party"]
+from-first = true
+force-sort-within-sections = true
+known-first-party = ["microclaw"]
+lines-after-imports = 2
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"

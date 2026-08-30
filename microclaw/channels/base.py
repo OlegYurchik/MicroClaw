@@ -1,10 +1,11 @@
+from collections.abc import Sequence
 import contextlib
 import dataclasses
 import datetime
 import json
 import uuid
-from collections.abc import Sequence
 
+from .settings import ChannelSettings
 import facet
 from loguru import logger
 
@@ -24,13 +25,15 @@ from microclaw.toolkits.accessors import (
     UserSessionsAccessor,
 )
 from microclaw.toolkits.capabilities import DiscoveryCapability, ToolKitCapability
-from microclaw.toolkits.context import ToolkitExecutionContext, TOOLKIT_CONTEXT
+from microclaw.toolkits.context import TOOLKIT_CONTEXT, ToolkitExecutionContext
 from microclaw.toolkits.dto import DiscoveryInfo
 from microclaw.toolkits.memory.toolkit import MemorySizeExceeded
 from microclaw.users_storages import UsersStorageInterface
-from microclaw.utils.context import get_current_request_id, set_current_request_id, set_current_session_id
-
-from .settings import ChannelSettings
+from microclaw.utils.context import (
+    get_current_request_id,
+    set_current_request_id,
+    set_current_session_id,
+)
 
 
 class BaseChannel(facet.AsyncioServiceMixin):

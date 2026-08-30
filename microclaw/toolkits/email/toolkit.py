@@ -1,7 +1,23 @@
-from microclaw.dto import DecisionEnum
-
 import asyncio
+from collections.abc import AsyncGenerator
+from contextlib import asynccontextmanager
+from datetime import datetime
+import email
+from email.encoders import encode_base64
+from email.header import decode_header, make_header
+from email.message import Message
+from email.mime.base import MIMEBase
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+from email.utils import getaddresses, parsedate_to_datetime
+import re
+import ssl
 
+from .dto import EmailAttachment, EmailFolder, EmailMessage, FullEmailMessage
+from .settings import EmailSettings, TLSModeEnum
+from aioimaplib import aioimaplib
+from aiosmtplib import SMTP, SMTPException
+from langgraph.types import interrupt
 from loguru import logger
 from tenacity import (
     AsyncRetrying,
@@ -11,30 +27,11 @@ from tenacity import (
     wait_exponential,
 )
 
-from langgraph.types import interrupt
-import email
-import re
-import ssl
-from contextlib import asynccontextmanager
-from datetime import datetime
-from email.header import decode_header, make_header
-from email.message import Message
-from email.utils import parsedate_to_datetime, getaddresses
-from typing import AsyncGenerator
-
-from aioimaplib import aioimaplib
-from aiosmtplib import SMTP, SMTPException
-from email.mime.multipart import MIMEMultipart
-from email.mime.text import MIMEText
-from email.mime.base import MIMEBase
-from email.encoders import encode_base64
-
+from microclaw.dto import DecisionEnum
 from microclaw.toolkits.base import BaseToolKit, tool
 from microclaw.toolkits.capabilities import DiscoveryCapability, ToolKitCapability
 from microclaw.toolkits.enums import PermissionModeEnum
 from microclaw.toolkits.exceptions import UserDeniedAction
-from .dto import EmailFolder, EmailMessage, EmailAttachment, FullEmailMessage
-from .settings import EmailSettings, TLSModeEnum
 
 
 async def _protocol_starttls(self, host, ssl_context=None):
@@ -145,7 +142,7 @@ class EmailToolKit(BaseToolKit[EmailSettings]):
         Returns:
             List of EmailMessage objects
         """
-        folder = folder or self.settings.default_folder
+        folder = folder or self.arguments.default_folder
 
         async with self._create_imap_client() as client:
             status, _ = await self._with_retry(client.select, folder)
@@ -191,7 +188,7 @@ class EmailToolKit(BaseToolKit[EmailSettings]):
         Returns:
             EmailMessage object or None if not found
         """
-        folder = folder or self.settings.default_folder
+        folder = folder or self.arguments.default_folder
 
         async with self._create_imap_client() as client:
             status, _ = await self._with_retry(client.select, folder)
@@ -240,7 +237,7 @@ class EmailToolKit(BaseToolKit[EmailSettings]):
         Returns:
             List of matching EmailMessage objects
         """
-        folder = folder or self.settings.default_folder
+        folder = folder or self.arguments.default_folder
 
         async with self._create_imap_client() as client:
             status, _ = await self._with_retry(client.select, folder)
@@ -304,16 +301,16 @@ class EmailToolKit(BaseToolKit[EmailSettings]):
         Returns:
             True if deletion was successful
         """
-        folder = folder or self.settings.default_folder
+        folder = folder or self.arguments.default_folder
 
         async with self._create_imap_client() as client:
             status, _ = await self._with_retry(client.select, folder)
             if status != "OK":
                 return None
 
-            if self.settings.delete_mode is PermissionModeEnum.DENY:
+            if self.arguments.delete_mode is PermissionModeEnum.DENY:
                 raise PermissionError("Delete operations are disabled")
-            if self.settings.delete_mode is PermissionModeEnum.REQUEST:
+            if self.arguments.delete_mode is PermissionModeEnum.REQUEST:
                 confirmation_messages = []
                 for uid in uids:
                     summary = await self._fetch_message_summary(client, uid)
@@ -323,7 +320,7 @@ class EmailToolKit(BaseToolKit[EmailSettings]):
                     )
                 confirmation_text = "\n".join(confirmation_messages)
                 confirmation_request_text = (
-                    f"Delete the following emails from {self.settings.username}?\n"
+                    f"Delete the following emails from {self.arguments.username}?\n"
                     f"{confirmation_text}"
                 )
                 decision = interrupt({"description": confirmation_request_text})
@@ -355,7 +352,7 @@ class EmailToolKit(BaseToolKit[EmailSettings]):
         Returns:
             True if move was successful
         """
-        source_folder = source_folder or self.settings.default_folder
+        source_folder = source_folder or self.arguments.default_folder
 
         async with self._create_imap_client() as client:
             status, _ = await self._with_retry(client.select, source_folder)
@@ -385,7 +382,7 @@ class EmailToolKit(BaseToolKit[EmailSettings]):
         Returns:
             True if successful
         """
-        folder = folder or self.settings.default_folder
+        folder = folder or self.arguments.default_folder
 
         async with self._create_imap_client() as client:
             status, _ = await self._with_retry(client.select, folder)
@@ -407,7 +404,7 @@ class EmailToolKit(BaseToolKit[EmailSettings]):
         Returns:
             True if successful
         """
-        folder = folder or self.settings.default_folder
+        folder = folder or self.arguments.default_folder
 
         async with self._create_imap_client() as client:
             status, _ = await self._with_retry(client.select, folder)
@@ -443,7 +440,7 @@ class EmailToolKit(BaseToolKit[EmailSettings]):
         Returns:
             True if email was sent successfully
         """
-        if self.settings.send_mode is PermissionModeEnum.DENY:
+        if self.arguments.send_mode is PermissionModeEnum.DENY:
             raise PermissionError("Send operations are disabled")
 
         to_list = [to] if isinstance(to, str) else to
@@ -451,7 +448,7 @@ class EmailToolKit(BaseToolKit[EmailSettings]):
         bcc_list = [bcc] if isinstance(bcc, str) else (bcc or [])
 
         msg = MIMEMultipart()
-        msg["From"] = self.settings.username
+        msg["From"] = self.arguments.username
         msg["To"] = ", ".join(to_list)
         if cc_list:
             msg["Cc"] = ", ".join(cc_list)
@@ -475,7 +472,7 @@ class EmailToolKit(BaseToolKit[EmailSettings]):
                     )
                     msg.attach(part)
 
-        if self.settings.send_mode is PermissionModeEnum.REQUEST:
+        if self.arguments.send_mode is PermissionModeEnum.REQUEST:
             confirmation_request_text = (
                 f"Send message?\n\n📧 To: {', '.join(to_list)}\n"
             )
@@ -506,7 +503,7 @@ class EmailToolKit(BaseToolKit[EmailSettings]):
                     msg_bytes = msg.as_bytes()
                     await self._with_retry(
                         imap_client.append,
-                        self.settings.sent_folder,
+                        self.arguments.sent_folder,
                         r"(\Seen)",
                         None,
                         msg_bytes,
@@ -527,7 +524,7 @@ class EmailToolKit(BaseToolKit[EmailSettings]):
         Returns:
             Number of unread messages
         """
-        folder = folder or self.settings.default_folder
+        folder = folder or self.arguments.default_folder
 
         async with self._create_imap_client() as client:
             status, _ = await self._with_retry(client.select, folder)
@@ -565,27 +562,27 @@ class EmailToolKit(BaseToolKit[EmailSettings]):
 
     @asynccontextmanager
     async def _create_imap_client(self) -> AsyncGenerator:
-        if self.settings.imap_tls_mode == TLSModeEnum.STARTTLS:
+        if self.arguments.imap_tls_mode == TLSModeEnum.STARTTLS:
             client = aioimaplib.IMAP4(
-                host=self.settings.imap_host,
-                port=self.settings.imap_port,
+                host=self.arguments.imap_host,
+                port=self.arguments.imap_port,
                 timeout=self.IMAP_TIMEOUT_SECONDS,
             )
             await self._with_retry(client.wait_hello_from_server)
             await self._with_retry(client.starttls)
         else:
             client = aioimaplib.IMAP4_SSL(
-                host=self.settings.imap_host,
-                port=self.settings.imap_port,
+                host=self.arguments.imap_host,
+                port=self.arguments.imap_port,
                 timeout=self.IMAP_TIMEOUT_SECONDS,
             )
-            if not self.settings.verify_ssl:
+            if not self.arguments.verify_ssl:
                 client.cert_reqs = None
             await self._with_retry(client.wait_hello_from_server)
         await self._with_retry(
             client.login,
-            self.settings.username,
-            self.settings.password,
+            self.arguments.username,
+            self.arguments.password,
         )
         yield client
 
@@ -596,24 +593,24 @@ class EmailToolKit(BaseToolKit[EmailSettings]):
         if client.state == "NONAUTH":
             await self._with_retry(
                 client.login,
-                self.settings.username,
-                self.settings.password,
+                self.arguments.username,
+                self.arguments.password,
             )
 
     @asynccontextmanager
     async def _create_smtp_client(self):
         client = SMTP(
-            hostname=self.settings.smtp_host,
-            port=self.settings.smtp_port,
-            use_tls=self.settings.smtp_tls_mode == TLSModeEnum.SSL,
-            start_tls=self.settings.smtp_tls_mode == TLSModeEnum.STARTTLS,
-            validate_certs=self.settings.verify_ssl,
+            hostname=self.arguments.smtp_host,
+            port=self.arguments.smtp_port,
+            use_tls=self.arguments.smtp_tls_mode == TLSModeEnum.SSL,
+            start_tls=self.arguments.smtp_tls_mode == TLSModeEnum.STARTTLS,
+            validate_certs=self.arguments.verify_ssl,
         )
         await self._with_retry(client.connect)
         await self._with_retry(
             client.login,
-            self.settings.username,
-            self.settings.password,
+            self.arguments.username,
+            self.arguments.password,
         )
         yield client
         await client.quit()

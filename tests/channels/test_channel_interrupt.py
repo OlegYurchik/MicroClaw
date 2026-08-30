@@ -1,7 +1,7 @@
 """Tests for channel-level interrupt flow (auto-reject on new message)."""
 
-import uuid
 from unittest.mock import AsyncMock, MagicMock
+import uuid
 
 import pytest
 
