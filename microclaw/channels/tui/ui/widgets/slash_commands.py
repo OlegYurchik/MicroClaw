@@ -1,3 +1,5 @@
+import datetime
+
 from textual.widgets import OptionList
 from textual.widgets.option_list import Option
 
@@ -67,3 +69,19 @@ class SlashCommandSuggest(OptionList):
             if cmd.NAME == option.id:
                 return cmd
         return None
+
+
+def format_time_ago(timestamp: datetime.datetime) -> str:
+    now = datetime.datetime.now(datetime.timezone.utc)
+    if timestamp.tzinfo is None:
+        timestamp = timestamp.replace(tzinfo=datetime.timezone.utc)
+    diff = now - timestamp
+    if diff < datetime.timedelta(seconds=0):
+        return "just now"
+    if diff < datetime.timedelta(minutes=1):
+        return f"{int(diff.total_seconds())}s ago"
+    if diff < datetime.timedelta(hours=1):
+        return f"{int(diff.total_seconds() // 60)}m ago"
+    if diff < datetime.timedelta(days=1):
+        return f"{int(diff.total_seconds() // 3600)}h ago"
+    return f"{int(diff.days)}d ago"

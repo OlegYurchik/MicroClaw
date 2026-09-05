@@ -12,6 +12,8 @@ from microclaw.toolkits.accessors import AllUsersAccessor, CurrentUserAccessor
 from microclaw.toolkits.context import TOOLKIT_CONTEXT, ToolkitExecutionContext
 from microclaw.toolkits.dto import DiscoveryInfo
 from microclaw.toolkits.skills_manager import SkillsManagerToolKit
+from microclaw.users_storages.dto import UserCreate, UserUpdate
+from microclaw.users_storages.filters import UserFilter
 from microclaw.users_storages.memory.settings import MemoryUsersStorageSettings
 from microclaw.users_storages.memory.storage import MemoryUsersStorage
 
@@ -32,7 +34,7 @@ def users_storage():
 
 @pytest_asyncio.fixture
 async def toolkit_context(users_storage):
-    user = await users_storage.create_user(role=UserRoleEnum.USER)
+    user = await users_storage.create_user(data=UserCreate(role=UserRoleEnum.USER))
     accessor = CurrentUserAccessor(
         user_id=user.id,
         storage=users_storage,
@@ -53,8 +55,8 @@ async def toolkit_context(users_storage):
 
 @pytest_asyncio.fixture
 async def admin_context(users_storage):
-    admin = await users_storage.create_user(role=UserRoleEnum.ADMIN)
-    target = await users_storage.create_user(role=UserRoleEnum.USER)
+    admin = await users_storage.create_user(data=UserCreate(role=UserRoleEnum.ADMIN))
+    target = await users_storage.create_user(data=UserCreate(role=UserRoleEnum.USER))
     accessor = CurrentUserAccessor(
         user_id=admin.id,
         storage=users_storage,
@@ -123,7 +125,7 @@ async def test_search_skills(skills_manager_toolkit, toolkit_context, monkeypatc
 @pytest.mark.asyncio
 async def test_install_skill__success(skills_manager_toolkit, toolkit_context, monkeypatch):
     from microclaw.toolkits.enums import PermissionModeEnum
-    skills_manager_toolkit._settings.install_mode = PermissionModeEnum.ALLOW
+    skills_manager_toolkit.arguments.install_mode = PermissionModeEnum.ALLOW
 
     def mock_mp_search(self, query):
         skill_mock = MagicMock()
@@ -159,7 +161,7 @@ async def test_install_skill__success(skills_manager_toolkit, toolkit_context, m
 @pytest.mark.asyncio
 async def test_remove_skill(skills_manager_toolkit, toolkit_context, monkeypatch):
     from microclaw.toolkits.enums import PermissionModeEnum
-    skills_manager_toolkit._settings.remove_mode = PermissionModeEnum.ALLOW
+    skills_manager_toolkit.arguments.remove_mode = PermissionModeEnum.ALLOW
 
     mock_repo = MagicMock()
     mock_repo.find.return_value = skilly.Skill(name="old", description="", path="/fake")
@@ -173,7 +175,7 @@ async def test_remove_skill(skills_manager_toolkit, toolkit_context, monkeypatch
 @pytest.mark.asyncio
 async def test_update_skill__success(skills_manager_toolkit, toolkit_context, monkeypatch):
     from microclaw.toolkits.enums import PermissionModeEnum
-    skills_manager_toolkit._settings.update_mode = PermissionModeEnum.ALLOW
+    skills_manager_toolkit.arguments.update_mode = PermissionModeEnum.ALLOW
 
     mock_repo = MagicMock()
     mock_repo.find.return_value = skilly.Skill(name="up", description="", path="/fake")
@@ -203,7 +205,7 @@ async def test_update_skill__success(skills_manager_toolkit, toolkit_context, mo
 async def test_enable_skill__success(skills_manager_toolkit, toolkit_context, users_storage):
     from microclaw.toolkits.context import TOOLKIT_CONTEXT
     from microclaw.toolkits.enums import PermissionModeEnum
-    skills_manager_toolkit._settings.enable_mode = PermissionModeEnum.ALLOW
+    skills_manager_toolkit.arguments.enable_mode = PermissionModeEnum.ALLOW
 
     ctx = ToolkitExecutionContext(
         session_id=toolkit_context.session_id,
@@ -217,7 +219,9 @@ async def test_enable_skill__success(skills_manager_toolkit, toolkit_context, us
     try:
         result = await skills_manager_toolkit.enable_skill("global-skill")
         assert "enabled" in result.lower()
-        user = await users_storage.get_user(toolkit_context.current_user_accessor.user_id)
+        user = await users_storage.get_user(
+            filter_=UserFilter(id={toolkit_context.current_user_accessor.user_id})
+        )
         agent = AgentSettings.model_validate(user.agent)
         assert any(
             (s.name if hasattr(s, "name") else s) == "global-skill" for s in agent.skills
@@ -229,7 +233,7 @@ async def test_enable_skill__success(skills_manager_toolkit, toolkit_context, us
 @pytest.mark.asyncio
 async def test_add_skill_to_my_agent(skills_manager_toolkit, toolkit_context, users_storage, monkeypatch):
     from microclaw.toolkits.enums import PermissionModeEnum
-    skills_manager_toolkit._settings.enable_mode = PermissionModeEnum.ALLOW
+    skills_manager_toolkit.arguments.enable_mode = PermissionModeEnum.ALLOW
 
     mock_repo = MagicMock()
     mock_repo.find.return_value = skilly.Skill(name="cool", description="", path="/fake")
@@ -243,9 +247,13 @@ async def test_add_skill_to_my_agent(skills_manager_toolkit, toolkit_context, us
 @pytest.mark.asyncio
 async def test_remove_skill_from_my_agent(skills_manager_toolkit, toolkit_context, users_storage):
     from microclaw.toolkits.enums import PermissionModeEnum
-    skills_manager_toolkit._settings.remove_mode = PermissionModeEnum.ALLOW
+    skills_manager_toolkit.arguments.remove_mode = PermissionModeEnum.ALLOW
     uid = toolkit_context.current_user_accessor.user_id
-    await users_storage.update_user(user_id=uid, agent_settings=AgentSettings(skills=["cool"]))
+    async for _ in users_storage.update_users(
+        filter_=UserFilter(id={uid}),
+        data=UserUpdate(agent=AgentSettings(skills=["cool"]).model_dump(mode="json")),
+    ):
+        pass
     result = await skills_manager_toolkit.remove_skill_from_my_agent("cool")
     assert "removed" in result.lower()
 
@@ -255,8 +263,8 @@ async def test_remove_skill_from_my_agent(skills_manager_toolkit, toolkit_contex
 @pytest.mark.asyncio
 async def test_install_skill__global_denied(skills_manager_toolkit, toolkit_context):
     from microclaw.toolkits.enums import PermissionModeEnum, SourceModeEnum
-    skills_manager_toolkit._settings.source_mode = SourceModeEnum.GLOBAL
-    skills_manager_toolkit._settings.install_mode = PermissionModeEnum.ALLOW
+    skills_manager_toolkit.arguments.source_mode = SourceModeEnum.GLOBAL
+    skills_manager_toolkit.arguments.install_mode = PermissionModeEnum.ALLOW
     with pytest.raises(PermissionError):
         await skills_manager_toolkit.install_skill("any")
 
@@ -264,8 +272,8 @@ async def test_install_skill__global_denied(skills_manager_toolkit, toolkit_cont
 @pytest.mark.asyncio
 async def test_install_skill__empty_denied(skills_manager_toolkit, toolkit_context):
     from microclaw.toolkits.enums import PermissionModeEnum, SourceModeEnum
-    skills_manager_toolkit._settings.source_mode = SourceModeEnum.EMPTY
-    skills_manager_toolkit._settings.install_mode = PermissionModeEnum.ALLOW
+    skills_manager_toolkit.arguments.source_mode = SourceModeEnum.EMPTY
+    skills_manager_toolkit.arguments.install_mode = PermissionModeEnum.ALLOW
     with pytest.raises(PermissionError):
         await skills_manager_toolkit.install_skill("any")
 
@@ -273,8 +281,8 @@ async def test_install_skill__empty_denied(skills_manager_toolkit, toolkit_conte
 @pytest.mark.asyncio
 async def test_update_skill__empty_denied(skills_manager_toolkit, toolkit_context):
     from microclaw.toolkits.enums import PermissionModeEnum, SourceModeEnum
-    skills_manager_toolkit._settings.source_mode = SourceModeEnum.EMPTY
-    skills_manager_toolkit._settings.update_mode = PermissionModeEnum.ALLOW
+    skills_manager_toolkit.arguments.source_mode = SourceModeEnum.EMPTY
+    skills_manager_toolkit.arguments.update_mode = PermissionModeEnum.ALLOW
 
     mock_repo = MagicMock()
     mock_repo.find.return_value = skilly.Skill(name="old", description="", path="/fake")
@@ -293,8 +301,8 @@ async def test_update_skill__empty_denied(skills_manager_toolkit, toolkit_contex
 async def test_enable_skill__marketplace_denied(skills_manager_toolkit, toolkit_context):
     from microclaw.toolkits.context import TOOLKIT_CONTEXT
     from microclaw.toolkits.enums import PermissionModeEnum, SourceModeEnum
-    skills_manager_toolkit._settings.enable_mode = PermissionModeEnum.ALLOW
-    skills_manager_toolkit._settings.source_mode = SourceModeEnum.MARKETPLACE
+    skills_manager_toolkit.arguments.enable_mode = PermissionModeEnum.ALLOW
+    skills_manager_toolkit.arguments.source_mode = SourceModeEnum.MARKETPLACE
 
     ctx = ToolkitExecutionContext(
         session_id=toolkit_context.session_id,
@@ -316,8 +324,8 @@ async def test_enable_skill__marketplace_denied(skills_manager_toolkit, toolkit_
 async def test_enable_skill__empty_denied(skills_manager_toolkit, toolkit_context):
     from microclaw.toolkits.context import TOOLKIT_CONTEXT
     from microclaw.toolkits.enums import PermissionModeEnum, SourceModeEnum
-    skills_manager_toolkit._settings.enable_mode = PermissionModeEnum.ALLOW
-    skills_manager_toolkit._settings.source_mode = SourceModeEnum.EMPTY
+    skills_manager_toolkit.arguments.enable_mode = PermissionModeEnum.ALLOW
+    skills_manager_toolkit.arguments.source_mode = SourceModeEnum.EMPTY
 
     ctx = ToolkitExecutionContext(
         session_id=toolkit_context.session_id,
@@ -340,13 +348,13 @@ async def test_enable_skill__empty_denied(skills_manager_toolkit, toolkit_contex
 @pytest.mark.asyncio
 async def test_enable_skill__cross_user(admin_context, users_storage, skills_manager_toolkit):
     from microclaw.toolkits.enums import PermissionModeEnum
-    skills_manager_toolkit._settings.enable_mode = PermissionModeEnum.ALLOW
+    skills_manager_toolkit.arguments.enable_mode = PermissionModeEnum.ALLOW
     context, target_user, admin_user = admin_context
 
     result = await skills_manager_toolkit.enable_skill("global_skill", user_id=str(target_user.id))
     assert "enabled" in result.lower()
 
-    target = await users_storage.get_user(target_user.id)
+    target = await users_storage.get_user(filter_=UserFilter(id={target_user.id}))
     agent = AgentSettings.model_validate(target.agent)
     assert any(
         (s.name if hasattr(s, "name") else s) == "global_skill" for s in agent.skills
@@ -356,7 +364,7 @@ async def test_enable_skill__cross_user(admin_context, users_storage, skills_man
 @pytest.mark.asyncio
 async def test_list_my_skills__cross_user(admin_context, skills_manager_toolkit):
     from microclaw.toolkits.enums import PermissionModeEnum
-    skills_manager_toolkit._settings.enable_mode = PermissionModeEnum.ALLOW
+    skills_manager_toolkit.arguments.enable_mode = PermissionModeEnum.ALLOW
     context, target_user, admin_user = admin_context
 
     await skills_manager_toolkit.enable_skill("global_skill", user_id=str(target_user.id))
@@ -367,8 +375,8 @@ async def test_list_my_skills__cross_user(admin_context, skills_manager_toolkit)
 @pytest.mark.asyncio
 async def test_cross_user__no_accessor_denied(skills_manager_toolkit, toolkit_context, users_storage):
     from microclaw.toolkits.enums import PermissionModeEnum
-    skills_manager_toolkit._settings.enable_mode = PermissionModeEnum.ALLOW
-    other = await users_storage.create_user(role=UserRoleEnum.USER)
+    skills_manager_toolkit.arguments.enable_mode = PermissionModeEnum.ALLOW
+    other = await users_storage.create_user(data=UserCreate(role=UserRoleEnum.USER))
     with pytest.raises(PermissionError, match="Cross-user access not granted"):
         await skills_manager_toolkit.enable_skill("global_skill", user_id=str(other.id))
 
@@ -376,7 +384,7 @@ async def test_cross_user__no_accessor_denied(skills_manager_toolkit, toolkit_co
 @pytest.mark.asyncio
 async def test_cross_user__read_only_denied(admin_context, skills_manager_toolkit):
     from microclaw.toolkits.enums import PermissionModeEnum
-    skills_manager_toolkit._settings.enable_mode = PermissionModeEnum.ALLOW
+    skills_manager_toolkit.arguments.enable_mode = PermissionModeEnum.ALLOW
     context, target_user, admin_user = admin_context
 
     context_readonly = ToolkitExecutionContext(

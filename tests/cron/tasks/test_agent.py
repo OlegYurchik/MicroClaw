@@ -129,6 +129,16 @@ class TestAgentCronTask:
         mock_users_storage.get_user = AsyncMock(
             return_value=MagicMock(id=user_channel.user_id)
         )
+        mock_users_storage.create_user = AsyncMock(
+            return_value=MagicMock(id=uuid.uuid4())
+        )
+
+        async def mock_update_user_channels(*args, **kwargs):
+            return
+            yield
+
+        mock_users_storage.update_user_channels = mock_update_user_channels
+        mock_sessions_storage.create_session = AsyncMock()
 
         resolver.resolve_channels = AsyncMock(
             return_value={"test_channel": mock_channel}
@@ -177,8 +187,8 @@ class TestAgentCronTask:
         mock_users_storage.get_user_channels = mock_get_user_channels
         new_user = MagicMock(id=uuid.uuid4())
         mock_users_storage.create_user = AsyncMock(return_value=new_user)
+        mock_users_storage.create_user_channel = AsyncMock()
         mock_sessions_storage.create_session = AsyncMock()
-        mock_channel.ensure_user_channel_attached = AsyncMock()
 
         resolver.resolve_channels = AsyncMock(
             return_value={"test_channel": mock_channel}
@@ -189,7 +199,7 @@ class TestAgentCronTask:
         await task.execute()
 
         mock_sessions_storage.create_session.assert_awaited_once()
-        mock_channel.ensure_user_channel_attached.assert_awaited_once()
+        mock_users_storage.create_user_channel.assert_awaited_once()
         mock_channel.start_conversation.assert_awaited_once()
 
 

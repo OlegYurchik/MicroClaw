@@ -4,8 +4,13 @@ import aiogram
 
 
 class AuthMiddleware(aiogram.BaseMiddleware):
-    def __init__(self, allow_from: Iterable[str]):
+    def __init__(self, allow_from: Iterable[str] | None = None):
         super().__init__()
+        if not allow_from:
+            raise ValueError(
+                "allow_from must be configured explicitly. "
+                "Use allow_from=['*'] to allow all users."
+            )
         self._allow_from = set(allow_from)
 
     async def __call__(
@@ -14,14 +19,16 @@ class AuthMiddleware(aiogram.BaseMiddleware):
         event: aiogram.types.Message,
         data: dict,
     ) -> Awaitable:
-        if self._allow_from:
-            user_set = {
-                event.from_user.id,
-                str(event.from_user.id),
-                event.from_user.username,
-            }
-            is_allowed = user_set & self._allow_from
-            if not is_allowed:
-                return
+        if "*" in self._allow_from:
+            return await handler(event, data)
+
+        user_set = {
+            event.from_user.id,
+            str(event.from_user.id),
+            event.from_user.username,
+        }
+        is_allowed = user_set & self._allow_from
+        if not is_allowed:
+            return
 
         return await handler(event, data)

@@ -3,8 +3,8 @@ from .storage import DatabaseUsersStorage
 
 
 __all__ = (
-    # settings
+    # Settings
     "DatabaseUsersStorageSettings",
-    # storage
+    # Storage
     "DatabaseUsersStorage",
 )

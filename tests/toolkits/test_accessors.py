@@ -3,12 +3,14 @@ import uuid
 
 import pytest
 
+from microclaw.dto import AgentMessage
 from microclaw.toolkits.accessors.session import (
     AllSessionsAccessor,
     CurrentSessionAccessor,
     UserSessionsAccessor,
 )
 from microclaw.toolkits.accessors.user import AllUsersAccessor, CurrentUserAccessor
+from microclaw.users_storages.dto import UserChannelCreate
 
 
 @pytest.mark.asyncio
@@ -40,31 +42,50 @@ async def test_current_user_accessor_writable():
 
 @pytest.mark.asyncio
 async def test_user_sessions_accessor():
+
     storage = MagicMock()
-    storage.get_user_sessions = AsyncMock(return_value=[uuid.uuid4()])
+    storage.get_user_channel = AsyncMock(
+        return_value=UserChannelCreate(
+            user_id=uuid.uuid4(),
+            channel_key="telegram",
+            channel_internal_id="12345",
+            actual_session_id=uuid.uuid4(),
+        )
+    )
     acc = UserSessionsAccessor(user_id=uuid.uuid4(), storage=storage)
     sessions = await acc.get_user_sessions("telegram", "12345")
-    storage.get_user_sessions.assert_awaited_once()
+    storage.get_user_channel.assert_awaited_once()
     assert len(sessions) == 1
 
 
 @pytest.mark.asyncio
 async def test_all_users_accessor():
     storage = MagicMock()
-    storage.get_user_by_session = AsyncMock(return_value=None)
+    storage.get_user_channels = MagicMock(return_value=_async_gen([]))
     acc = AllUsersAccessor(storage=storage)
     result = await acc.get_by_session(uuid.uuid4())
-    storage.get_user_by_session.assert_awaited_once()
+    storage.get_user_channels.assert_called_once()
     assert result is None
 
+
+def _async_gen(items):
+    async def _gen():
+        for item in items:
+            yield item
+    return _gen()
+
+
+async def _mock_get_crons(*args, **kwargs):
+    return
+    yield
 
 @pytest.mark.asyncio
 async def test_all_users_accessor_crons_read_only():
     storage = MagicMock()
-    storage.get_crons = AsyncMock(return_value=[])
+    storage.get_crons = MagicMock(side_effect=_mock_get_crons)
     acc = AllUsersAccessor(storage=storage, writable=False)
     result = await acc.get_crons(uuid.uuid4())
-    storage.get_crons.assert_awaited_once()
+    storage.get_crons.assert_called_once()
     assert result == []
 
 
@@ -72,15 +93,20 @@ async def test_all_users_accessor_crons_read_only():
 async def test_all_users_accessor_crons_writable():
     storage = MagicMock()
     storage.create_cron = AsyncMock()
-    storage.remove_cron = AsyncMock()
+    storage.delete_cron = AsyncMock()
     acc = AllUsersAccessor(storage=storage, writable=True)
     user_id = uuid.uuid4()
     cron = MagicMock()
+    cron.id = uuid.uuid4()
+    cron.path = "test.path"
+    cron.cron = "*/5 * * * *"
+    cron.enabled = True
+    cron.args = {}
     await acc.create_cron(user_id, cron)
     storage.create_cron.assert_awaited_once()
     cron_id = uuid.uuid4()
     await acc.remove_cron(cron_id)
-    storage.remove_cron.assert_awaited_once()
+    storage.delete_cron.assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -110,19 +136,23 @@ async def test_current_session_accessor_read_only():
 @pytest.mark.asyncio
 async def test_current_session_accessor_writable():
     storage = MagicMock()
-    storage.add_message = AsyncMock()
+    storage.create_message = AsyncMock()
     acc = CurrentSessionAccessor(
         session_id=uuid.uuid4(), storage=storage, writable=True
     )
-    await acc.add_message(MagicMock())
-    storage.add_message.assert_awaited_once()
+    await acc.add_message(AgentMessage(role="user"))
+    storage.create_message.assert_awaited_once()
 
+
+async def _mock_get_sessions(*args, **kwargs):
+    return
+    yield
 
 @pytest.mark.asyncio
 async def test_all_sessions_accessor():
     storage = MagicMock()
-    storage.get_sessions.return_value = []
+    storage.get_sessions = MagicMock(side_effect=_mock_get_sessions)
     acc = AllSessionsAccessor(storage=storage)
-    result = acc.get_sessions()
+    result = [s async for s in acc.get_sessions()]
     storage.get_sessions.assert_called_once()
     assert result == []

@@ -24,6 +24,8 @@ def rest_resolver():
     resolver = MagicMock()
     resolver.resolve_users_storages = AsyncMock(return_value={})
     resolver.resolve_sessions_storages = AsyncMock(return_value={})
+    resolver.resolve_crons = AsyncMock(return_value={})
+    resolver.resolve_cron_service = AsyncMock()
     return resolver
 
 

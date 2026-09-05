@@ -1,11 +1,9 @@
 from typing import Literal
 
-from microclaw.users_storages.settings import (
-    UsersStorageSettings,
-    UsersStorageTypeEnum,
-)
-from microclaw.utils.database.settings import DatabaseSettings
+from metaorm import RepositorySettings
+
+from microclaw.users_storages.settings import UsersStorageSettings, UsersStorageTypeEnum
 
 
-class DatabaseUsersStorageSettings(UsersStorageSettings, DatabaseSettings):
+class DatabaseUsersStorageSettings(UsersStorageSettings, RepositorySettings):
     type: Literal[UsersStorageTypeEnum.DATABASE] = UsersStorageTypeEnum.DATABASE

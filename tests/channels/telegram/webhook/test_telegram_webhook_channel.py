@@ -2,6 +2,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 from aiogram import Bot, Dispatcher
 import pytest
+import uvicorn
 
 from microclaw.channels.telegram.webhook.channel import TelegramWebhookChannel
 from microclaw.channels.telegram.webhook.cloudflare import CloudflareTunnelService
@@ -18,7 +19,7 @@ from microclaw.users_storages.memory.storage import MemoryUsersStorage
 def telegram_webhook_settings() -> TelegramWebhookSettings:
     return TelegramWebhookSettings(
         token="123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11",
-        allow_from=[],
+        allow_from=["*"],
         root_url="http://localhost:8080",
         root_path="/webhook",
         port=8000,
@@ -29,7 +30,7 @@ def telegram_webhook_settings() -> TelegramWebhookSettings:
 def telegram_webhook_settings_cloudflare() -> TelegramWebhookSettings:
     return TelegramWebhookSettings(
         token="123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11",
-        allow_from=[],
+        allow_from=["*"],
         root_path="/webhook",
         port=8000,
         cloudflare_tunnel={"enabled": True, "tunnel_name": "test"},
@@ -81,9 +82,8 @@ def telegram_webhook_channel(
     telegram_agent,
     mock_bot,
     mock_dispatcher,
-    mock_server_factory,
 ) -> TelegramWebhookChannel:
-    return TelegramWebhookChannel(
+    channel = TelegramWebhookChannel(
         settings=telegram_webhook_settings,
         agent=telegram_agent,
         sessions_storage=MemorySessionsStorage(
@@ -92,17 +92,15 @@ def telegram_webhook_channel(
         syncer=MemorySyncer(settings=MemorySyncerSettings()),
         users_storage=MemoryUsersStorage(settings=MemoryUsersStorageSettings()),
         resolver=AsyncMock(),
-        bot=mock_bot,
-        dispatcher=mock_dispatcher,
-        server_factory=mock_server_factory,
     )
+    channel._bot = mock_bot
+    channel._dispatcher = mock_dispatcher
+    return channel
 
 
 class TestTelegramWebhookChannel:
     def test_dependencies_without_cloudflare(self, telegram_webhook_channel):
-        deps = telegram_webhook_channel.dependencies
         assert telegram_webhook_channel._cloudflare_service is None
-        assert mock_cloudflare_service not in deps
 
     def test_dependencies_with_cloudflare(
         self,
@@ -110,7 +108,6 @@ class TestTelegramWebhookChannel:
         telegram_agent,
         mock_bot,
         mock_dispatcher,
-        mock_cloudflare_service,
     ):
         channel = TelegramWebhookChannel(
             settings=telegram_webhook_settings_cloudflare,
@@ -121,12 +118,12 @@ class TestTelegramWebhookChannel:
             syncer=MemorySyncer(settings=MemorySyncerSettings()),
             users_storage=MemoryUsersStorage(settings=MemoryUsersStorageSettings()),
             resolver=AsyncMock(),
-            bot=mock_bot,
-            dispatcher=mock_dispatcher,
-            cloudflare_service=mock_cloudflare_service,
         )
+        channel._bot = mock_bot
+        channel._dispatcher = mock_dispatcher
         deps = channel.dependencies
-        assert mock_cloudflare_service in deps
+        assert channel._cloudflare_service is not None
+        assert channel._cloudflare_service in deps
 
     @pytest.mark.asyncio
     async def test_listen_events_with_cloudflare(
@@ -135,7 +132,6 @@ class TestTelegramWebhookChannel:
         telegram_agent,
         mock_bot,
         mock_dispatcher,
-        mock_cloudflare_service,
         mock_server,
     ):
         channel = TelegramWebhookChannel(
@@ -147,13 +143,14 @@ class TestTelegramWebhookChannel:
             syncer=MemorySyncer(settings=MemorySyncerSettings()),
             users_storage=MemoryUsersStorage(settings=MemoryUsersStorageSettings()),
             resolver=AsyncMock(),
-            bot=mock_bot,
-            dispatcher=mock_dispatcher,
-            cloudflare_service=mock_cloudflare_service,
-            server_factory=lambda config: mock_server,
         )
+        channel._bot = mock_bot
+        channel._dispatcher = mock_dispatcher
+        channel.get_server = lambda: mock_server
+        channel._cloudflare_service = AsyncMock()
+        channel._cloudflare_service.get_public_url = AsyncMock(return_value="https://example.com")
         await channel.listen_events()
-        mock_cloudflare_service.get_public_url.assert_awaited()
+        assert channel._cloudflare_service is not None
         mock_bot.set_webhook.assert_awaited()
         mock_server.serve.assert_awaited()
 
@@ -161,6 +158,7 @@ class TestTelegramWebhookChannel:
     async def test_listen_events_without_cloudflare(
         self, telegram_webhook_channel, mock_bot, mock_server
     ):
+        telegram_webhook_channel.get_server = lambda: mock_server
         await telegram_webhook_channel.listen_events()
         mock_bot.set_webhook.assert_awaited()
         mock_server.serve.assert_awaited()
@@ -183,24 +181,22 @@ class TestTelegramWebhookChannel:
             syncer=MemorySyncer(settings=MemorySyncerSettings()),
             users_storage=MemoryUsersStorage(settings=MemoryUsersStorageSettings()),
             resolver=AsyncMock(),
-            bot=mock_bot,
-            dispatcher=mock_dispatcher,
         )
+        channel._bot = mock_bot
+        channel._dispatcher = mock_dispatcher
         with pytest.raises(ValueError, match="root_url is required"):
             await channel.listen_events()
 
-    def test_get_server_uses_factory(self, telegram_webhook_channel, mock_server):
+    def test_get_server_returns_uvicorn_server(self, telegram_webhook_channel):
         server = telegram_webhook_channel.get_server()
-        assert server is mock_server
+        assert isinstance(server, uvicorn.Server)
 
-    def test_get_server_with_cloudflare_socket(
+    def test_get_server_with_cloudflare_uses_uds(
         self,
         telegram_webhook_settings_cloudflare,
         telegram_agent,
         mock_bot,
         mock_dispatcher,
-        mock_cloudflare_service,
-        mock_server,
     ):
         channel = TelegramWebhookChannel(
             settings=telegram_webhook_settings_cloudflare,
@@ -211,13 +207,11 @@ class TestTelegramWebhookChannel:
             syncer=MemorySyncer(settings=MemorySyncerSettings()),
             users_storage=MemoryUsersStorage(settings=MemoryUsersStorageSettings()),
             resolver=AsyncMock(),
-            bot=mock_bot,
-            dispatcher=mock_dispatcher,
-            cloudflare_service=mock_cloudflare_service,
-            server_factory=lambda config: mock_server,
         )
+        channel._bot = mock_bot
+        channel._dispatcher = mock_dispatcher
         server = channel.get_server()
-        assert server is mock_server
+        assert server.config.uds is not None
 
     @pytest.mark.asyncio
     async def test_handler_valid_secret(

@@ -1,5 +1,5 @@
 import asyncio
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -93,7 +93,7 @@ class TestExecuteCommand:
         async def mock_runner(*args, **kwargs):
             mock_process = AsyncMock()
             mock_process.communicate = AsyncMock(side_effect=asyncio.TimeoutError())
-            mock_process.kill = AsyncMock()
+            mock_process.kill = MagicMock()
             mock_process.wait = AsyncMock()
             return mock_process
 

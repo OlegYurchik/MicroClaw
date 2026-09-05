@@ -18,3 +18,9 @@ class VKSettings(ChannelSettings):
     show_context_usage: bool = False
     show_costs: bool = False
     debug: bool = False
+    root_url: str | None = None
+    root_path: str = ""
+    host: str = "0.0.0.0"
+    port: int = 8080
+    title: str = "MicroClaw"
+    secret_access_key: str | None = None

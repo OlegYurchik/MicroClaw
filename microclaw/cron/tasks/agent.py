@@ -7,7 +7,11 @@ from microclaw.agents import Agent, AgentSettings
 from microclaw.channels.base import BaseChannel
 from microclaw.cron.base import BaseCronTask
 from microclaw.cron.settings import CronTaskSettings
-from microclaw.dto import AgentMessage
+from microclaw.dto import AgentMessage, AgentMessageRoleEnum
+from microclaw.sessions_storages.dto import SessionCreate
+from microclaw.users_storages.dto import UserCreate
+from microclaw.users_storages.filters import UserChannelFilter, UserFilter
+from microclaw.users_storages.utils import attach_session_to_user
 from microclaw.utils import get_by_key_or_first
 
 
@@ -67,7 +71,7 @@ class AgentCronTask(BaseCronTask[AgentCronTaskSettings]):
             f"{self._arguments.task}"
         )
         new_messages = [
-            AgentMessage(role="user", text=task_text),
+            AgentMessage(role=AgentMessageRoleEnum.USER, text=task_text),
         ]
         if self._channel is not None:
             await self._execute_with_channel(new_messages)
@@ -83,22 +87,41 @@ class AgentCronTask(BaseCronTask[AgentCronTaskSettings]):
         sessions_storage = self._channel.get_sessions_storage()
         users_storage = self._channel.get_users_storage()
 
-        user = await users_storage.get_user_by_channel(
-            channel_key=self._arguments.channel,
-            channel_internal_id=self._arguments.channel_internal_id,
-        )
+        user = None
+        async for user_channel in users_storage.get_user_channels(
+            filter_=UserChannelFilter(
+                channel_key={self._arguments.channel},
+                channel_internal_id={self._arguments.channel_internal_id},
+            )
+        ):
+            user = await users_storage.get_user(
+                filter_=UserFilter(id={user_channel.user_id})
+            )
+            break
         if user is None:
-            user = await users_storage.create_user()
+            user = await users_storage.create_user(data=UserCreate())
 
-        session_id = await users_storage.get_actual_session(
-            user_id=user.id,
-            channel_key=self._arguments.channel,
-            channel_internal_id=self._arguments.channel_internal_id,
-        )
+        session_id = None
+        async for user_channel in users_storage.get_user_channels(
+            filter_=UserChannelFilter(
+                user_id={user.id},
+                channel_key={self._arguments.channel},
+                channel_internal_id={self._arguments.channel_internal_id},
+            )
+        ):
+            session_id = user_channel.actual_session_id
+            break
         if self._arguments.create_new_session or session_id is None:
             session_id = uuid.uuid4()
-            await sessions_storage.create_session(session_id=session_id)
-            await users_storage.attach_session_to_user(
+            await sessions_storage.create_session(
+                data=SessionCreate(
+                    id=session_id,
+                    channel_key=self._arguments.channel,
+                    channel_internal_id=self._arguments.channel_internal_id,
+                )
+            )
+            await attach_session_to_user(
+                storage=users_storage,
                 user_id=user.id,
                 session_id=session_id,
                 channel_key=self._arguments.channel,

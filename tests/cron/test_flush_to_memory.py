@@ -96,6 +96,7 @@ async def test_process_day_user_not_found(task, resolver):
     channel = MagicMock()
     users_storage = MagicMock()
     users_storage.get_user_channels = MagicMock(return_value=_empty_async_gen())
+    users_storage.get_user_by_session = AsyncMock(return_value=None)
     channel.get_users_storage = MagicMock(return_value=users_storage)
 
     resolver.resolve_sessions_storages = AsyncMock(
@@ -124,6 +125,7 @@ async def test_process_day_full_flow(task, resolver):
         return_value=_single_item_gen(FakeUserChannel(user.id))
     )
     users_storage.get_user = AsyncMock(return_value=user)
+    users_storage.get_user_by_session = AsyncMock(return_value=user)
 
     agent = MagicMock()
     agent.extract_important_info = AsyncMock(return_value="important info")

@@ -17,18 +17,20 @@ __all__ = (
     "UserChannelUpdate",
     "UserCreate",
     "UserUpdate",
+    "WebhookCreate",
+    "WebhookUpdate",
 )
 
 
 class UserCreate(BaseModel):
     id: uuid.UUID = Field(default_factory=uuid.uuid4)
     role: UserRoleEnum = UserRoleEnum.USER
-    agent: dict[str, Any] | str | None = None
+    agent: dict[str, Any] | None = None
 
 
 class UserUpdate(BaseModel):
     role: UserRoleEnum | None = None
-    agent: dict[str, Any] | str | None = None
+    agent: dict[str, Any] | None = None
 
 
 class UserChannelCreate(BaseModel):
@@ -47,6 +49,7 @@ class UserChannelUpdate(BaseModel):
 
 class TokenCreate(BaseModel):
     user_id: uuid.UUID
+    token: str | None = Field(default=None)
     expires_at: AwareDatetime | None = Field(
         default_factory=lambda: utcnow() + timedelta(days=90),
     )
@@ -69,3 +72,23 @@ class CronUpdate(BaseModel):
     cron: str | None = None
     enabled: bool | None = None
     args: dict[str, Any] | None = None
+
+
+class WebhookCreate(BaseModel):
+    id: uuid.UUID = Field(default_factory=uuid.uuid4)
+    user_id: uuid.UUID
+    path: str
+    enabled: bool = True
+    args: dict[str, Any] = Field(default_factory=dict)
+    agent: str | None = None
+    channel: str | None = None
+    channel_internal_id: str | None = None
+
+
+class WebhookUpdate(BaseModel):
+    path: str | None = None
+    enabled: bool | None = None
+    args: dict[str, Any] | None = None
+    agent: str | None = None
+    channel: str | None = None
+    channel_internal_id: str | None = None

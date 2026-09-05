@@ -1,6 +1,5 @@
-from datetime import datetime
 
-from pydantic import BaseModel, Field
+from pydantic import AwareDatetime, BaseModel, Field
 
 
 class WebDAVObject(BaseModel):
@@ -8,7 +7,7 @@ class WebDAVObject(BaseModel):
 
     path: str = Field(description="Full path to the object")
     name: str = Field(description="Object name")
-    last_modified: datetime | None = Field(
+    last_modified: AwareDatetime | None = Field(
         default=None, description="Last modification timestamp"
     )
 

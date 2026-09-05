@@ -1,6 +1,8 @@
 import httpx
 import pytest
 
+from microclaw.users_storages.utils import create_token_for_user
+
 
 @pytest.mark.asyncio
 async def test_me(client: httpx.AsyncClient, regular_user):
@@ -46,7 +48,7 @@ async def test_create_token_forbidden_for_user(client: httpx.AsyncClient, regula
 async def test_delete_token_admin_only(client: httpx.AsyncClient, admin_user, regular_user, users_storage):
     admin, admin_token = admin_user
     user, _ = regular_user
-    token_info = await users_storage.create_token_for_user(user_id=user.id)
+    token_info = await create_token_for_user(users_storage, user_id=user.id)
 
     response = await client.delete(
         f"/auth/tokens/{token_info.token}",
@@ -58,7 +60,7 @@ async def test_delete_token_admin_only(client: httpx.AsyncClient, admin_user, re
 @pytest.mark.asyncio
 async def test_delete_token_forbidden_for_user(client: httpx.AsyncClient, regular_user, users_storage):
     user, token = regular_user
-    token_info = await users_storage.create_token_for_user(user_id=user.id)
+    token_info = await create_token_for_user(users_storage, user_id=user.id)
 
     response = await client.delete(
         f"/auth/tokens/{token_info.token}",

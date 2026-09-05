@@ -87,7 +87,7 @@ class TestAgentsToolKit:
 
     @pytest.mark.asyncio
     async def test_set_agent_model_denied(self, toolkit):
-        toolkit._settings.set_mode = PermissionModeEnum.DENY
+        toolkit.arguments.set_mode = PermissionModeEnum.DENY
         with pytest.raises(PermissionError):
             await toolkit.set_agent_model("test-model")
 
@@ -108,7 +108,7 @@ class TestAgentsToolKit:
 
     @pytest.mark.asyncio
     async def test_set_agent_identity_request_mode(self, toolkit, agents_context):
-        toolkit._settings.set_mode = PermissionModeEnum.REQUEST
+        toolkit.arguments.set_mode = PermissionModeEnum.REQUEST
         with pytest.raises(Exception):
             await toolkit.set_agent_identity(name="TestBot")
 
@@ -119,19 +119,19 @@ class TestAgentsToolKit:
 
     @pytest.mark.asyncio
     async def test_add_custom_subagent_denied(self, toolkit, agents_context):
-        toolkit._settings.set_mode = PermissionModeEnum.DENY
+        toolkit.arguments.set_mode = PermissionModeEnum.DENY
         with pytest.raises(PermissionError):
             await toolkit.add_custom_subagent(AgentSettings(model="test-model"))
 
     @pytest.mark.asyncio
     async def test_remove_subagent_denied(self, toolkit, agents_context):
-        toolkit._settings.set_mode = PermissionModeEnum.DENY
+        toolkit.arguments.set_mode = PermissionModeEnum.DENY
         with pytest.raises(PermissionError):
             await toolkit.remove_subagent("test")
 
     @pytest.mark.asyncio
     async def test_reset_agent_settings_denied(self, toolkit, agents_context):
-        toolkit._settings.reset_mode = PermissionModeEnum.DENY
+        toolkit.arguments.reset_mode = PermissionModeEnum.DENY
         with pytest.raises(PermissionError):
             await toolkit.reset_agent_settings()
 

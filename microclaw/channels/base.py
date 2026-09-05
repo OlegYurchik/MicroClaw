@@ -12,7 +12,8 @@ from loguru import logger
 from microclaw.agents import Agent, AgentSettings
 from microclaw.channels.utils import AgentMessageSaver
 from microclaw.dto import AgentMessage, DecisionEnum, User
-from microclaw.sessions_storages.filters import MessageFilter
+from microclaw.sessions_storages.dto import MessageCreate, SessionCreate
+from microclaw.sessions_storages.filters import MessageFilter, SessionFilter
 from microclaw.sessions_storages.interfaces import SessionsStorageInterface
 from microclaw.stt import STT
 from microclaw.syncers import SyncerInterface
@@ -29,6 +30,13 @@ from microclaw.toolkits.context import TOOLKIT_CONTEXT, ToolkitExecutionContext
 from microclaw.toolkits.dto import DiscoveryInfo
 from microclaw.toolkits.memory.toolkit import MemorySizeExceeded
 from microclaw.users_storages import UsersStorageInterface
+from microclaw.users_storages.dto import (
+    UserChannelCreate,
+    UserChannelUpdate,
+    UserCreate,
+)
+from microclaw.users_storages.exceptions import AlreadyExistsError
+from microclaw.users_storages.filters import UserChannelFilter, UserFilter
 from microclaw.utils.context import (
     get_current_request_id,
     set_current_request_id,
@@ -155,9 +163,11 @@ class BaseChannel(facet.AsyncioServiceMixin):
                 session_id = None
 
                 for message in batch:
-                    await self._sessions_storage.add_message(
-                        session_id=resolved_session_id,
-                        message=message,
+                    await self._sessions_storage.create_message(
+                        data=MessageCreate(
+                            session_id=resolved_session_id,
+                            message=message,
+                        )
                     )
 
                 batch_kwargs = {
@@ -191,7 +201,7 @@ class BaseChannel(facet.AsyncioServiceMixin):
         )
 
         message_generator = self._sessions_storage.get_messages(
-            filter=MessageFilter(session_id=session_id)
+            filter_=MessageFilter(session_id={session_id})
         )
         history = [m async for m in message_generator]
 
@@ -306,33 +316,64 @@ class BaseChannel(facet.AsyncioServiceMixin):
         return await self._get_or_create_session(user, chat_id)
 
     async def _get_or_create_user(self, chat_id: str | int) -> User:
-        user = await self._users_storage.get_user_by_channel(
-            channel_key=self._channel_key,
-            channel_internal_id=str(chat_id),
+        channel = await self._users_storage.get_user_channel(
+            filter_=UserChannelFilter(
+                channel_key={self._channel_key},
+                channel_internal_id={str(chat_id)},
+            )
         )
-        return user or await self._users_storage.create_user()
+        if channel is not None:
+            user = await self._users_storage.get_user(
+                filter_=UserFilter(id={channel.user_id})
+            )
+            if user is not None:
+                return user
+        return await self._users_storage.create_user(data=UserCreate())
 
     async def _get_or_create_session(
         self, user: User, chat_id: str | int
     ) -> uuid.UUID:
-        session_id = await self._users_storage.get_actual_session(
-            user_id=user.id,
-            channel_key=self._channel_key,
-            channel_internal_id=str(chat_id),
+        channel = await self._users_storage.get_user_channel(
+            filter_=UserChannelFilter(
+                user_id={user.id},
+                channel_key={self._channel_key},
+                channel_internal_id={str(chat_id)},
+            )
         )
-        return session_id or await self._create_new_session(user, chat_id)
+        if channel is not None and channel.actual_session_id is not None:
+            return channel.actual_session_id
+        return await self._create_new_session(user, chat_id)
 
     async def _create_new_session(
         self, user: User, chat_id: str | int
     ) -> uuid.UUID:
         session_id = uuid.uuid4()
-        await self._sessions_storage.create_session(session_id=session_id)
-        await self._users_storage.attach_session_to_user(
-            user_id=user.id,
-            session_id=session_id,
-            channel_key=self._channel_key,
-            channel_internal_id=str(chat_id),
+        await self._sessions_storage.create_session(
+            data=SessionCreate(
+                id=session_id,
+                channel_key=self._channel_key,
+                channel_internal_id=str(chat_id),
+            )
         )
+        try:
+            await self._users_storage.create_user_channel(
+                data=UserChannelCreate(
+                    user_id=user.id,
+                    channel_key=self._channel_key,
+                    channel_internal_id=str(chat_id),
+                    actual_session_id=session_id,
+                )
+            )
+        except AlreadyExistsError:
+            async for _ in self._users_storage.update_user_channels(
+                filter_=UserChannelFilter(
+                    user_id={user.id},
+                    channel_key={self._channel_key},
+                    channel_internal_id={str(chat_id)},
+                ),
+                data=UserChannelUpdate(actual_session_id=session_id),
+            ):
+                pass
         return session_id
 
     async def summarize_dialog_if_needed(
@@ -350,7 +391,7 @@ class BaseChannel(facet.AsyncioServiceMixin):
             return False
 
         message_generator = self._sessions_storage.get_messages(
-            filter=MessageFilter(session_id=session_id),
+            filter_=MessageFilter(session_id={session_id}),
         )
         messages = [message async for message in message_generator]
         if not messages:
@@ -381,9 +422,11 @@ class BaseChannel(facet.AsyncioServiceMixin):
                     )
 
         summary_message = await agent.summarize_dialogue(messages=messages)
-        await self._sessions_storage.add_message(
-            session_id=session_id,
-            message=summary_message,
+        await self._sessions_storage.create_message(
+            data=MessageCreate(
+                session_id=session_id,
+                message=summary_message,
+            )
         )
         return True
 
@@ -397,9 +440,10 @@ class BaseChannel(facet.AsyncioServiceMixin):
         if context_window_size is None or context_threshold is None:
             return False
 
-        context_size = await self._sessions_storage.get_context_size(
-            session_id=session_id
+        session = await self._sessions_storage.get_session(
+            filter_=SessionFilter(id={session_id})
         )
+        context_size = session.context_size if session else 0
         threshold_tokens = int(context_window_size * context_threshold)
         return context_size > threshold_tokens
 

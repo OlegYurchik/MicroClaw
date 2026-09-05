@@ -14,6 +14,7 @@ from microclaw.sessions_storages.dto import (
 )
 from microclaw.sessions_storages.filters import MessageFilter, SessionFilter
 from microclaw.sessions_storages.interfaces import SessionsStorageInterface
+from microclaw.sessions_storages.utils import get_messages_from_last_summarization
 
 
 async def assert_session_crud(storage: SessionsStorageInterface) -> None:
@@ -24,13 +25,13 @@ async def assert_session_crud(storage: SessionsStorageInterface) -> None:
         data=SessionCreate(channel_key="vk", channel_internal_id="2")
     )
 
-    fetched = await storage.get_session(s1.id)
+    fetched = await storage.get_session(filter_=SessionFilter(id={s1.id}))
     assert fetched is not None
     assert fetched.id == s1.id
     assert fetched.channel_key == "tg"
     assert fetched.context_size == 0
 
-    assert await storage.get_session(uuid.uuid4()) is None
+    assert await storage.get_session(filter_=SessionFilter(id={uuid.uuid4()})) is None
 
     sessions = [s async for s in storage.get_sessions()]
     assert len(sessions) == 2
@@ -41,14 +42,22 @@ async def assert_session_crud(storage: SessionsStorageInterface) -> None:
     assert len(filtered) == 1
     assert filtered[0].id == s1.id
 
-    updated = await storage.update_session(s1.id, data=SessionUpdate(context_size=42))
+    updated = None
+    async for u in storage.update_sessions(
+        filter_=SessionFilter(id={s1.id}),
+        data=SessionUpdate(context_size=42),
+    ):
+        updated = u
     assert updated is not None
     assert updated.context_size == 42
 
-    assert (
-        await storage.update_session(uuid.uuid4(), data=SessionUpdate(context_size=1))
-        is None
-    )
+    not_found = None
+    async for u in storage.update_sessions(
+        filter_=SessionFilter(id={uuid.uuid4()}),
+        data=SessionUpdate(context_size=1),
+    ):
+        not_found = u
+    assert not_found is None
 
     async for _ in storage.update_sessions(
         filter_=SessionFilter(channel_key={"vk"}),
@@ -61,10 +70,10 @@ async def assert_session_crud(storage: SessionsStorageInterface) -> None:
     assert len(sessions) == 1
     assert sessions[0].context_size == 99
 
-    await storage.delete_session(s2.id)
-    assert await storage.get_session(s2.id) is None
+    await storage.delete_session(filter_=SessionFilter(id={s2.id}))
+    assert await storage.get_session(filter_=SessionFilter(id={s2.id})) is None
 
-    await storage.delete_session(uuid.uuid4())
+    await storage.delete_session(filter_=SessionFilter(id={uuid.uuid4()}))
 
     with pytest.raises(AlreadyExistsError):
         await storage.create_session(
@@ -99,7 +108,7 @@ async def assert_message_crud(storage: SessionsStorageInterface) -> None:
         )
     )
 
-    fetched_session = await storage.get_session(session.id)
+    fetched_session = await storage.get_session(filter_=SessionFilter(id={session.id}))
     assert fetched_session is not None
     assert fetched_session.context_size == 15
 
@@ -170,7 +179,7 @@ async def assert_messages_from_last_summarization(
     )
 
     messages = [
-        m async for m in storage.get_messages_from_last_summarization(session.id)
+        m async for m in get_messages_from_last_summarization(storage, session.id)
     ]
     assert len(messages) == 2
     texts = {m.text for m in messages}
@@ -231,6 +240,36 @@ async def assert_delete_sessions_filter(storage: SessionsStorageInterface) -> No
     assert sessions[0].id == s1.id or sessions[0].channel_key == "b"
 
 
+async def assert_delete_session_cascade(storage: SessionsStorageInterface) -> None:
+    session = await storage.create_session(
+        data=SessionCreate(channel_key="tg", channel_internal_id="1")
+    )
+    await storage.create_message(
+        data=MessageCreate(
+            session_id=session.id,
+            message=AgentMessage(role=AgentMessageRoleEnum.USER, text="msg1"),
+        )
+    )
+    await storage.create_message(
+        data=MessageCreate(
+            session_id=session.id,
+            message=AgentMessage(role=AgentMessageRoleEnum.ASSISTANT, text="msg2"),
+        )
+    )
+    messages_before = [
+        m async for m in storage.get_messages(filter_=MessageFilter(session_id={session.id}))
+    ]
+    assert len(messages_before) == 2
+
+    await storage.delete_session(filter_=SessionFilter(id={session.id}))
+
+    assert await storage.get_session(filter_=SessionFilter(id={session.id})) is None
+    messages_after = [
+        m async for m in storage.get_messages(filter_=MessageFilter(session_id={session.id}))
+    ]
+    assert len(messages_after) == 0
+
+
 async def assert_delete_messages_filter(storage: SessionsStorageInterface) -> None:
     session = await storage.create_session(
         data=SessionCreate(channel_key="tg", channel_internal_id="1")
@@ -258,5 +297,5 @@ async def assert_delete_messages_filter(storage: SessionsStorageInterface) -> No
     await storage.delete_messages(filter_=MessageFilter(role={"user"}))
     messages = [m async for m in storage.get_messages()]
     assert len(messages) == 2
-    roles = {m.role.value for m in messages}
+    roles = {m.role for m in messages}
     assert roles == {"assistant", "tool"}

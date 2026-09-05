@@ -7,6 +7,7 @@ from microclaw.sessions_storages.database.storage import DatabaseSessionsStorage
 from microclaw.sessions_storages.dto import SessionCreate
 from tests.sessions_storages.helpers import (
     assert_delete_messages_filter,
+    assert_delete_session_cascade,
     assert_delete_sessions_filter,
     assert_message_crud,
     assert_messages_from_last_summarization,
@@ -43,6 +44,11 @@ async def test_delete_sessions_filter(database_sessions_storage):
 @pytest.mark.asyncio
 async def test_delete_messages_filter(database_sessions_storage):
     await assert_delete_messages_filter(database_sessions_storage)
+
+
+@pytest.mark.asyncio
+async def test_delete_session_cascade(database_sessions_storage):
+    await assert_delete_session_cascade(database_sessions_storage)
 
 
 @pytest.mark.asyncio

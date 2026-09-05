@@ -8,6 +8,7 @@ from microclaw.agents import Agent
 from microclaw.channels.utils import AgentMessageCollector
 from microclaw.dto import AgentMessage
 from microclaw.sessions_storages import SessionsStorageInterface
+from microclaw.sessions_storages.filters import SessionFilter
 
 
 class AgentMessagePrinter(AgentMessageCollector):
@@ -85,22 +86,21 @@ class AgentMessagePrinter(AgentMessageCollector):
         self._app.update_message(role=role, text=text)
 
     async def print_spent(self):
-        context_usage = None
+        context_usage = 0.0
         cost = None
         currency = "$"
 
-        actual_context_size = await self._sessions_storage.get_context_size(
-            session_id=self._session_id,
+        session = await self._sessions_storage.get_session(
+            filter_=SessionFilter(id={self._session_id})
         )
+        actual_context_size = session.context_size if session else 0
         model_context_size = self._agent.get_model_context_window_size()
         if model_context_size:
             context_usage = actual_context_size * 100 / model_context_size
 
-        spending = await self._sessions_storage.get_spending(
-            session_id=self._session_id
-        )
-        cost = spending.cost
-        currency = spending.currency
+        spending = session.spending if session else None
+        cost = spending.cost if spending else 0
+        currency = spending.currency if spending else "$"
 
         self._app.update_stats(
             context_usage=context_usage,

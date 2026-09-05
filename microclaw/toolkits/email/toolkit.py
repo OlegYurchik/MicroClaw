@@ -12,6 +12,7 @@ from email.mime.text import MIMEText
 from email.utils import getaddresses, parsedate_to_datetime
 import re
 import ssl
+from typing import Any
 
 from .dto import EmailAttachment, EmailFolder, EmailMessage, FullEmailMessage
 from .settings import EmailSettings, TLSModeEnum
@@ -77,6 +78,11 @@ class EmailToolKit(BaseToolKit[EmailSettings]):
     required_capabilities: list[ToolKitCapability] = []
     write_capabilities: list[ToolKitCapability] = []
     discovery_capabilities: list[DiscoveryCapability] = []
+
+    def __init__(self, key: str, settings: EmailSettings, imap_client_factory: Any | None = None, smtp_client_factory: Any | None = None):
+        super().__init__(key=key, settings=settings)
+        self._imap_client_factory = imap_client_factory
+        self._smtp_client_factory = smtp_client_factory
 
     _RETRYABLE_EXCEPTIONS: tuple[type[Exception], ...] = (
         ConnectionError,
@@ -274,9 +280,6 @@ class EmailToolKit(BaseToolKit[EmailSettings]):
                     if not isinstance(part, bytearray):
                         continue
                     raw_message = bytes(part)
-                    msg = email.message_from_bytes(raw_message)
-                    email_msg = self._parse_email_message(msg, uid_str, folder)
-                    messages.append(email_msg)
                     break
                 if not raw_message:
                     continue
@@ -562,6 +565,18 @@ class EmailToolKit(BaseToolKit[EmailSettings]):
 
     @asynccontextmanager
     async def _create_imap_client(self) -> AsyncGenerator:
+        if self._imap_client_factory is not None:
+            factory_result = self._imap_client_factory()
+            if asyncio.iscoroutine(factory_result):
+                client = await factory_result
+            else:
+                client = factory_result
+            if hasattr(client, "__aenter__"):
+                async with client as c:
+                    yield c
+            else:
+                yield client
+            return
         if self.arguments.imap_tls_mode == TLSModeEnum.STARTTLS:
             client = aioimaplib.IMAP4(
                 host=self.arguments.imap_host,
@@ -599,6 +614,18 @@ class EmailToolKit(BaseToolKit[EmailSettings]):
 
     @asynccontextmanager
     async def _create_smtp_client(self):
+        if self._smtp_client_factory is not None:
+            factory_result = self._smtp_client_factory()
+            if asyncio.iscoroutine(factory_result):
+                client = await factory_result
+            else:
+                client = factory_result
+            if hasattr(client, "__aenter__"):
+                async with client as c:
+                    yield c
+            else:
+                yield client
+            return
         client = SMTP(
             hostname=self.arguments.smtp_host,
             port=self.arguments.smtp_port,

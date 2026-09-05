@@ -7,8 +7,9 @@ from microclaw.api.rest.openai.adapter import OpenAIMessageAdapter
 from microclaw.channels.utils import AgentMessageSaver
 from microclaw.dto import DecisionEnum
 from microclaw.resolver import DependencyResolver
-from microclaw.sessions_storages.filters import MessageFilter
+from microclaw.sessions_storages.dto import SessionCreate
 from microclaw.sessions_storages.interfaces import SessionsStorageInterface
+from microclaw.sessions_storages.utils import get_messages_from_last_summarization
 from microclaw.toolkits.context import TOOLKIT_CONTEXT, ToolkitExecutionContext
 from microclaw.utils.context import (
     REQUEST_ID_CONTEXT,
@@ -67,14 +68,20 @@ async def run_completion(
                 detail="Invalid session_id",
             ) from exc
     else:
-        session_id = await sessions_storage.create_session()
+        session = await sessions_storage.create_session(
+            data=SessionCreate(
+                channel_key="rest",
+                channel_internal_id=str(uuid.uuid4()),
+            )
+        )
+        session_id = session.id
 
     history = []
-    async for msg in sessions_storage.get_messages(
-            filter=MessageFilter(session_id=session_id),
-            from_last_summarization=True,
+    async for message in get_messages_from_last_summarization(
+        storage=sessions_storage,
+        session_id=session_id,
     ):
-        history.append(msg)
+        history.append(message)
     new_messages = [OpenAIMessageAdapter.to_agent_message(m) for m in messages]
     all_messages = history + new_messages
 

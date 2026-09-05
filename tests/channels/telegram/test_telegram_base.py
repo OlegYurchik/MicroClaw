@@ -21,7 +21,12 @@ class FakeTelegramChannel(BaseTelegramChannel):
 class TestBaseTelegramChannel:
     @pytest.fixture
     def telegram_settings(self):
-        return TelegramSettings(token="test_token", type="telegram", method="polling")
+        return TelegramSettings(
+            token="123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11",
+            type="telegram",
+            method="polling",
+            allow_from=["*"],
+        )
 
     @pytest.fixture
     def bot(self):
@@ -48,16 +53,17 @@ class TestBaseTelegramChannel:
         bot,
         dispatcher,
     ):
-        return FakeTelegramChannel(
+        channel = FakeTelegramChannel(
             settings=telegram_settings,
             agent=agent,
             sessions_storage=sessions_storage,
             syncer=syncer,
             users_storage=users_storage,
             resolver=resolver,
-            bot=bot,
-            dispatcher=dispatcher,
         )
+        channel._bot = bot
+        channel._dispatcher = dispatcher
+        return channel
 
     @pytest.mark.asyncio
     async def test_init_creates_bot_and_dispatcher(self, channel, bot, dispatcher):

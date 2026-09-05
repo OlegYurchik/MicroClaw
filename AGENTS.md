@@ -170,6 +170,10 @@ channels:
 - Use `@model_validator` for cross-field validation.
 - Serialize with `model_dump(mode="json")`.
 
+### Filters
+- Filter models extending `pydantic_filters.BaseFilter` declare main columns as `set[T]` (e.g. `id: set[uuid.UUID]`).
+- Do **not** add `| None = None` or `Field(default_factory=set)` to set-based filter fields; `BaseFilter` with `optional=True` handles absent filters automatically.
+
 ### Error Handling
 - Catch expected errors gracefully; log with context.
 - Never expose stack traces to end users.

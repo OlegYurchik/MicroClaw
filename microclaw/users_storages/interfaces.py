@@ -1,20 +1,51 @@
 from collections.abc import AsyncGenerator
-import datetime
-import uuid
 
-from .filters import UserFilter
+from .filters import (
+    CronFilter,
+    TokenFilter,
+    UserChannelFilter,
+    UserFilter,
+    WebhookFilter,
+)
 import facet
 from pydantic_filters import BaseSort
 from pydantic_filters.pagination import OffsetPagination as BasePagination
 
-from microclaw.dto import CronTask, TokenInfo, User, UserRoleEnum
-from microclaw.utils import Empty
+from microclaw.dto import CronTask, Token, User, UserChannel, Webhook
+from microclaw.users_storages.dto import (
+    CronCreate,
+    CronUpdate,
+    TokenCreate,
+    TokenUpdate,
+    UserChannelCreate,
+    UserChannelUpdate,
+    UserCreate,
+    UserUpdate,
+    WebhookCreate,
+    WebhookUpdate,
+)
 
 
-class UsersMixin:
+class UsersStorageInterface(facet.AsyncioServiceMixin):
+    """Users storage interface.
+
+    .. note::
+        ``None`` values in update DTOs (e.g. ``UserUpdate``, ``CronUpdate``)
+        mean "do not update" rather than "set to null". To clear a field,
+        callers must use an explicit sentinel or a dedicated clear method.
+    """
+
+    # Users
+    async def get_user(
+        self,
+        filter_: UserFilter,
+        sort: BaseSort | None = None,
+    ) -> User | None:
+        raise NotImplementedError
+
     async def get_users(
         self,
-        filter: UserFilter | None = None,
+        filter_: UserFilter | None = None,
         pagination: BasePagination | None = None,
         sort: BaseSort | None = None,
     ) -> AsyncGenerator[User]:
@@ -22,102 +53,207 @@ class UsersMixin:
 
     async def create_user(
         self,
-        user_id: uuid.UUID | None = None,
-        role: UserRoleEnum = UserRoleEnum.USER,
-        agent_settings: "AgentSettings | None" = None,  # noqa: F821
+        data: UserCreate,
     ) -> User:
         raise NotImplementedError
 
-    async def get_user(self, user_id: uuid.UUID) -> User | None:
+    async def update_users(
+        self,
+        filter_: UserFilter | None = None,
+        *, data: UserUpdate,
+    ) -> AsyncGenerator[User]:
         raise NotImplementedError
 
     async def update_user(
         self,
-        user_id: uuid.UUID,
-        role: UserRoleEnum | None | Empty = Empty,
-        agent_settings: "AgentSettings | None | Empty" = Empty,  # noqa: F821
+        filter_: UserFilter,
+        *, data: UserUpdate,
     ) -> User | None:
+        async for user in self.update_users(filter_=filter_, data=data):
+            return user
+        return None
+
+    async def delete_user(self, filter_: UserFilter) -> None:
         raise NotImplementedError
 
-    async def delete_user(self, user_id: uuid.UUID) -> bool:
+    async def delete_users(self, filter_: UserFilter | None = None) -> None:
         raise NotImplementedError
 
-    async def get_user_by_channel(
+    # User channels
+    async def get_user_channel(
         self,
-        channel_key: str,
-        channel_internal_id: str,
-    ) -> User | None:
+        filter_: UserChannelFilter,
+        sort: BaseSort | None = None,
+    ) -> UserChannel | None:
         raise NotImplementedError
 
-    async def get_user_by_session(self, session_id: uuid.UUID) -> User | None:
-        raise NotImplementedError
-
-    async def get_user_by_token(self, token: str) -> User | None:
-        raise NotImplementedError
-
-
-class SessionsMixin:
-    async def get_actual_session(
+    async def get_user_channels(
         self,
-        user_id: uuid.UUID,
-        channel_key: str,
-        channel_internal_id: str,
-    ) -> uuid.UUID | None:
+        filter_: UserChannelFilter | None = None,
+        pagination: BasePagination | None = None,
+        sort: BaseSort | None = None,
+    ) -> AsyncGenerator[UserChannel]:
         raise NotImplementedError
 
-    async def get_user_sessions(
+    async def create_user_channel(
         self,
-        user_id: uuid.UUID,
-        channel_key: str,
-        channel_internal_id: str,
-    ) -> list[uuid.UUID]:
+        data: UserChannelCreate,
+    ) -> UserChannel:
         raise NotImplementedError
 
-    async def attach_session_to_user(
+    async def update_user_channels(
         self,
-        user_id: uuid.UUID,
-        session_id: uuid.UUID,
-        channel_key: str,
-        channel_internal_id: str,
+        filter_: UserChannelFilter | None = None,
+        *, data: UserChannelUpdate,
+    ) -> AsyncGenerator[UserChannel]:
+        raise NotImplementedError
+
+    async def update_user_channel(
+        self,
+        filter_: UserChannelFilter,
+        *, data: UserChannelUpdate,
+    ) -> UserChannel | None:
+        async for channel in self.update_user_channels(filter_=filter_, data=data):
+            return channel
+        return None
+
+    async def delete_user_channel(self, filter_: UserChannelFilter) -> None:
+        raise NotImplementedError
+
+    async def delete_user_channels(
+        self,
+        filter_: UserChannelFilter | None = None,
     ) -> None:
         raise NotImplementedError
 
+    # Crons
+    async def get_cron(
+        self,
+        filter_: CronFilter,
+        sort: BaseSort | None = None,
+    ) -> CronTask | None:
+        raise NotImplementedError
 
-class CronsMixin:
-    async def get_crons(self, user_id: uuid.UUID) -> list[CronTask]:
+    async def get_crons(
+        self,
+        filter_: CronFilter | None = None,
+        pagination: BasePagination | None = None,
+        sort: BaseSort | None = None,
+    ) -> AsyncGenerator[CronTask]:
         raise NotImplementedError
 
     async def create_cron(
         self,
-        user_id: uuid.UUID,
-        cron_task: CronTask,
-    ) -> None:
+        data: CronCreate,
+    ) -> CronTask:
         raise NotImplementedError
 
-    async def remove_cron(self, cron_id: uuid.UUID) -> None:
-        raise NotImplementedError
-
-
-class TokensMixin:
-    async def create_token_for_user(
+    async def update_crons(
         self,
-        user_id: uuid.UUID,
-        ttl: datetime.timedelta | None = datetime.timedelta(days=30),
-    ) -> TokenInfo:
+        filter_: CronFilter | None = None,
+        *, data: CronUpdate,
+    ) -> AsyncGenerator[CronTask]:
         raise NotImplementedError
 
-    async def delete_token(self, token: str):
+    async def update_cron(
+        self,
+        filter_: CronFilter,
+        *, data: CronUpdate,
+    ) -> CronTask | None:
+        async for cron in self.update_crons(filter_=filter_, data=data):
+            return cron
+        return None
+
+    async def delete_cron(self, filter_: CronFilter) -> None:
         raise NotImplementedError
 
-    async def get_tokens(self, user_id: uuid.UUID) -> list[str]:
+    async def delete_crons(self, filter_: CronFilter | None = None) -> None:
         raise NotImplementedError
 
+    # Tokens
+    async def get_token(
+        self,
+        filter_: TokenFilter,
+        sort: BaseSort | None = None,
+    ) -> Token | None:
+        raise NotImplementedError
 
-class UsersStorageInterface(
-    facet.AsyncioServiceMixin,
-    UsersMixin,
-    SessionsMixin,
-    CronsMixin,
-    TokensMixin,
-):
-    pass
+    async def get_tokens(
+        self,
+        filter_: TokenFilter | None = None,
+        pagination: BasePagination | None = None,
+        sort: BaseSort | None = None,
+    ) -> AsyncGenerator[Token]:
+        raise NotImplementedError
+
+    async def create_token(
+        self,
+        data: TokenCreate,
+    ) -> Token:
+        raise NotImplementedError
+
+    async def update_tokens(
+        self,
+        filter_: TokenFilter | None = None,
+        *, data: TokenUpdate,
+    ) -> AsyncGenerator[Token]:
+        raise NotImplementedError
+
+    async def update_token(
+        self,
+        filter_: TokenFilter,
+        *, data: TokenUpdate,
+    ) -> Token | None:
+        async for token in self.update_tokens(filter_=filter_, data=data):
+            return token
+        return None
+
+    async def delete_token(self, filter_: TokenFilter) -> None:
+        raise NotImplementedError
+
+    async def delete_tokens(self, filter_: TokenFilter | None = None) -> None:
+        raise NotImplementedError
+
+    # Webhooks
+    async def get_webhook(
+        self,
+        filter_: WebhookFilter,
+        sort: BaseSort | None = None,
+    ) -> Webhook | None:
+        raise NotImplementedError
+
+    async def get_webhooks(
+        self,
+        filter_: WebhookFilter | None = None,
+        pagination: BasePagination | None = None,
+        sort: BaseSort | None = None,
+    ) -> AsyncGenerator[Webhook]:
+        raise NotImplementedError
+
+    async def create_webhook(
+        self,
+        data: WebhookCreate,
+    ) -> Webhook:
+        raise NotImplementedError
+
+    async def update_webhooks(
+        self,
+        filter_: WebhookFilter | None = None,
+        *, data: WebhookUpdate,
+    ) -> AsyncGenerator[Webhook]:
+        raise NotImplementedError
+
+    async def update_webhook(
+        self,
+        filter_: WebhookFilter,
+        *, data: WebhookUpdate,
+    ) -> Webhook | None:
+        async for webhook in self.update_webhooks(filter_=filter_, data=data):
+            return webhook
+        return None
+
+    async def delete_webhook(self, filter_: WebhookFilter) -> None:
+        raise NotImplementedError
+
+    async def delete_webhooks(self, filter_: WebhookFilter | None = None) -> None:
+        raise NotImplementedError

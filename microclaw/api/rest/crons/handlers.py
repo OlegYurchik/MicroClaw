@@ -4,13 +4,16 @@ from .schemas import CronTaskCreateRequest, CronTaskListResponse, CronTaskRespon
 import fastapi
 
 from microclaw.api.rest.dependencies import auth
+from microclaw.api.rest.dependencies import cron_service as cron_service_dependency
 from microclaw.api.rest.dependencies import resolver as resolver_dependency
 from microclaw.api.rest.dependencies import users_storage as users_storage_dependency
 from microclaw.api.rest.exceptions import HTTPForbidden, HTTPNotFound
-from microclaw.cron import BaseCronTask, CronTaskSettings, get_cron_task
+from microclaw.cron.interfaces import CronServiceInterface
 from microclaw.dto import CronTask, User, UserRoleEnum
 from microclaw.resolver import DependencyResolver
 from microclaw.users_storages import UsersStorageInterface
+from microclaw.users_storages.dto import CronCreate
+from microclaw.users_storages.filters import CronFilter
 
 
 async def list_crons(
@@ -24,13 +27,9 @@ async def list_crons(
         user_id = current_user.id
 
     items: list[CronTask] = []
-    if user_id is not None:
-        items = await users_storage.get_crons(user_id=user_id)
-    else:
-        async for user in users_storage.get_users():
-            user_crons = await users_storage.get_crons(user_id=user.id)
-            for user_cron in user_crons:
-                items.append(user_cron)
+    filter_ = CronFilter(user_id={user_id}) if user_id is not None else None
+    async for cron in users_storage.get_crons(filter_=filter_):
+        items.append(cron)
 
     return CronTaskListResponse.from_items(items=items)
 
@@ -40,6 +39,7 @@ async def create_cron(
     users_storage: UsersStorageInterface = fastapi.Depends(users_storage_dependency),
     resolver: DependencyResolver = fastapi.Depends(resolver_dependency),
     current_user: User = fastapi.Depends(auth),
+    cron_service: CronServiceInterface = fastapi.Depends(cron_service_dependency),
 ) -> CronTaskResponse:
     target_user_id = request.user_id
     if current_user.role != UserRoleEnum.ADMIN:
@@ -49,17 +49,18 @@ async def create_cron(
     elif target_user_id is None:
         target_user_id = current_user.id
 
-    cron_task = CronTask(
-        id=uuid.uuid4(),
-        path=request.path,
-        cron=request.cron,
-        enabled=request.enabled,
-        args=request.args,
+    cron_task = await users_storage.create_cron(
+        data=CronCreate(
+            user_id=target_user_id,
+            path=request.path,
+            cron=request.cron,
+            enabled=request.enabled,
+            args=request.args,
+        )
     )
-    await users_storage.create_cron(user_id=target_user_id, cron_task=cron_task)
 
     if request.enabled:
-        await _schedule_cron(
+        await cron_service.schedule(
             target_user_id,
             cron_task,
             resolver,
@@ -72,46 +73,20 @@ async def delete_cron(
     cron_id: uuid.UUID = fastapi.Path(),
     users_storage: UsersStorageInterface = fastapi.Depends(users_storage_dependency),
     current_user: User = fastapi.Depends(auth),
+    cron_service: CronServiceInterface = fastapi.Depends(cron_service_dependency),
 ) -> None:
     if current_user.role != UserRoleEnum.ADMIN:
-        user_crons = await users_storage.get_crons(user_id=current_user.id)
-        if not any(cron.id == cron_id for cron in user_crons):
+        cron = await users_storage.get_cron(
+            filter_=CronFilter(id={cron_id}, user_id={current_user.id})
+        )
+        if cron is None:
             raise HTTPNotFound()
     else:
-        found = False
-        async for user in users_storage.get_users():
-            user_crons = await users_storage.get_crons(user_id=user.id)
-            if any(cron.id == cron_id for cron in user_crons):
-                found = True
-                break
-        if not found:
+        cron = await users_storage.get_cron(filter_=CronFilter(id={cron_id}))
+        if cron is None:
             raise HTTPNotFound()
 
-    await users_storage.remove_cron(cron_id=cron_id)
-    await _unschedule_cron(cron_id)
-
-async def _schedule_cron(
-    user_id: uuid.UUID,
-    cron_task: CronTask,
-    resolver: DependencyResolver,
-) -> None:
-    settings = CronTaskSettings(
-        path=cron_task.path,
-        cron=cron_task.cron,
-        enabled=cron_task.enabled,
-        args=cron_task.args,
+    await users_storage.delete_cron(
+        filter_=CronFilter(id={cron_id})
     )
-    key = f"rest_{user_id}_{cron_task.id}"
-    task = await get_cron_task(key=key, settings=settings, resolver=resolver)
-    await task.start()
-
-
-async def _unschedule_cron(cron_id: uuid.UUID) -> None:
-    scheduler = BaseCronTask.get_scheduler()
-    for key in list(BaseCronTask._tasks.keys()):
-        if key.endswith(str(cron_id)):
-            if scheduler.running and scheduler.get_job(key):
-                scheduler.remove_job(key)
-            if key in BaseCronTask._tasks:
-                del BaseCronTask._tasks[key]
-            break
+    await cron_service.unschedule(cron_id)

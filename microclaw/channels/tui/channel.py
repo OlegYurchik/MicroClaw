@@ -6,7 +6,7 @@ import uuid
 from .printer import AgentMessagePrinter
 from .settings import TUIChannelSettings
 from .ui import RoleEnum, TUIApp
-from .ui.widgets.slash_commands import BaseSlashCommand, ExitCommand, ModelsCommand
+from .ui.widgets.slash_commands import BaseSlashCommand, ExitCommand
 from loguru import logger
 from pydantic import BaseModel, ConfigDict
 
@@ -16,6 +16,8 @@ from microclaw.dto import AgentMessage, DecisionEnum, User
 from microclaw.sessions_storages.interfaces import SessionsStorageInterface
 from microclaw.syncers import SyncerInterface
 from microclaw.users_storages import UsersStorageInterface
+from microclaw.users_storages.dto import UserCreate
+from microclaw.users_storages.filters import UserChannelFilter, UserFilter
 from microclaw.utils.context import set_current_request_id
 
 
@@ -52,7 +54,6 @@ class TUIChannel(BaseChannel):
         self._user: User | None = None
         self._slash_commands: list[BaseSlashCommand] = [
             ExitCommand(),
-            ModelsCommand(),
         ]
         self._app = TUIApp(channel=self)
         self._processing_lock = asyncio.Lock()
@@ -61,16 +62,31 @@ class TUIChannel(BaseChannel):
         self._printers: dict[str | int, AgentMessagePrinter] = {}
 
     @property
+    def app(self) -> TUIApp:
+        return self._app
+
+    @property
+    def user(self) -> User | None:
+        return self._user
+
+    @property
     def slash_commands(self) -> list[BaseSlashCommand]:
         return self._slash_commands
 
     async def start(self):
-        self._user = await self._users_storage.get_user_by_channel(
-            channel_key=self._channel_key,
-            channel_internal_id=self.CHANNEL_INTERNAL_ID,
+        self._user = None
+        channel = await self._users_storage.get_user_channel(
+            filter_=UserChannelFilter(
+                channel_key={self._channel_key},
+                channel_internal_id={self.CHANNEL_INTERNAL_ID},
+            )
         )
+        if channel is not None:
+            self._user = await self._users_storage.get_user(
+                filter_=UserFilter(id={channel.user_id})
+            )
         if self._user is None:
-            self._user = await self._users_storage.create_user()
+            self._user = await self._users_storage.create_user(data=UserCreate())
 
         for handler_id, handler in list(logger._core.handlers.items()):
             sink = handler._sink

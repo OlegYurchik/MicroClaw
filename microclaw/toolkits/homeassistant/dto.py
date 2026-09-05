@@ -1,7 +1,6 @@
-from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import AwareDatetime, BaseModel, Field
 
 
 class Context(BaseModel):
@@ -27,15 +26,15 @@ class State(BaseModel):
         default_factory=dict,
         description="Entity attributes",
     )
-    last_changed: datetime | None = Field(
+    last_changed: AwareDatetime | None = Field(
         default=None,
         description="Last time the state changed",
     )
-    last_updated: datetime | None = Field(
+    last_updated: AwareDatetime | None = Field(
         default=None,
         description="Last time the entity was updated",
     )
-    last_reported: datetime | None = Field(
+    last_reported: AwareDatetime | None = Field(
         default=None,
         description="Last time the state was reported to the server",
     )
@@ -85,11 +84,11 @@ class StateHistory(BaseModel):
         default_factory=list,
         description="List of historical state entries",
     )
-    start_timestamp: datetime | None = Field(
+    start_timestamp: AwareDatetime | None = Field(
         default=None,
         description="Start of the history period",
     )
-    end_timestamp: datetime | None = Field(
+    end_timestamp: AwareDatetime | None = Field(
         default=None,
         description="End of the history period",
     )

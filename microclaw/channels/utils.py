@@ -4,6 +4,7 @@ import uuid
 
 from microclaw.dto import AgentMessage
 from microclaw.sessions_storages import SessionsStorageInterface
+from microclaw.sessions_storages.dto import MessageCreate
 
 
 class AgentMessageCollector:
@@ -64,8 +65,10 @@ class AgentMessageSaver(AgentMessageCollector):
 
     async def _flush_messages(self):
         for message in self._messages:
-            await self._sessions_storage.add_message(
-                session_id=self._session_id,
-                message=message,
+            await self._sessions_storage.create_message(
+                data=MessageCreate(
+                    session_id=self._session_id,
+                    message=message,
+                ),
             )
         self._messages = []

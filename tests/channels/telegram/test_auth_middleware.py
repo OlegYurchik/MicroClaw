@@ -47,10 +47,8 @@ class TestAuthMiddleware:
 
     @pytest.mark.asyncio
     async def test_auth_no_allow_from(self, handler, make_event):
-        middleware = AuthMiddleware(allow_from=[])
-        event = make_event(user_id=123)
-        await middleware(handler, event, {})
-        handler.assert_awaited_once()
+        with pytest.raises(ValueError, match="allow_from must be configured explicitly"):
+            AuthMiddleware(allow_from=[])
 
     @pytest.mark.asyncio
     async def test_auth_str_id_matching(self, handler, make_event):

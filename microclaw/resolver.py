@@ -1,6 +1,7 @@
 import pathlib
 import shutil
 from types import NoneType
+from typing import Any
 import uuid
 
 from .agents import (
@@ -28,11 +29,20 @@ from .users_storages import (
     UsersStorageSettingsType,
     get_users_storage,
 )
+from .users_storages.filters import CronFilter
 from .utils import get_by_key_or_first
+from .webhooks import BaseWebhook, get_webhook
 from loguru import logger
+from pydantic import BaseModel, ConfigDict
 import skilly
 from skilly.skills import discover_github_skills
 from skilly.skillsmp.client import SkillsMp
+
+
+class ToolkitReference(BaseModel):
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+    key: str
+    toolkit: BaseToolKit
 
 
 class DependencyResolver:
@@ -46,6 +56,8 @@ class DependencyResolver:
         self._crons: dict[str, BaseCronTask] | None = None
         self._syncer: SyncerInterface | None = None
         self._users_storages: dict[str, UsersStorageInterface] | None = None
+        self._global_webhooks: dict[uuid.UUID, BaseWebhook] | None = None
+        self._cron_service: Any | None = None
 
     @property
     def settings(self) -> MicroclawSettings:
@@ -191,11 +203,11 @@ class DependencyResolver:
             agent_toolkits = toolkits
         else:
             for toolkit_settings in agent_settings.toolkits:
-                toolkit_key, toolkit = self._resolve_toolkit_reference(
+                ref = self._resolve_toolkit_reference(
                     toolkit_settings=toolkit_settings,
                     toolkits=toolkits,
                 )
-                agent_toolkits[toolkit_key] = toolkit
+                agent_toolkits[ref.key] = ref.toolkit
 
         mcps = self._settings.mcp
         if agent_settings.mcp is None:
@@ -416,18 +428,24 @@ class DependencyResolver:
         self,
         toolkit_settings: ToolKitSettings | str,
         toolkits: dict[str, BaseToolKit],
-    ) -> tuple[str, BaseToolKit]:
+    ) -> ToolkitReference:
         if isinstance(toolkit_settings, str):
             if toolkit_settings in toolkits:
-                return toolkit_settings, toolkits[toolkit_settings]
-            return toolkit_settings, get_toolkit(
+                return ToolkitReference(key=toolkit_settings, toolkit=toolkits[toolkit_settings])
+            return ToolkitReference(
                 key=toolkit_settings,
-                toolkit_settings_or_path=toolkit_settings,
+                toolkit=get_toolkit(
+                    key=toolkit_settings,
+                    toolkit_settings_or_path=toolkit_settings,
+                ),
             )
         toolkit_key = toolkit_settings.name or toolkit_settings.path
-        return toolkit_key, get_toolkit(
+        return ToolkitReference(
             key=toolkit_key,
-            toolkit_settings_or_path=toolkit_settings,
+            toolkit=get_toolkit(
+                key=toolkit_key,
+                toolkit_settings_or_path=toolkit_settings,
+            ),
         )
 
     async def resolve_stts(self) -> dict[str, STT]:
@@ -498,7 +516,11 @@ class DependencyResolver:
             users_storages = await self.resolve_users_storages()
             for storage_key, users_storage in users_storages.items():
                 async for user in users_storage.get_users():
-                    user_crons = await users_storage.get_crons(user_id=user.id)
+                    user_crons = [
+                        cron async for cron in users_storage.get_crons(
+                            filter_=CronFilter(user_id={user.id})
+                        )
+                    ]
                     for cron_task in user_crons:
                         if not cron_task.enabled:
                             continue
@@ -517,3 +539,22 @@ class DependencyResolver:
                             resolver=self,
                         )
         return self._crons
+
+    async def resolve_cron_service(self) -> Any:
+        if self._cron_service is None:
+            from microclaw.cron.service import CronService
+            crons = await self.resolve_crons()
+            self._cron_service = CronService(crons=crons)
+        return self._cron_service
+
+    async def resolve_global_webhooks(self) -> dict[uuid.UUID, BaseWebhook]:
+        if self._global_webhooks is None:
+            self._global_webhooks = {}
+            for name, webhook_settings in self._settings.webhooks.items():
+                if not webhook_settings.enabled:
+                    continue
+                webhook_id = uuid.uuid5(uuid.NAMESPACE_DNS, f"microclaw.global.{name}")
+                self._global_webhooks[webhook_id] = await get_webhook(
+                    settings=webhook_settings, resolver=self
+                )
+        return self._global_webhooks

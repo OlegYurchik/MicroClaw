@@ -27,6 +27,7 @@ from .toolkits import ToolKitSettings
 from .users_storages import UsersStorageSettingsType
 from .users_storages.filesystem import FilesystemUsersStorageSettings
 from .utils import get_by_key_or_first
+from .webhooks import WebhookSettings
 from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings
 import yaml
@@ -90,6 +91,7 @@ class MicroclawSettings(BaseSettings):
     channels: dict[str, ChannelSettingsType] = Field(default_factory=dict)
     syncer: SyncerSettingsType = Field(default_factory=MemorySyncerSettings)
     cron: dict[str, CronTaskSettings] = Field(default_factory=dict)
+    webhooks: dict[str, WebhookSettings] = Field(default_factory=dict)
 
     @model_validator(mode="after")
     def validate(self) -> Self:
@@ -219,7 +221,7 @@ class MicroclawSettings(BaseSettings):
             stt_settings.model = model_value
 
         toolkit_names = set()
-        for toolkit_settings in self.toolkits:
+        for toolkit_settings in self.toolkits.values():
             if isinstance(toolkit_settings, str) or toolkit_settings.name is None:
                 continue
             if toolkit_settings.name in toolkit_names:
@@ -227,6 +229,7 @@ class MicroclawSettings(BaseSettings):
                     f"Toolkits must be have unique names. Name '{toolkit_settings.name}' "
                     "already defined"
                 )
+            toolkit_names.add(toolkit_settings.name)
 
         mcp_names = set()
         for name, mcp_settings in self.mcp.items():
@@ -262,6 +265,30 @@ class MicroclawSettings(BaseSettings):
                             f"references repository '{skill_item.repo}' which is not "
                             f"defined in skills_repositories"
                         )
+
+        webhook_paths = set()
+        for name, webhook_settings in self.webhooks.items():
+            if webhook_settings.path in webhook_paths:
+                raise ValueError(
+                    f"Webhook path collision: '{webhook_settings.path}'"
+                )
+            webhook_paths.add(webhook_settings.path)
+
+            agent_value = webhook_settings.args.get("agent")
+            if isinstance(agent_value, str):
+                agent = get_by_key_or_first(storage=self.agents, key=agent_value)
+                if agent is None:
+                    raise ValueError(
+                        f"Agent '{agent_value}' for webhook '{name}' not exists"
+                    )
+
+            channel_value = webhook_settings.args.get("channel")
+            if isinstance(channel_value, str):
+                channel = get_by_key_or_first(storage=self.channels, key=channel_value)
+                if channel is None:
+                    raise ValueError(
+                        f"Channel '{channel_value}' for webhook '{name}' not exists"
+                    )
 
         return self
 

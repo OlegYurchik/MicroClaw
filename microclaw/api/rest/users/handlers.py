@@ -16,8 +16,9 @@ from microclaw.api.rest.exceptions import HTTPNotFound
 from microclaw.api.rest.schemas import ListQueryParams, TokenResponse, UserResponse
 from microclaw.dto import User
 from microclaw.users_storages import UsersStorageInterface
-from microclaw.users_storages.filters import UserFilter
-from microclaw.utils import Empty
+from microclaw.users_storages.dto import TokenCreate, UserCreate, UserUpdate
+from microclaw.users_storages.filters import TokenFilter, UserChannelFilter, UserFilter
+from microclaw.utils import utcnow
 
 
 async def list_users(
@@ -26,11 +27,11 @@ async def list_users(
     users_storage: UsersStorageInterface = fastapi.Depends(users_storage),
     _: User = fastapi.Depends(is_admin),
 ) -> UserListResponse:
-    filter_ = UserFilter(role=role)
+    filter_ = UserFilter(role={role}) if role else UserFilter()
 
     users = [
         user async for user in users_storage.get_users(
-            filter=filter_, pagination=params.get_pagination(), sort=params.get_sort()
+            filter_=filter_, pagination=params.get_pagination(), sort=params.get_sort()
         )
     ]
     response = UserListResponse.from_items(items=users)
@@ -45,8 +46,10 @@ async def create_user(
     user_create_request: UserCreateRequest = fastapi.Body(embed=False),
 ) -> UserResponse:
     user = await users_storage.create_user(
-        role=user_create_request.role,
-        agent_settings=user_create_request.agent,
+        data=UserCreate(
+            role=user_create_request.role,
+            agent=user_create_request.agent,
+        )
     )
     return UserResponse.from_item(item=user)
 
@@ -65,11 +68,15 @@ async def update_user(
     user_update_request: UserUpdateRequest = fastapi.Body(embed=False),
 ) -> UserResponse:
     update_data = user_update_request.model_dump(exclude_unset=True)
-    updated = await users_storage.update_user(
-        user_id=target_user.id,
-        role=update_data.get("role", Empty),
-        agent_settings=update_data.get("agent", Empty),
-    )
+    updated = None
+    async for user in users_storage.update_users(
+        filter_=UserFilter(id={target_user.id}),
+        data=UserUpdate(
+            role=update_data.get("role"),
+            agent=update_data.get("agent"),
+        ),
+    ):
+        updated = user
     return UserResponse.from_item(item=updated)
 
 
@@ -78,7 +85,9 @@ async def delete_user(
     _: User = fastapi.Depends(is_admin),
     target_user: User = fastapi.Depends(user_dependency),
 ) -> None:
-    await users_storage.delete_user(user_id=target_user.id)
+    await users_storage.delete_user(
+        filter_=UserFilter(id={target_user.id})
+    )
 
 
 async def list_user_sessions(
@@ -86,11 +95,12 @@ async def list_user_sessions(
     _: User = fastapi.Depends(is_admin_or_self),
     target_user: User = fastapi.Depends(user_dependency),
 ) -> UserSessionsResponse:
-    sessions = await users_storage.get_user_sessions(
-        user_id=target_user.id,
-        channel_key="rest",
-        channel_internal_id=str(target_user.id),
-    )
+    sessions = []
+    async for channel in users_storage.get_user_channels(
+        filter_=UserChannelFilter(user_id={target_user.id})
+    ):
+        if channel.actual_session_id is not None:
+            sessions.append(channel.actual_session_id)
     return UserSessionsResponse.from_items(items=sessions)
 
 
@@ -100,13 +110,11 @@ async def create_user_token(
     target_user: User = fastapi.Depends(user_dependency),
     token_create_request: TokenCreateRequest = fastapi.Body(embed=False),
 ) -> TokenResponse:
-    ttl = (
-        datetime.timedelta(days=token_create_request.ttl_days)
-        if token_create_request.ttl_days is not None
-        else None
-    )
-    token_info = await users_storage.create_token_for_user(
-        user_id=target_user.id, ttl=ttl
+    expires_at = None
+    if token_create_request.ttl_days is not None:
+        expires_at = utcnow() + datetime.timedelta(days=token_create_request.ttl_days)
+    token_info = await users_storage.create_token(
+        data=TokenCreate(user_id=target_user.id, expires_at=expires_at)
     )
     return TokenResponse(token=token_info.token, expires_at=token_info.expires_at)
 
@@ -117,7 +125,11 @@ async def delete_user_token(
     target_user: User = fastapi.Depends(user_dependency),
     token: str = fastapi.Path(),
 ) -> None:
-    token_owner = await users_storage.get_user_by_token(token=token)
-    if token_owner is None or token_owner.id != target_user.id:
+    token_info = await users_storage.get_token(
+        filter_=TokenFilter(token={token})
+    )
+    if token_info is None or token_info.user_id != target_user.id:
         raise HTTPNotFound()
-    await users_storage.delete_token(token=token)
+    await users_storage.delete_token(
+        filter_=TokenFilter(token={token})
+    )

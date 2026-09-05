@@ -17,6 +17,7 @@ from aiogram.exceptions import (
     TelegramServerError,
 )
 from aiogram.filters.callback_data import CallbackData
+from aiogram.types import KeyboardButton, ReplyKeyboardMarkup
 from loguru import logger
 from tenacity import (
     retry,
@@ -66,6 +67,14 @@ class BaseTelegramChannel(BaseChannel):
     CHAT_ID_CONTEXT = contextvars.ContextVar("chat_id", default=None)
     RESET_CONTEXT_BUTTON_TEXT = "Reset context"
     QUEUED_MESSAGE_TEXT = "⏳ Message queued"
+
+    def _get_keyboard(self) -> ReplyKeyboardMarkup:
+        return ReplyKeyboardMarkup(
+            keyboard=[
+                [KeyboardButton(text=self.RESET_CONTEXT_BUTTON_TEXT)]
+            ],
+            resize_keyboard=True,
+        )
 
     def __init__(
         self,
@@ -434,7 +443,11 @@ class BaseTelegramChannel(BaseChannel):
             finally:
                 self._printers.pop(cid, None)
 
-    async def _send_system_message(self, chat_id: str | int, text: str) -> None:
+    async def _send_system_message(self, chat_id: str | int, text: str | None) -> None:
+        if text is None:
+            return
+        text = text[:self.MAX_MESSAGE_LENGTH]
+
         _send = retry(
             retry=retry_if_exception_type(
                 (TelegramNetworkError, TelegramRetryAfter, TelegramServerError)

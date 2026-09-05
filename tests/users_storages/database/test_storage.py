@@ -1,9 +1,9 @@
-from metaorm import NotFoundError
 import pytest
 
 from microclaw.users_storages.database.settings import DatabaseUsersStorageSettings
 from microclaw.users_storages.database.storage import DatabaseUsersStorage
 from microclaw.users_storages.dto import TokenCreate, TokenUpdate, UserCreate
+from microclaw.users_storages.filters import TokenFilter
 from tests.users_storages.helpers import (
     assert_cron_crud,
     assert_delete_users_filter,
@@ -56,10 +56,13 @@ async def test_start_creates_tables(tmp_path):
 
 @pytest.mark.asyncio
 async def test_update_token_not_found_raises(database_users_storage):
-    with pytest.raises(NotFoundError):
-        await database_users_storage.update_token(
-            "nonexistent", data=TokenUpdate(expires_at=None)
+    updated = [
+        t async for t in database_users_storage.update_tokens(
+            filter_=TokenFilter(token={"nonexistent"}),
+            data=TokenUpdate(expires_at=None),
         )
+    ]
+    assert len(updated) == 0
 
 
 @pytest.mark.asyncio

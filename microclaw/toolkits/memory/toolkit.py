@@ -2,6 +2,7 @@ import datetime
 import uuid
 
 from .drivers.fabric import get_memory_driver
+from .drivers.interfaces import MemoryDriverInterface
 from .settings import MemoryToolKitSettings
 from langgraph.types import interrupt
 import tiktoken
@@ -37,9 +38,14 @@ class MemoryToolKit(BaseToolKit[MemoryToolKitSettings]):
     ]
     discovery_capabilities: list[DiscoveryCapability] = []
 
-    def __init__(self, key: str, settings: MemoryToolKitSettings):
+    def __init__(
+        self,
+        key: str,
+        settings: MemoryToolKitSettings,
+        driver: MemoryDriverInterface | None = None,
+    ):
         super().__init__(key=key, settings=settings)
-        self._driver = get_memory_driver(settings=self._arguments.driver)
+        self._driver = driver or get_memory_driver(settings=self._arguments.driver)
 
     @tool
     async def get_memory(

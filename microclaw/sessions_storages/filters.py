@@ -1,17 +1,22 @@
-from datetime import datetime
 import uuid
 
+from pydantic import AwareDatetime
 from pydantic_filters import BaseFilter
 
 
 class SessionFilter(BaseFilter):
-    id: uuid.UUID | None = None
-    created_at: datetime | None = None
-    updated_at: datetime | None = None
+    id: set[uuid.UUID]
+    created_at: set[AwareDatetime]
+    updated_at: set[AwareDatetime]
+    channel_key: set[str]
+    created_at__gt: AwareDatetime
+    created_at__lt: AwareDatetime
+    updated_at__gt: AwareDatetime
+    updated_at__lt: AwareDatetime
 
 
 class MessageFilter(BaseFilter):
-    id: uuid.UUID | None = None
-    session_id: uuid.UUID | None = None
-    created_at: datetime | None = None
-    role: str | None = None
+    id: set[uuid.UUID]
+    session_id: set[uuid.UUID]
+    created_at: set[AwareDatetime]
+    role: set[str]

@@ -1,10 +1,11 @@
 import asyncio
 
-import facet
 import typer
 
 
-def run(ctx: typer.Context):
+async def _run(ctx: typer.Context):
+    # Inline imports avoid a circular dependency: cron -> resolver -> cron
+    from microclaw.cron.service import CronService
     from microclaw.resolver import DependencyResolver
     from microclaw.settings import MicroclawSettings
 
@@ -12,14 +13,17 @@ def run(ctx: typer.Context):
 
     resolver = DependencyResolver(settings=settings)
 
-    crons = asyncio.run(resolver.resolve_crons())
+    crons = await resolver.resolve_crons()
     if not crons:
         raise ValueError("You need to setup cron tasks")
 
-    service = facet.AsyncioServiceMixin()
-    service.dependencies = crons
+    service = CronService(crons=crons)
 
-    asyncio.run(service.run())
+    await service.run()
+
+
+def run(ctx: typer.Context):
+    asyncio.run(_run(ctx))
 
 
 def get_cli() -> typer.Typer:

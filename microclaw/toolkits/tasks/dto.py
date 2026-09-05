@@ -1,7 +1,7 @@
 from datetime import date, datetime
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import AwareDatetime, BaseModel, Field
 
 
 class TaskList(BaseModel):
@@ -50,13 +50,13 @@ class Task(BaseModel):
         default=None, description="Start date/time of the task"
     )
     completed: bool = Field(default=False, description="Whether the task is completed")
-    completed_at: datetime | None = Field(
+    completed_at: AwareDatetime | None = Field(
         default=None, description="When the task was completed"
     )
-    created: datetime | None = Field(
+    created: AwareDatetime | None = Field(
         default=None, description="When the task was created"
     )
-    modified: datetime | None = Field(
+    modified: AwareDatetime | None = Field(
         default=None, description="When the task was last modified"
     )
     percent_complete: int | None = Field(

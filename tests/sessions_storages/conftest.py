@@ -31,4 +31,7 @@ async def database_sessions_storage(tmp_path) -> DatabaseSessionsStorage:
     settings = DatabaseSessionsStorageSettings(dsn=f"sqlite+aiosqlite:///{db_path}")
     storage = DatabaseSessionsStorage(settings=settings)
     await storage.start()
-    yield storage
+    try:
+        yield storage
+    finally:
+        await storage.stop()

@@ -1,10 +1,11 @@
 import base64
-import datetime
 import json
 from typing import Any, Generic, Self, TypeVar
 import uuid
 
-from pydantic import BaseModel, Field
+from pydantic import AwareDatetime, BaseModel, Field
+from pydantic_filters import BaseSort, SortByOrder
+from pydantic_filters.pagination import OffsetPagination
 
 from microclaw.dto import User, UserRoleEnum
 
@@ -34,7 +35,7 @@ class UserResponse(BaseModel):
 
 class TokenResponse(BaseModel):
     token: str
-    expires_at: datetime.datetime | None = None
+    expires_at: AwareDatetime | None = None
 
 
 class ListQueryParams(BaseModel):
@@ -54,14 +55,12 @@ class ListQueryParams(BaseModel):
             return 0
 
     def get_sort(self):
-        from pydantic_filters import BaseSort, SortByOrder
         if self.sort_by is None:
             return None
         order = SortByOrder.asc if self.sort_order == "asc" else SortByOrder.desc
         return BaseSort(sort_by=self.sort_by, sort_by_order=order)
 
     def get_pagination(self):
-        from pydantic_filters.pagination import OffsetPagination
         return OffsetPagination(offset=self.offset, limit=self.limit)
 
     def next_cursor(self, returned_count: int) -> str | None:

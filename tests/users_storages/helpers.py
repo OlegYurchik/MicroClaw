@@ -1,7 +1,6 @@
 from datetime import timedelta
 import uuid
 
-from metaorm import AlreadyExistsError
 from pydantic_filters import BaseSort, SortByOrder
 from pydantic_filters.pagination import OffsetPagination
 import pytest
@@ -17,6 +16,7 @@ from microclaw.users_storages.dto import (
     UserCreate,
     UserUpdate,
 )
+from microclaw.users_storages.exceptions import AlreadyExistsError
 from microclaw.users_storages.filters import (
     CronFilter,
     TokenFilter,
@@ -31,12 +31,12 @@ async def assert_user_crud(storage: UsersStorageInterface) -> None:
     user1 = await storage.create_user(data=UserCreate(role=UserRoleEnum.USER))
     user2 = await storage.create_user(data=UserCreate(role=UserRoleEnum.ADMIN))
 
-    fetched = await storage.get_user(user1.id)
+    fetched = await storage.get_user(filter_=UserFilter(id={user1.id}))
     assert fetched is not None
     assert fetched.id == user1.id
     assert fetched.role == UserRoleEnum.USER
 
-    assert await storage.get_user(uuid.uuid4()) is None
+    assert await storage.get_user(filter_=UserFilter(id={uuid.uuid4()})) is None
 
     users = [u async for u in storage.get_users()]
     assert len(users) == 2
@@ -48,14 +48,22 @@ async def assert_user_crud(storage: UsersStorageInterface) -> None:
     assert len(admins) == 1
     assert admins[0].id == user2.id
 
-    updated = await storage.update_user(user1.id, data=UserUpdate(agent={"model": "x"}))
+    updated = None
+    async for u in storage.update_users(
+        filter_=UserFilter(id={user1.id}),
+        data=UserUpdate(agent={"model": "x"}),
+    ):
+        updated = u
     assert updated is not None
     assert updated.agent == {"model": "x"}
 
-    assert (
-        await storage.update_user(uuid.uuid4(), data=UserUpdate(agent={"model": "y"}))
-        is None
-    )
+    not_found = None
+    async for u in storage.update_users(
+        filter_=UserFilter(id={uuid.uuid4()}),
+        data=UserUpdate(agent={"model": "y"}),
+    ):
+        not_found = u
+    assert not_found is None
 
     async for _ in storage.update_users(
         filter_=UserFilter(role={UserRoleEnum.USER}),
@@ -68,10 +76,10 @@ async def assert_user_crud(storage: UsersStorageInterface) -> None:
     assert len(users) == 1
     assert users[0].agent == {"bulk": True}
 
-    await storage.delete_user(user2.id)
-    assert await storage.get_user(user2.id) is None
+    await storage.delete_user(filter_=UserFilter(id={user2.id}))
+    assert await storage.get_user(filter_=UserFilter(id={user2.id})) is None
 
-    await storage.delete_user(uuid.uuid4())
+    await storage.delete_user(filter_=UserFilter(id={uuid.uuid4()}))
 
     with pytest.raises(AlreadyExistsError):
         await storage.create_user(data=UserCreate(id=user1.id))
@@ -164,7 +172,7 @@ async def assert_token_crud(storage: UsersStorageInterface) -> None:
     )
     assert token2.token == "abc123"
 
-    fetched = await storage.get_token("abc123")
+    fetched = await storage.get_token(filter_=TokenFilter(token={"abc123"}))
     assert fetched is not None
     assert fetched.token == "abc123"
 
@@ -193,14 +201,17 @@ async def assert_token_crud(storage: UsersStorageInterface) -> None:
     assert tokens[0].token == "abc123"
 
     new_expiry = utcnow() + timedelta(days=1)
-    updated = await storage.update_token(
-        "abc123", data=TokenUpdate(expires_at=new_expiry)
-    )
+    updated = None
+    async for t in storage.update_tokens(
+        filter_=TokenFilter(token={"abc123"}),
+        data=TokenUpdate(expires_at=new_expiry),
+    ):
+        updated = t
     assert updated is not None
     assert updated.expires_at == new_expiry
 
-    await storage.delete_token("abc123")
-    assert await storage.get_token("abc123") is None
+    await storage.delete_token(filter_=TokenFilter(token={"abc123"}))
+    assert await storage.get_token(filter_=TokenFilter(token={"abc123"})) is None
 
     await storage.delete_tokens(filter_=TokenFilter(user_id={user.id}))
     tokens = [t async for t in storage.get_tokens()]
@@ -220,7 +231,7 @@ async def assert_cron_crud(storage: UsersStorageInterface) -> None:
     crons = [c async for c in storage.get_crons()]
     assert len(crons) == 2
 
-    fetched = await storage.get_cron(cron1.id)
+    fetched = await storage.get_cron(filter_=CronFilter(id={cron1.id}))
     assert fetched is not None
     assert fetched.id == cron1.id
 
@@ -234,7 +245,12 @@ async def assert_cron_crud(storage: UsersStorageInterface) -> None:
     assert len(crons) == 1
     assert crons[0].id == cron1.id
 
-    updated = await storage.update_cron(cron1.id, data=CronUpdate(enabled=False))
+    updated = None
+    async for c in storage.update_crons(
+        filter_=CronFilter(id={cron1.id}),
+        data=CronUpdate(enabled=False),
+    ):
+        updated = c
     assert updated is not None
     assert updated.enabled is False
 
@@ -249,8 +265,8 @@ async def assert_cron_crud(storage: UsersStorageInterface) -> None:
     for c in updated_crons:
         assert c.args == {"key": "value"}
 
-    await storage.delete_cron(cron1.id)
-    assert await storage.get_cron(cron1.id) is None
+    await storage.delete_cron(filter_=CronFilter(id={cron1.id}))
+    assert await storage.get_cron(filter_=CronFilter(id={cron1.id})) is None
 
     await storage.delete_crons(filter_=CronFilter(enabled=False))
     crons = [c async for c in storage.get_crons()]

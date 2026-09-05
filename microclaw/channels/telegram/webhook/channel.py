@@ -35,7 +35,7 @@ class TelegramWebhookChannel(BaseTelegramChannel):
         self._socket_path: str | None = None
         self._cloudflare_service: CloudflareTunnelService | None = None
 
-        if self._settings.cloudflare.enabled:
+        if self._settings.cloudflare_tunnel.enabled:
             temp_dir = tempfile.gettempdir()
             self._socket_path = os.path.join(
                 temp_dir, f"fcgi-socket-{os.getpid()}.sock"
@@ -44,7 +44,7 @@ class TelegramWebhookChannel(BaseTelegramChannel):
             local_url = f"http+unix://{self._socket_path}"
 
             self._cloudflare_service = CloudflareTunnelService(
-                settings=self._settings.cloudflare,
+                settings=self._settings.cloudflare_tunnel,
                 local_url=local_url,
                 port=self._settings.port,
             )
@@ -63,7 +63,7 @@ class TelegramWebhookChannel(BaseTelegramChannel):
             base_url = yarl.URL(await self._cloudflare_service.get_public_url())
         else:
             if not self._settings.root_url:
-                raise ValueError("root_url is required when cloudflare is disabled")
+                raise ValueError("root_url is required when cloudflare_tunnel is disabled")
             base_url = yarl.URL(str(self._settings.root_url))
 
         webhook_url = base_url / self._settings.root_path.lstrip("/")
@@ -91,7 +91,7 @@ class TelegramWebhookChannel(BaseTelegramChannel):
         )
         app.post("/")(self.handler)
 
-        if self._settings.cloudflare.enabled and self._socket_path:
+        if self._settings.cloudflare_tunnel.enabled and self._socket_path:
             self._ensure_socket_cleanup()
             config = uvicorn.Config(app=app, uds=self._socket_path)
         else:

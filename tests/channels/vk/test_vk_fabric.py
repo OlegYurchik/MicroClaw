@@ -21,7 +21,6 @@ class TestGetVKChannel:
             "syncer": MagicMock(),
             "users_storage": MagicMock(),
             "resolver": MagicMock(),
-            "bot": MagicMock(),
         }
 
     def test_polling(self, settings, dependencies):

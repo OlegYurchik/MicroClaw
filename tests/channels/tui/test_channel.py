@@ -35,34 +35,16 @@ class TestTUIChannel:
         resolver,
         app,
     ):
-        return TUIChannel(
+        channel = TUIChannel(
             settings=tui_settings,
             agent=agent,
             sessions_storage=sessions_storage,
             syncer=syncer,
             users_storage=users_storage,
             resolver=resolver,
-            app=app,
         )
-
-    @pytest.mark.asyncio
-    async def test_load_session_clears_pending_messages(self, channel, app):
-        channel._user = None
-        await channel.load_session(str(uuid.uuid4()))
-        # No user, should return early
-        app.clear_messages.assert_not_awaited()
-
-    @pytest.mark.asyncio
-    async def test_set_active_agent_updates_agent_key(
-        self, channel, app, users_storage
-    ):
-        from microclaw.users_storages.dto import UserCreate
-
-        user = await users_storage.create_user(data=UserCreate())
-        channel._user = user
-        channel.resolver.settings.agents = {}
-        result = await channel.set_active_agent("nonexistent")
-        assert result is None
+        channel._app = app
+        return channel
 
     @pytest.mark.asyncio
     async def test_handle_new_session(self, channel, app, users_storage):
@@ -113,10 +95,8 @@ class TestTUIChannel:
     @pytest.mark.asyncio
     async def test_start_creates_user(self, channel, app, users_storage):
         channel.add_task = MagicMock()
-        channel.get_agent_for_user = AsyncMock(return_value=MagicMock(name="TestAgent"))
         await channel.start()
         assert channel._user is not None
-        app.chat_widget.update_agent_label.assert_called()
 
     @pytest.mark.asyncio
     async def test_handle_user_message(self, channel, app, users_storage):

@@ -28,6 +28,8 @@ class TypingManager:
                 await self._background_task
             except asyncio.CancelledError:
                 pass
+            finally:
+                self._background_task = None
 
     async def run(self):
         while True:

@@ -12,11 +12,17 @@ from microclaw.channels.telegram.webhook.settings import TelegramWebhookSettings
 class TestGetTelegramChannel:
     @pytest.fixture
     def polling_settings(self):
-        return TelegramSettings(token="test_token")
+        return TelegramSettings(
+            token="123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11",
+            allow_from=["*"],
+        )
 
     @pytest.fixture
     def webhook_settings(self):
-        return TelegramWebhookSettings(token="test_token")
+        return TelegramWebhookSettings(
+            token="123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11",
+            allow_from=["*"],
+        )
 
     @pytest.fixture
     def dependencies(self):
@@ -26,8 +32,6 @@ class TestGetTelegramChannel:
             "syncer": MagicMock(),
             "users_storage": MagicMock(),
             "resolver": MagicMock(),
-            "bot": MagicMock(),
-            "dispatcher": MagicMock(),
         }
 
     def test_polling(self, polling_settings, dependencies):

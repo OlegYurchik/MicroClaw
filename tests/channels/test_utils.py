@@ -61,10 +61,10 @@ async def test_collector_register_new_message_different_chunk():
 
 @pytest.mark.asyncio
 async def test_saver_flushes_on_new_chunk(sessions_storage):
-    session = await sessions_storage.create_session(
+    session = (await sessions_storage.create_session(
         data=SessionCreate(channel_key="test", channel_internal_id="")
-    )
-    saver = AgentMessageSaver(sessions_storage=sessions_storage, session_id=session.id)
+    )).id
+    saver = AgentMessageSaver(sessions_storage=sessions_storage, session_id=session)
 
     async with saver:
         msg1 = AgentMessage(
@@ -75,7 +75,7 @@ async def test_saver_flushes_on_new_chunk(sessions_storage):
     # After exit, message should be flushed
     messages = []
     async for m in sessions_storage.get_messages(
-        filter_=MessageFilter(session_id={session.id})
+        filter_=MessageFilter(session_id={session})
     ):
         messages.append(m)
 
@@ -85,10 +85,10 @@ async def test_saver_flushes_on_new_chunk(sessions_storage):
 
 @pytest.mark.asyncio
 async def test_saver_appends_to_same_chunk(sessions_storage):
-    session = await sessions_storage.create_session(
+    session = (await sessions_storage.create_session(
         data=SessionCreate(channel_key="test", channel_internal_id="")
-    )
-    saver = AgentMessageSaver(sessions_storage=sessions_storage, session_id=session.id)
+    )).id
+    saver = AgentMessageSaver(sessions_storage=sessions_storage, session_id=session)
 
     async with saver:
         msg1 = AgentMessage(
@@ -102,7 +102,7 @@ async def test_saver_appends_to_same_chunk(sessions_storage):
 
     messages = []
     async for m in sessions_storage.get_messages(
-        filter_=MessageFilter(session_id={session.id})
+        filter_=MessageFilter(session_id={session})
     ):
         messages.append(m)
 
@@ -112,10 +112,10 @@ async def test_saver_appends_to_same_chunk(sessions_storage):
 
 @pytest.mark.asyncio
 async def test_saver_aexit_with_cancelled_error(sessions_storage):
-    session = await sessions_storage.create_session(
+    session = (await sessions_storage.create_session(
         data=SessionCreate(channel_key="test", channel_internal_id="")
-    )
-    saver = AgentMessageSaver(sessions_storage=sessions_storage, session_id=session.id)
+    )).id
+    saver = AgentMessageSaver(sessions_storage=sessions_storage, session_id=session)
 
     # Simulate CancelledError during flush by making create_message raise it
     original = sessions_storage.create_message

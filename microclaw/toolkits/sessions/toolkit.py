@@ -1,4 +1,3 @@
-import datetime
 from difflib import SequenceMatcher
 import uuid
 
@@ -8,6 +7,7 @@ from .settings import SessionsToolKitSettings
 from microclaw.toolkits.base import BaseToolKit, tool
 from microclaw.toolkits.capabilities import ToolKitCapability
 from microclaw.toolkits.context import get_toolkit_context
+from microclaw.utils import utcnow
 
 
 class SessionsToolKit(BaseToolKit[SessionsToolKitSettings]):
@@ -142,7 +142,7 @@ class SessionsToolKit(BaseToolKit[SessionsToolKitSettings]):
                 MessageInfo(
                     role=message.role,
                     content=message.text,
-                    timestamp=datetime.datetime.now(),
+                    timestamp=utcnow(),
                 )
             )
 
@@ -200,7 +200,7 @@ class SessionsToolKit(BaseToolKit[SessionsToolKitSettings]):
                     MessageInfo(
                         role=message.role,
                         content=message.text,
-                        timestamp=datetime.datetime.now(),
+                        timestamp=utcnow(),
                     )
                 )
 

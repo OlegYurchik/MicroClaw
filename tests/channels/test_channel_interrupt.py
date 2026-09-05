@@ -6,6 +6,7 @@ import uuid
 import pytest
 
 from microclaw.dto import AgentMessage, DecisionEnum
+from microclaw.sessions_storages.dto import SessionCreate
 from tests.conftest import _async_gen
 
 
@@ -13,7 +14,9 @@ from tests.conftest import _async_gen
 async def test_start_conversation_calls_ask_when_no_pending_interrupt(base_channel):
     """When no pending interrupt exists, start_conversation should call ask()."""
     session_id = uuid.uuid4()
-    await base_channel._sessions_storage.create_session(session_id)
+    await base_channel._sessions_storage.create_session(
+        data=SessionCreate(id=session_id, channel_key="", channel_internal_id="")
+    )
 
     base_channel._agent.has_pending_interrupt = AsyncMock(return_value=False)
     base_channel._agent.ask = MagicMock(return_value=_async_gen([]))
@@ -36,7 +39,9 @@ async def test_start_conversation_calls_resume_when_pending_interrupt(base_chann
     """When a pending interrupt exists, start_conversation should call
     resume_after_confirmation(REJECT) with new_messages."""
     session_id = uuid.uuid4()
-    await base_channel._sessions_storage.create_session(session_id)
+    await base_channel._sessions_storage.create_session(
+        data=SessionCreate(id=session_id, channel_key="", channel_internal_id="")
+    )
 
     new_msg = AgentMessage(role="user", text="new msg")
     base_channel._agent.has_pending_interrupt = AsyncMock(return_value=True)

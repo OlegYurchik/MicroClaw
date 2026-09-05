@@ -18,6 +18,11 @@ class EmptySettings(BaseModel):
 class BaseCronTask(facet.AsyncioServiceMixin, Generic[ArgumentsType]):
     _scheduler: AsyncIOScheduler | None = None
     _tasks: dict[str, "BaseCronTask"] = {}
+    _cron_id_to_key: dict[str, str] = {}
+
+    def __init_subclass__(cls, **kwargs):
+        super().__init_subclass__(**kwargs)
+        cls._tasks = {}
 
     def __init__(
         self,
@@ -56,7 +61,8 @@ class BaseCronTask(facet.AsyncioServiceMixin, Generic[ArgumentsType]):
             id=self._key,
             **self._parse_cron_expression(self._cron),
         )
-        self._tasks[self._key] = self
+        BaseCronTask._tasks[self._key] = self
+        type(self)._tasks[self._key] = self
         logger.info(f"Task '{self._key}' registered with cron: {self._cron}")
 
         self.add_task(self._wait_for_scheduler())
@@ -70,13 +76,40 @@ class BaseCronTask(facet.AsyncioServiceMixin, Generic[ArgumentsType]):
     async def do_before(self):
         pass
 
+    @classmethod
+    def register_cron_id(cls, cron_id: str, key: str) -> None:
+        BaseCronTask._cron_id_to_key[cron_id] = key
+
+    @classmethod
+    def unregister_cron_id(cls, cron_id: str) -> None:
+        BaseCronTask._cron_id_to_key.pop(cron_id, None)
+
+    @classmethod
+    def unregister_task(cls, key: str) -> None:
+        BaseCronTask._tasks.pop(key, None)
+        for subclass in BaseCronTask.__subclasses__():
+            subclass._tasks.pop(key, None)
+        for cron_id, mapped_key in list(BaseCronTask._cron_id_to_key.items()):
+            if mapped_key == key:
+                BaseCronTask._cron_id_to_key.pop(cron_id, None)
+
+    @classmethod
+    def find_task_key_by_cron_id(cls, cron_id: str) -> str | None:
+        key = BaseCronTask._cron_id_to_key.get(cron_id)
+        if key is not None:
+            return key
+        for key in list(BaseCronTask._tasks.keys()):
+            parts = key.rsplit("_", 1)
+            if len(parts) == 2 and parts[1] == cron_id:
+                return key
+        return None
+
     async def stop(self):
         scheduler = self.get_scheduler()
         if scheduler.get_job(self._key):
             scheduler.remove_job(self._key)
-        if self._key in self._tasks:
-            del self._tasks[self._key]
-            logger.info(f"Task '{self._key}' unregistered")
+        self.unregister_task(self._key)
+        logger.info(f"Task '{self._key}' unregistered")
 
     async def _wait_for_scheduler(self):
         scheduler = self.get_scheduler()

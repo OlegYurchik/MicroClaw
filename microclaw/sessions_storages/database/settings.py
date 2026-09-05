@@ -1,11 +1,12 @@
 from typing import Literal
 
+from metaorm import RepositorySettings
+
 from microclaw.sessions_storages.settings import (
     SessionsStorageSettings,
     SessionsStorageTypeEnum,
 )
-from microclaw.utils.database.settings import DatabaseSettings
 
 
-class DatabaseSessionsStorageSettings(SessionsStorageSettings, DatabaseSettings):
+class DatabaseSessionsStorageSettings(SessionsStorageSettings, RepositorySettings):
     type: Literal[SessionsStorageTypeEnum.DATABASE] = SessionsStorageTypeEnum.DATABASE

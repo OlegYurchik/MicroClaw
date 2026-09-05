@@ -2,6 +2,10 @@
 import httpx
 import pytest
 
+from microclaw.sessions_storages.dto import SessionCreate
+from microclaw.users_storages.filters import TokenFilter
+from microclaw.users_storages.utils import attach_session_to_user, create_token_for_user
+
 
 @pytest.mark.asyncio
 async def test_list_users_admin(client: httpx.AsyncClient, admin_user):
@@ -28,7 +32,7 @@ async def test_create_user_admin(client: httpx.AsyncClient, admin_user):
         json={"role": "user"},
         headers={"Authorization": f"Bearer {token}"},
     )
-    assert response.status_code == 200
+    assert response.status_code == 201
     assert response.json()["role"] == "user"
 
 
@@ -113,9 +117,11 @@ async def test_delete_user_forbidden_for_regular(client: httpx.AsyncClient, regu
 @pytest.mark.asyncio
 async def test_list_user_sessions(client: httpx.AsyncClient, regular_user, sessions_storage, users_storage):
     user, token = regular_user
-    session_id = await sessions_storage.create_session()
-    await users_storage.attach_session_to_user(
-        user.id, session_id, "rest", str(user.id)
+    session_id = (await sessions_storage.create_session(
+        data=SessionCreate(channel_key="rest", channel_internal_id=str(user.id))
+    )).id
+    await attach_session_to_user(
+        users_storage, user.id, session_id, "rest", str(user.id)
     )
     response = await client.get(
         f"/users/{user.id}/sessions",
@@ -141,13 +147,13 @@ async def test_create_user_token(client: httpx.AsyncClient, regular_user):
 @pytest.mark.asyncio
 async def test_delete_user_token(client: httpx.AsyncClient, regular_user, users_storage):
     user, token = regular_user
-    token_info = await users_storage.create_token_for_user(user_id=user.id)
+    token_info = await create_token_for_user(users_storage, user_id=user.id)
     response = await client.delete(
         f"/users/{user.id}/tokens/{token_info.token}",
         headers={"Authorization": f"Bearer {token}"},
     )
     assert response.status_code == 204
-    assert await users_storage.get_user_by_token(token_info.token) is None
+    assert await users_storage.get_token(filter_=TokenFilter(token={token_info.token})) is None
 
 
 @pytest.mark.asyncio

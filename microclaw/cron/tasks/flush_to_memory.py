@@ -11,6 +11,8 @@ from microclaw.dto import User
 from microclaw.sessions_storages.filters import MessageFilter, SessionFilter
 from microclaw.sessions_storages.interfaces import SessionsStorageInterface
 from microclaw.toolkits.memory.toolkit import MemorySizeExceeded
+from microclaw.users_storages.filters import UserFilter
+from microclaw.users_storages.utils import get_user_by_session
 from microclaw.utils import get_by_key_or_first
 
 
@@ -44,14 +46,25 @@ class FlushToMemoryCronTask(BaseCronTask[FlushToMemoryCronTaskSettings]):
     async def execute(self):
         logger.info(f"Running daily task '{self._key}'")
         yesterday = datetime.date.today() - datetime.timedelta(days=1)
-        await self._process_day(yesterday)
+        try:
+            await self._process_day(yesterday)
+        finally:
+            self._session_user_cache.clear()
+            self._user_channel_cache.clear()
 
     async def _process_day(self, date: datetime.date):
         all_extracted_info = []
 
-        async for session_id in self._sessions_storage.get_sessions(
-            filter=SessionFilter(created_at=date)
+        start_of_day = datetime.datetime.combine(date, datetime.time.min, tzinfo=datetime.timezone.utc)
+        end_of_day = datetime.datetime.combine(date, datetime.time.max, tzinfo=datetime.timezone.utc)
+
+        async for session in self._sessions_storage.get_sessions(
+            filter_=SessionFilter(
+                created_at__gt=start_of_day,
+                created_at__lt=end_of_day,
+            )
         ):
+            session_id = session.id
             user = await self._get_user_by_session(session_id)
             if user is None:
                 logger.warning(f"User not found for session {session_id}")
@@ -69,8 +82,7 @@ class FlushToMemoryCronTask(BaseCronTask[FlushToMemoryCronTaskSettings]):
 
             messages = []
             async for message in self._sessions_storage.get_messages(
-                filter=MessageFilter(session_id=session_id),
-                from_last_summarization=False,
+                filter_=MessageFilter(session_id={session_id}),
             ):
                 messages.append(message)
 
@@ -134,12 +146,11 @@ class FlushToMemoryCronTask(BaseCronTask[FlushToMemoryCronTaskSettings]):
             return self._session_user_cache[session_id]
         for channel in self._channels.values():
             users_storage = channel.get_users_storage()
-            user = await users_storage.get_user_by_session(session_id)
+            user = await get_user_by_session(users_storage, session_id)
             if user is not None:
                 self._session_user_cache[session_id] = user
                 self._user_channel_cache[user.id] = channel
                 return user
-        self._session_user_cache[session_id] = None
         return None
 
     async def _get_channel_for_user(self, user_id: uuid.UUID) -> BaseChannel | None:
@@ -147,9 +158,10 @@ class FlushToMemoryCronTask(BaseCronTask[FlushToMemoryCronTaskSettings]):
             return self._user_channel_cache[user_id]
         for channel in self._channels.values():
             users_storage = channel.get_users_storage()
-            check_user = await users_storage.get_user(user_id)
+            check_user = await users_storage.get_user(
+                filter_=UserFilter(id={user_id})
+            )
             if check_user is not None:
                 self._user_channel_cache[user_id] = channel
                 return channel
-        self._user_channel_cache[user_id] = None
         return None

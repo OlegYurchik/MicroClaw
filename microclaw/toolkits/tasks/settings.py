@@ -20,3 +20,10 @@ class TasksSettings(BaseModel):
     )
     allowed_task_lists: list[str] | None = None
     write_mode: PermissionModeEnum = PermissionModeEnum.REQUEST
+    fallback_timezone: str = Field(
+        default="UTC",
+        description=(
+            "Timezone to use when the CalDAV server returns naive datetime values "
+            "(default: UTC)"
+        ),
+    )

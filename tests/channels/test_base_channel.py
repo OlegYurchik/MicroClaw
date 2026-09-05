@@ -5,6 +5,7 @@ import pytest
 
 from microclaw.agents import Agent
 from microclaw.dto import AgentMessage, Spending, User
+from microclaw.sessions_storages.dto import MessageCreate, SessionCreate
 
 
 @pytest.mark.asyncio
@@ -79,12 +80,16 @@ async def test_is_context_went_across_threshold_parametrized(
     agent.get_model_context_window_size.return_value = window
     agent.get_context_threshold_size.return_value = threshold
     session_id = uuid.uuid4()
-    await sessions_storage.create_session(session_id)
-    await sessions_storage.add_message(
-        session_id,
-        AgentMessage(
-            role="user", text="x", spending=Spending(output_tokens=context_size)
-        ),
+    await sessions_storage.create_session(
+        data=SessionCreate(id=session_id, channel_key="test", channel_internal_id="1")
+    )
+    await sessions_storage.create_message(
+        data=MessageCreate(
+            session_id=session_id,
+            message=AgentMessage(
+                role="user", text="x", spending=Spending(output_tokens=context_size)
+            ),
+        )
     )
     result = await base_channel.is_context_went_across_threshold(
         agent=agent, session_id=session_id

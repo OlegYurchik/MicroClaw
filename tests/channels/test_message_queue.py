@@ -7,6 +7,7 @@ import uuid
 import pytest
 
 from microclaw.dto import AgentMessage, DecisionEnum
+from microclaw.sessions_storages.dto import SessionCreate
 from microclaw.sessions_storages.filters import MessageFilter
 from tests.conftest import _async_gen
 
@@ -15,7 +16,9 @@ from tests.conftest import _async_gen
 async def test_enqueue_and_process_pops_all_and_calls_batch(base_channel):
     chat_id = 1
     session_id = uuid.uuid4()
-    await base_channel._sessions_storage.create_session(session_id)
+    await base_channel._sessions_storage.create_session(
+        data=SessionCreate(id=session_id, channel_key="", channel_internal_id="")
+    )
     base_channel._chat_sessions[chat_id] = session_id
 
     base_channel._process_batch = AsyncMock()
@@ -44,7 +47,7 @@ async def test_enqueue_and_process_pops_all_and_calls_batch(base_channel):
     messages = [
         m
         async for m in base_channel._sessions_storage.get_messages(
-            filter=MessageFilter(session_id=session_id)
+            filter_=MessageFilter(session_id={session_id})
         )
     ]
     assert len(messages) == 2
@@ -58,7 +61,9 @@ async def test_enqueue_and_process_batches_messages_arriving_during_processing(
     The same processor should pick it up in the next loop iteration."""
     chat_id = 1
     session_id = uuid.uuid4()
-    await base_channel._sessions_storage.create_session(session_id)
+    await base_channel._sessions_storage.create_session(
+        data=SessionCreate(id=session_id, channel_key="", channel_internal_id="")
+    )
     base_channel._chat_sessions[chat_id] = session_id
 
     batches = []
@@ -110,7 +115,9 @@ async def test_enqueue_and_process_second_call_waits_for_first(base_channel):
     """A second _enqueue_and_process should block until the first finishes."""
     chat_id = 1
     session_id = uuid.uuid4()
-    await base_channel._sessions_storage.create_session(session_id)
+    await base_channel._sessions_storage.create_session(
+        data=SessionCreate(id=session_id, channel_key="", channel_internal_id="")
+    )
     base_channel._chat_sessions[chat_id] = session_id
 
     call_order = []
@@ -164,7 +171,7 @@ async def test_enqueue_and_process_second_call_waits_for_first(base_channel):
     messages = [
         m
         async for m in base_channel._sessions_storage.get_messages(
-            filter=MessageFilter(session_id=session_id)
+            filter_=MessageFilter(session_id={session_id})
         )
     ]
     assert len(messages) == 2
@@ -177,8 +184,12 @@ async def test_enqueue_and_process_parallel_chats_do_not_interfere(base_channel)
     chat_b = 2
     session_a = uuid.uuid4()
     session_b = uuid.uuid4()
-    await base_channel._sessions_storage.create_session(session_a)
-    await base_channel._sessions_storage.create_session(session_b)
+    await base_channel._sessions_storage.create_session(
+        data=SessionCreate(id=session_a, channel_key="", channel_internal_id="")
+    )
+    await base_channel._sessions_storage.create_session(
+        data=SessionCreate(id=session_b, channel_key="", channel_internal_id="")
+    )
     base_channel._chat_sessions[chat_a] = session_a
     base_channel._chat_sessions[chat_b] = session_b
 
@@ -204,13 +215,13 @@ async def test_enqueue_and_process_parallel_chats_do_not_interfere(base_channel)
     messages_a = [
         m
         async for m in base_channel._sessions_storage.get_messages(
-            filter=MessageFilter(session_id=session_a)
+            filter_=MessageFilter(session_id={session_a})
         )
     ]
     messages_b = [
         m
         async for m in base_channel._sessions_storage.get_messages(
-            filter=MessageFilter(session_id=session_b)
+            filter_=MessageFilter(session_id={session_b})
         )
     ]
     assert len(messages_a) == 1
@@ -224,7 +235,9 @@ async def test_reset_clears_message_queue(base_channel):
     """Simulate /reset: drain queue before creating new session."""
     chat_id = 1
     session_id = uuid.uuid4()
-    await base_channel._sessions_storage.create_session(session_id)
+    await base_channel._sessions_storage.create_session(
+        data=SessionCreate(id=session_id, channel_key="", channel_internal_id="")
+    )
     base_channel._chat_sessions[chat_id] = session_id
 
     # Pre-fill queue with a stale message
@@ -245,7 +258,9 @@ async def test_enqueue_and_process_skips_invalid_queued_messages(base_channel):
     """A corrupted queued message should not kill the entire batch."""
     chat_id = 1
     session_id = uuid.uuid4()
-    await base_channel._sessions_storage.create_session(session_id)
+    await base_channel._sessions_storage.create_session(
+        data=SessionCreate(id=session_id, channel_key="", channel_internal_id="")
+    )
     base_channel._chat_sessions[chat_id] = session_id
 
     queue_key = base_channel._get_chat_queue_key(chat_id)
@@ -275,7 +290,9 @@ async def test_start_conversation_with_interrupt_uses_resume_then_ask(
     """If has_pending_interrupt is True, batch goes through resume_after_confirmation.
     If more messages are queued afterward, they go through ask."""
     session_id = uuid.uuid4()
-    await base_channel._sessions_storage.create_session(session_id)
+    await base_channel._sessions_storage.create_session(
+        data=SessionCreate(id=session_id, channel_key="", channel_internal_id="")
+    )
     base_channel._chat_sessions[1] = session_id
 
     base_channel._agent.has_pending_interrupt = AsyncMock(
@@ -305,7 +322,9 @@ async def test_start_conversation_with_interrupt_uses_resume_then_ask(
 @pytest.mark.asyncio
 async def test_start_conversation_uses_ask_when_no_interrupt(base_channel):
     session_id = uuid.uuid4()
-    await base_channel._sessions_storage.create_session(session_id)
+    await base_channel._sessions_storage.create_session(
+        data=SessionCreate(id=session_id, channel_key="", channel_internal_id="")
+    )
     base_channel._chat_sessions[1] = session_id
 
     base_channel._agent.has_pending_interrupt = AsyncMock(return_value=False)

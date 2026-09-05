@@ -4,31 +4,38 @@ import uuid
 import httpx
 import pytest
 
-from microclaw.api.rest.crons.handlers import CronService
 from microclaw.cron.base import BaseCronTask
+from microclaw.cron.service import CronService
 from microclaw.dto import CronTask
 
 
 class TestCronService:
     @pytest.mark.asyncio
     async def test_schedule_success(self):
-        mock_task = MagicMock()
-        mock_task.start = AsyncMock()
-        mock_factory = AsyncMock(return_value=mock_task)
-        service = CronService(task_factory=mock_factory)
+        prev_scheduler = BaseCronTask._scheduler
+        prev_tasks = dict(BaseCronTask._tasks)
+        try:
+            mock_task = MagicMock()
+            mock_task.start = AsyncMock()
+            mock_factory = AsyncMock(return_value=mock_task)
+            service = CronService(task_factory=mock_factory)
 
-        cron_task = CronTask(
-            id=uuid.uuid4(),
-            user_id=uuid.uuid4(),
-            path="test.path",
-            cron="0 0 * * *",
-            enabled=True,
-            args={},
-        )
-        resolver = MagicMock()
-        await service.schedule(cron_task.user_id, cron_task, resolver)
-        mock_factory.assert_awaited_once()
-        mock_task.start.assert_awaited_once()
+            cron_task = CronTask(
+                id=uuid.uuid4(),
+                user_id=uuid.uuid4(),
+                path="test.path",
+                cron="0 0 * * *",
+                enabled=True,
+                args={},
+            )
+            resolver = MagicMock()
+            await service.schedule(cron_task.user_id, cron_task, resolver)
+            mock_factory.assert_awaited_once()
+            mock_task.start.assert_awaited_once()
+        finally:
+            BaseCronTask._scheduler = prev_scheduler
+            BaseCronTask._tasks.clear()
+            BaseCronTask._tasks.update(prev_tasks)
 
     @pytest.mark.asyncio
     async def test_unschedule_success(self):
@@ -169,8 +176,7 @@ async def test_create_cron(client: httpx.AsyncClient, regular_user):
 async def test_create_cron_invalid_expression(client: httpx.AsyncClient, regular_user):
     _, token = regular_user
     response = await client.post(
-        "/crons",
-        json={"path": "test.path", "cron": "invalid", "enabled": True, "args": {}},
+        "/crons", json={"path": "test.path", "cron": "invalid", "enabled": True, "args": {}},
         headers={"Authorization": f"Bearer {token}"},
     )
     assert response.status_code == 422

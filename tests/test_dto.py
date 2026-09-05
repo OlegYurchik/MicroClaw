@@ -89,11 +89,12 @@ class TestAgentMessage:
 
 class TestToken:
     def test_is_valid_no_expiry(self):
-        token = Token(user_id="12345678-1234-1234-1234-123456789012")
+        token = Token(token="test", user_id="12345678-1234-1234-1234-123456789012")
         assert token.is_valid() is True
 
     def test_is_valid_future_expiry(self):
         token = Token(
+            token="test",
             user_id="12345678-1234-1234-1234-123456789012",
             expires_at=datetime.datetime.now(datetime.timezone.utc)
             + datetime.timedelta(days=1),
@@ -102,6 +103,7 @@ class TestToken:
 
     def test_is_valid_past_expiry(self):
         token = Token(
+            token="test",
             user_id="12345678-1234-1234-1234-123456789012",
             expires_at=datetime.datetime.now(datetime.timezone.utc)
             - datetime.timedelta(days=1),

@@ -22,6 +22,7 @@ from microclaw.agents import Agent
 from microclaw.channels.utils import AgentMessageCollector
 from microclaw.dto import AgentMessage
 from microclaw.sessions_storages import SessionsStorageInterface
+from microclaw.sessions_storages.filters import SessionFilter
 
 
 class AgentMessagePrinter(AgentMessageCollector):
@@ -122,10 +123,15 @@ class AgentMessagePrinter(AgentMessageCollector):
 
     async def print(self, text: str):
         buttons = []
-        if self._show_context_usage:
-            actual_context_size = await self._sessions_storage.get_context_size(
-                session_id=self._session_id,
+        actual_context_size = 0
+        spending = None
+        if self._show_context_usage or self._show_costs:
+            session = await self._sessions_storage.get_session(
+                filter_=SessionFilter(id={self._session_id})
             )
+            actual_context_size = session.context_size if session else 0
+            spending = session.spending if session else None
+        if self._show_context_usage:
             model_context_size = self._agent.get_model_context_window_size()
             if model_context_size:
                 context_usage = actual_context_size * 100 / model_context_size
@@ -135,10 +141,7 @@ class AgentMessagePrinter(AgentMessageCollector):
                         callback_data="null",
                     )
                 )
-        if self._show_costs:
-            spending = await self._sessions_storage.get_spending(
-                session_id=self._session_id
-            )
+        if self._show_costs and spending is not None:
             buttons.append(
                 aiogram.types.InlineKeyboardButton(
                     text=f"{spending.cost:.4f} {spending.currency}",

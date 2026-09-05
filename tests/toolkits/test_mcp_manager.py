@@ -11,6 +11,8 @@ from microclaw.toolkits.accessors import AllUsersAccessor, CurrentUserAccessor
 from microclaw.toolkits.context import TOOLKIT_CONTEXT, ToolkitExecutionContext
 from microclaw.toolkits.dto import DiscoveryInfo
 from microclaw.toolkits.mcp_manager import MCPManagerToolKit
+from microclaw.users_storages.dto import UserCreate, UserUpdate
+from microclaw.users_storages.filters import UserFilter
 from microclaw.users_storages.memory.settings import MemoryUsersStorageSettings
 from microclaw.users_storages.memory.storage import MemoryUsersStorage
 
@@ -31,7 +33,7 @@ def users_storage():
 
 @pytest_asyncio.fixture
 async def toolkit_context(users_storage):
-    user = await users_storage.create_user(role=UserRoleEnum.USER)
+    user = await users_storage.create_user(data=UserCreate(role=UserRoleEnum.USER))
     accessor = CurrentUserAccessor(
         user_id=user.id,
         storage=users_storage,
@@ -55,8 +57,8 @@ async def toolkit_context(users_storage):
 
 @pytest_asyncio.fixture
 async def admin_context(users_storage):
-    user = await users_storage.create_user(role=UserRoleEnum.USER)
-    admin = await users_storage.create_user(role=UserRoleEnum.ADMIN)
+    user = await users_storage.create_user(data=UserCreate(role=UserRoleEnum.USER))
+    admin = await users_storage.create_user(data=UserCreate(role=UserRoleEnum.ADMIN))
     accessor = CurrentUserAccessor(
         user_id=admin.id,
         storage=users_storage,
@@ -98,13 +100,15 @@ async def test_list_my_mcp__empty(mcp_manager_toolkit, toolkit_context):
 @pytest.mark.asyncio
 async def test_add_custom_mcp__remote(mcp_manager_toolkit, toolkit_context, users_storage):
     from microclaw.toolkits.enums import PermissionModeEnum
-    mcp_manager_toolkit._settings.add_mode = PermissionModeEnum.ALLOW
+    mcp_manager_toolkit.arguments.add_mode = PermissionModeEnum.ALLOW
 
     config = MCPRemoteSettings(name="my_remote", url="http://example.com/mcp")
     result = await mcp_manager_toolkit.add_custom_mcp(config)
     assert "added" in result.lower()
 
-    user = await users_storage.get_user(toolkit_context.current_user_accessor.user_id)
+    user = await users_storage.get_user(
+        filter_=UserFilter(id={toolkit_context.current_user_accessor.user_id})
+    )
     agent = AgentSettings.model_validate(user.agent)
     assert any(
         isinstance(m, MCPRemoteSettings) and m.name == "my_remote" for m in agent.mcp
@@ -114,13 +118,15 @@ async def test_add_custom_mcp__remote(mcp_manager_toolkit, toolkit_context, user
 @pytest.mark.asyncio
 async def test_add_custom_mcp__local(mcp_manager_toolkit, toolkit_context, users_storage):
     from microclaw.toolkits.enums import PermissionModeEnum
-    mcp_manager_toolkit._settings.add_mode = PermissionModeEnum.ALLOW
+    mcp_manager_toolkit.arguments.add_mode = PermissionModeEnum.ALLOW
 
     config = MCPLocalSettings(name="my_local", command="npx", args=["-y", "@test"])
     result = await mcp_manager_toolkit.add_custom_mcp(config)
     assert "added" in result.lower()
 
-    user = await users_storage.get_user(toolkit_context.current_user_accessor.user_id)
+    user = await users_storage.get_user(
+        filter_=UserFilter(id={toolkit_context.current_user_accessor.user_id})
+    )
     agent = AgentSettings.model_validate(user.agent)
     assert any(
         isinstance(m, MCPLocalSettings) and m.name == "my_local" for m in agent.mcp
@@ -130,12 +136,14 @@ async def test_add_custom_mcp__local(mcp_manager_toolkit, toolkit_context, users
 @pytest.mark.asyncio
 async def test_enable_mcp(mcp_manager_toolkit, toolkit_context, users_storage):
     from microclaw.toolkits.enums import PermissionModeEnum
-    mcp_manager_toolkit._settings.add_mode = PermissionModeEnum.ALLOW
+    mcp_manager_toolkit.arguments.add_mode = PermissionModeEnum.ALLOW
 
     result = await mcp_manager_toolkit.enable_mcp("global_mcp")
     assert "enabled" in result.lower()
 
-    user = await users_storage.get_user(toolkit_context.current_user_accessor.user_id)
+    user = await users_storage.get_user(
+        filter_=UserFilter(id={toolkit_context.current_user_accessor.user_id})
+    )
     agent = AgentSettings.model_validate(user.agent)
     assert any(m == "global_mcp" for m in agent.mcp)
 
@@ -143,7 +151,7 @@ async def test_enable_mcp(mcp_manager_toolkit, toolkit_context, users_storage):
 @pytest.mark.asyncio
 async def test_enable_mcp__not_found(mcp_manager_toolkit, toolkit_context):
     from microclaw.toolkits.enums import PermissionModeEnum
-    mcp_manager_toolkit._settings.add_mode = PermissionModeEnum.ALLOW
+    mcp_manager_toolkit.arguments.add_mode = PermissionModeEnum.ALLOW
     with pytest.raises(ValueError, match="not found"):
         await mcp_manager_toolkit.enable_mcp("nonexistent")
 
@@ -151,10 +159,14 @@ async def test_enable_mcp__not_found(mcp_manager_toolkit, toolkit_context):
 @pytest.mark.asyncio
 async def test_enable_mcp__already_exists(mcp_manager_toolkit, toolkit_context, users_storage):
     from microclaw.toolkits.enums import PermissionModeEnum
-    mcp_manager_toolkit._settings.add_mode = PermissionModeEnum.ALLOW
+    mcp_manager_toolkit.arguments.add_mode = PermissionModeEnum.ALLOW
 
     user_id = toolkit_context.current_user_accessor.user_id
-    await users_storage.update_user(user_id=user_id, agent_settings=AgentSettings(mcp=["global_mcp"]))
+    async for _ in users_storage.update_users(
+        filter_=UserFilter(id={user_id}),
+        data=UserUpdate(agent=AgentSettings(mcp=["global_mcp"]).model_dump(mode="json")),
+    ):
+        pass
     with pytest.raises(ValueError, match="already exists"):
         await mcp_manager_toolkit.enable_mcp("global_mcp")
 
@@ -162,16 +174,17 @@ async def test_enable_mcp__already_exists(mcp_manager_toolkit, toolkit_context, 
 @pytest.mark.asyncio
 async def test_remove_mcp(mcp_manager_toolkit, toolkit_context, users_storage):
     user_id = toolkit_context.current_user_accessor.user_id
-    await users_storage.update_user(
-        user_id=user_id,
-        agent_settings=AgentSettings(mcp=[MCPRemoteSettings(name="to_remove", url="http://example.com")]),
-    )
+    async for _ in users_storage.update_users(
+        filter_=UserFilter(id={user_id}),
+        data=UserUpdate(agent=AgentSettings(mcp=[MCPRemoteSettings(name="to_remove", url="http://example.com")]).model_dump(mode="json")),
+    ):
+        pass
     import microclaw.toolkits.mcp_manager.toolkit as mcp_module
     orig = mcp_module.interrupt
     mcp_module.interrupt = lambda *a, **kw: DecisionEnum.APPROVE.value
     try:
         await mcp_manager_toolkit.remove_mcp("to_remove")
-        user = await users_storage.get_user(user_id)
+        user = await users_storage.get_user(filter_=UserFilter(id={user_id}))
         agent = AgentSettings.model_validate(user.agent)
         assert not agent.mcp or all(
             (m.name if hasattr(m, "name") else m) != "to_remove" for m in agent.mcp
@@ -183,10 +196,11 @@ async def test_remove_mcp(mcp_manager_toolkit, toolkit_context, users_storage):
 @pytest.mark.asyncio
 async def test_test_mcp__success(mcp_manager_toolkit, toolkit_context, users_storage):
     user_id = toolkit_context.current_user_accessor.user_id
-    await users_storage.update_user(
-        user_id=user_id,
-        agent_settings=AgentSettings(mcp=[MCPRemoteSettings(name="test_mcp", url="http://example.com")]),
-    )
+    async for _ in users_storage.update_users(
+        filter_=UserFilter(id={user_id}),
+        data=UserUpdate(agent=AgentSettings(mcp=[MCPRemoteSettings(name="test_mcp", url="http://example.com")]).model_dump(mode="json")),
+    ):
+        pass
     mock_client = MagicMock()
     mock_client.get_tools = AsyncMock(return_value=[MagicMock(), MagicMock()])
     with patch("microclaw.toolkits.mcp_manager.toolkit.MultiServerMCPClient", return_value=mock_client):
@@ -199,8 +213,8 @@ async def test_test_mcp__success(mcp_manager_toolkit, toolkit_context, users_sto
 @pytest.mark.asyncio
 async def test_add_custom_mcp__global_denied(mcp_manager_toolkit, toolkit_context):
     from microclaw.toolkits.enums import PermissionModeEnum, SourceModeEnum
-    mcp_manager_toolkit._settings.add_mode = PermissionModeEnum.ALLOW
-    mcp_manager_toolkit._settings.source_mode = SourceModeEnum.GLOBAL
+    mcp_manager_toolkit.arguments.add_mode = PermissionModeEnum.ALLOW
+    mcp_manager_toolkit.arguments.source_mode = SourceModeEnum.GLOBAL
     config = MCPRemoteSettings(name="any", url="http://example.com")
     with pytest.raises(PermissionError):
         await mcp_manager_toolkit.add_custom_mcp(config)
@@ -209,8 +223,8 @@ async def test_add_custom_mcp__global_denied(mcp_manager_toolkit, toolkit_contex
 @pytest.mark.asyncio
 async def test_add_custom_mcp__empty_denied(mcp_manager_toolkit, toolkit_context):
     from microclaw.toolkits.enums import PermissionModeEnum, SourceModeEnum
-    mcp_manager_toolkit._settings.add_mode = PermissionModeEnum.ALLOW
-    mcp_manager_toolkit._settings.source_mode = SourceModeEnum.EMPTY
+    mcp_manager_toolkit.arguments.add_mode = PermissionModeEnum.ALLOW
+    mcp_manager_toolkit.arguments.source_mode = SourceModeEnum.EMPTY
     config = MCPRemoteSettings(name="any", url="http://example.com")
     with pytest.raises(PermissionError):
         await mcp_manager_toolkit.add_custom_mcp(config)
@@ -219,8 +233,8 @@ async def test_add_custom_mcp__empty_denied(mcp_manager_toolkit, toolkit_context
 @pytest.mark.asyncio
 async def test_enable_mcp__marketplace_denied(mcp_manager_toolkit, toolkit_context):
     from microclaw.toolkits.enums import PermissionModeEnum, SourceModeEnum
-    mcp_manager_toolkit._settings.add_mode = PermissionModeEnum.ALLOW
-    mcp_manager_toolkit._settings.source_mode = SourceModeEnum.MARKETPLACE
+    mcp_manager_toolkit.arguments.add_mode = PermissionModeEnum.ALLOW
+    mcp_manager_toolkit.arguments.source_mode = SourceModeEnum.MARKETPLACE
     with pytest.raises(PermissionError):
         await mcp_manager_toolkit.enable_mcp("global_mcp")
 
@@ -228,8 +242,8 @@ async def test_enable_mcp__marketplace_denied(mcp_manager_toolkit, toolkit_conte
 @pytest.mark.asyncio
 async def test_enable_mcp__empty_denied(mcp_manager_toolkit, toolkit_context):
     from microclaw.toolkits.enums import PermissionModeEnum, SourceModeEnum
-    mcp_manager_toolkit._settings.add_mode = PermissionModeEnum.ALLOW
-    mcp_manager_toolkit._settings.source_mode = SourceModeEnum.EMPTY
+    mcp_manager_toolkit.arguments.add_mode = PermissionModeEnum.ALLOW
+    mcp_manager_toolkit.arguments.source_mode = SourceModeEnum.EMPTY
     with pytest.raises(PermissionError):
         await mcp_manager_toolkit.enable_mcp("global_mcp")
 
@@ -239,13 +253,13 @@ async def test_enable_mcp__empty_denied(mcp_manager_toolkit, toolkit_context):
 @pytest.mark.asyncio
 async def test_enable_mcp__cross_user(admin_context, users_storage, mcp_manager_toolkit):
     from microclaw.toolkits.enums import PermissionModeEnum
-    mcp_manager_toolkit._settings.add_mode = PermissionModeEnum.ALLOW
+    mcp_manager_toolkit.arguments.add_mode = PermissionModeEnum.ALLOW
     context, target_user, admin_user = admin_context
 
     result = await mcp_manager_toolkit.enable_mcp("global_mcp", user_id=str(target_user.id))
     assert "enabled" in result.lower()
 
-    target = await users_storage.get_user(target_user.id)
+    target = await users_storage.get_user(filter_=UserFilter(id={target_user.id}))
     agent = AgentSettings.model_validate(target.agent)
     assert any(m == "global_mcp" for m in agent.mcp)
 
@@ -253,7 +267,7 @@ async def test_enable_mcp__cross_user(admin_context, users_storage, mcp_manager_
 @pytest.mark.asyncio
 async def test_list_my_mcp__cross_user(admin_context, mcp_manager_toolkit):
     from microclaw.toolkits.enums import PermissionModeEnum
-    mcp_manager_toolkit._settings.add_mode = PermissionModeEnum.ALLOW
+    mcp_manager_toolkit.arguments.add_mode = PermissionModeEnum.ALLOW
     context, target_user, admin_user = admin_context
 
     await mcp_manager_toolkit.enable_mcp("global_mcp", user_id=str(target_user.id))
@@ -265,8 +279,8 @@ async def test_list_my_mcp__cross_user(admin_context, mcp_manager_toolkit):
 @pytest.mark.asyncio
 async def test_cross_user__no_accessor_denied(mcp_manager_toolkit, toolkit_context, users_storage):
     from microclaw.toolkits.enums import PermissionModeEnum
-    mcp_manager_toolkit._settings.add_mode = PermissionModeEnum.ALLOW
-    other = await users_storage.create_user(role=UserRoleEnum.USER)
+    mcp_manager_toolkit.arguments.add_mode = PermissionModeEnum.ALLOW
+    other = await users_storage.create_user(data=UserCreate(role=UserRoleEnum.USER))
     with pytest.raises(PermissionError, match="Cross-user access not granted"):
         await mcp_manager_toolkit.enable_mcp("global_mcp", user_id=str(other.id))
 
@@ -274,7 +288,7 @@ async def test_cross_user__no_accessor_denied(mcp_manager_toolkit, toolkit_conte
 @pytest.mark.asyncio
 async def test_cross_user__read_only_denied(admin_context, mcp_manager_toolkit):
     from microclaw.toolkits.enums import PermissionModeEnum
-    mcp_manager_toolkit._settings.add_mode = PermissionModeEnum.ALLOW
+    mcp_manager_toolkit.arguments.add_mode = PermissionModeEnum.ALLOW
     context, target_user, admin_user = admin_context
 
     # Make all_users_accessor read-only for this test

@@ -12,7 +12,19 @@ from microclaw.dto import AgentMessage, AgentMessageRoleEnum
 
 class FakeVKChannel(BaseVKChannel):
     def _create_bot(self):
-        return MagicMock(spec=Bot)
+        bot = MagicMock(spec=Bot)
+        bot.api = MagicMock()
+        bot.api.messages = MagicMock()
+        bot.api.messages.send = AsyncMock()
+        bot.api.messages.send_message_event_answer = AsyncMock()
+        bot.api.messages.get_by_conversation_message_id = AsyncMock()
+        bot.api.messages.edit = AsyncMock()
+        bot.labeler = MagicMock()
+        bot.labeler.views = MagicMock(return_value={"message": MagicMock()})
+        bot.on = MagicMock()
+        bot.on.message = MagicMock(return_value=MagicMock())
+        bot.on.raw_event = MagicMock(return_value=MagicMock())
+        return bot
 
     async def listen_events(self):
         pass
@@ -43,15 +55,16 @@ class TestBaseVKChannel:
     def channel(
         self, vk_settings, agent, sessions_storage, syncer, users_storage, resolver, bot
     ):
-        return FakeVKChannel(
+        channel = FakeVKChannel(
             settings=vk_settings,
             agent=agent,
             sessions_storage=sessions_storage,
             syncer=syncer,
             users_storage=users_storage,
             resolver=resolver,
-            bot=bot,
         )
+        channel._bot = bot
+        return channel
 
     def _make_message(self, peer_id=123, text="hello", from_id=1):
         message = MagicMock(spec=Message)

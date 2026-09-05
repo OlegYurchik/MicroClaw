@@ -2,7 +2,7 @@ import uuid
 
 from pydantic import AwareDatetime, BaseModel, Field
 
-from microclaw.dto import CronTask, User, UserRoleEnum
+from microclaw.dto import CronTask, User, UserRoleEnum, Webhook
 
 
 class UserChannelData(BaseModel):
@@ -15,10 +15,11 @@ class UserData(BaseModel):
     role: UserRoleEnum = UserRoleEnum.USER
     agent: dict | None = None
     crons: list[CronTask] = Field(default_factory=list)
+    webhooks: list[Webhook] = Field(default_factory=list)
 
     @classmethod
     def from_user(cls, user: User) -> "UserData":
-        return cls(id=user.id, role=user.role, agent=user.agent, crons=[])
+        return cls(id=user.id, role=user.role, agent=user.agent, crons=[], webhooks=[])
 
     def to_user(self) -> User:
         return User(id=self.id, role=self.role, agent=self.agent)

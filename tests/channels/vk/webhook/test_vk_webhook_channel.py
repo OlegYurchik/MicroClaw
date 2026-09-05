@@ -2,6 +2,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 from fastapi import Request
 import pytest
+import uvicorn
 
 from microclaw.channels.vk.webhook.channel import VKWebhookChannel
 from microclaw.channels.vk.webhook.settings import VKWebhookSettings
@@ -57,9 +58,8 @@ def vk_webhook_channel(
     vk_webhook_settings,
     telegram_agent,
     mock_vk_bot,
-    mock_server_factory,
 ) -> VKWebhookChannel:
-    return VKWebhookChannel(
+    channel = VKWebhookChannel(
         settings=vk_webhook_settings,
         agent=telegram_agent,
         sessions_storage=MemorySessionsStorage(
@@ -68,18 +68,15 @@ def vk_webhook_channel(
         syncer=MemorySyncer(settings=MemorySyncerSettings()),
         users_storage=MemoryUsersStorage(settings=MemoryUsersStorageSettings()),
         resolver=AsyncMock(),
-        bot=mock_vk_bot,
-        server_factory=mock_server_factory,
     )
+    channel._bot = mock_vk_bot
+    return channel
 
 
 class TestVKWebhookChannel:
-    def test_init_sets_server_factory(self, vk_webhook_channel):
-        assert vk_webhook_channel._server_factory is not None
-
-    def test_get_server_uses_factory(self, vk_webhook_channel, mock_server):
+    def test_get_server_returns_uvicorn_server(self, vk_webhook_channel):
         server = vk_webhook_channel.get_server()
-        assert server is mock_server
+        assert isinstance(server, uvicorn.Server)
 
     @pytest.mark.asyncio
     async def test_handler_confirmation(self, vk_webhook_channel):
@@ -145,8 +142,8 @@ class TestVKWebhookChannel:
             syncer=MemorySyncer(settings=MemorySyncerSettings()),
             users_storage=MemoryUsersStorage(settings=MemoryUsersStorageSettings()),
             resolver=AsyncMock(),
-            bot=mock_vk_bot,
         )
+        channel._bot = mock_vk_bot
         with pytest.raises(ValueError, match="root_url is required"):
             await channel.listen_events()
 
@@ -154,6 +151,7 @@ class TestVKWebhookChannel:
     async def test_listen_events_flow(
         self, vk_webhook_channel, mock_vk_bot, mock_server
     ):
+        vk_webhook_channel.get_server = lambda: mock_server
         await vk_webhook_channel.listen_events()
         mock_vk_bot.setup_webhook.assert_awaited()
         mock_server.serve.assert_awaited()
@@ -162,6 +160,7 @@ class TestVKWebhookChannel:
     async def test_listen_events_with_server_id(
         self, vk_webhook_channel, mock_vk_bot, mock_server
     ):
+        vk_webhook_channel.get_server = lambda: mock_server
         mock_vk_bot.callback.find_server_id = AsyncMock(return_value=123)
         await vk_webhook_channel.listen_events()
         mock_vk_bot.callback.set_callback_settings.assert_awaited()

@@ -14,6 +14,7 @@ def get_router() -> fastapi.APIRouter:
         path="",
         methods=["POST"],
         endpoint=handlers.create_cron,
+        status_code=fastapi.status.HTTP_201_CREATED,
     )
     router.add_api_route(
         path="/{cron_id}",

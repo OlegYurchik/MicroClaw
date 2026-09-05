@@ -1,4 +1,4 @@
-from . import agents, auth, crons, handlers, models, sessions, toolkits, users
+from . import agents, auth, crons, handlers, models, sessions, toolkits, users, webhooks
 from .dependencies import auth as auth_dependency
 from .openai import get_router as get_openai_router
 from .settings import RESTAPISettings
@@ -67,6 +67,7 @@ class RESTAPIService(facet.AsyncioServiceMixin):
             )
 
         app.state.resolver = self._dependency_resolver
+        app.state.cron_service = await self._dependency_resolver.resolve_cron_service()
 
         app.add_middleware(
             CORSMiddleware,
@@ -89,6 +90,10 @@ class RESTAPIService(facet.AsyncioServiceMixin):
         app.include_router(
             crons.get_router(),
             prefix="/crons",
+        )
+        app.include_router(
+            webhooks.get_router(),
+            prefix="/webhooks",
         )
         app.include_router(
             models.get_router(),

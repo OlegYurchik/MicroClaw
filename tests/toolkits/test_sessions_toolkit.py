@@ -64,7 +64,10 @@ class TestSearchSessions:
         )
         await users_storage.create_user_channel(
             data=UserChannelCreate(
-                user_id=user.id, channel_key="test", channel_internal_id="test"
+                user_id=user.id,
+                channel_key="test",
+                channel_internal_id="test",
+                actual_session_id=session_id,
             )
         )
         await sessions_storage.create_message(
@@ -98,7 +101,10 @@ class TestSearchSessions:
             )
             await users_storage.create_user_channel(
                 data=UserChannelCreate(
-                    user_id=user.id, channel_key="test", channel_internal_id=f"test{i}"
+                    user_id=user.id,
+                    channel_key="test",
+                    channel_internal_id=f"test{i}",
+                    actual_session_id=session_id,
                 )
             )
             await sessions_storage.create_message(
@@ -132,7 +138,10 @@ class TestGetSession:
         )
         await users_storage.create_user_channel(
             data=UserChannelCreate(
-                user_id=user.id, channel_key="test", channel_internal_id="test"
+                user_id=user.id,
+                channel_key="test",
+                channel_internal_id="test",
+                actual_session_id=session_id,
             )
         )
         await sessions_storage.create_message(
@@ -169,7 +178,10 @@ class TestGetSession:
         )
         await users_storage.create_user_channel(
             data=UserChannelCreate(
-                user_id=user.id, channel_key="test", channel_internal_id="test"
+                user_id=user.id,
+                channel_key="test",
+                channel_internal_id="test",
+                actual_session_id=session_id,
             )
         )
 
@@ -195,7 +207,10 @@ class TestListSessions:
         )
         await users_storage.create_user_channel(
             data=UserChannelCreate(
-                user_id=user.id, channel_key="test", channel_internal_id="test"
+                user_id=user.id,
+                channel_key="test",
+                channel_internal_id="test",
+                actual_session_id=session_id,
             )
         )
         await sessions_storage.create_message(
@@ -227,7 +242,10 @@ class TestListSessions:
             )
             await users_storage.create_user_channel(
                 data=UserChannelCreate(
-                    user_id=user.id, channel_key="test", channel_internal_id=f"test{i}"
+                    user_id=user.id,
+                    channel_key="test",
+                    channel_internal_id=f"test{i}",
+                    actual_session_id=session_id,
                 )
             )
             await sessions_storage.create_message(

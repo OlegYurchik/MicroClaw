@@ -1,6 +1,8 @@
 from collections.abc import Callable
 import datetime
 import functools
+import secrets
+import string
 from typing import Any
 
 
@@ -31,3 +33,10 @@ def suppress_exception(
         return wrapper
 
     return decorator
+
+
+def random_string(
+    length: int = 32,
+    alphabet: str = string.hexdigits,
+) -> str:
+    return "".join(secrets.choice(alphabet) for _ in range(length))

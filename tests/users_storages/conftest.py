@@ -27,4 +27,7 @@ async def database_users_storage(tmp_path) -> DatabaseUsersStorage:
     settings = DatabaseUsersStorageSettings(dsn=f"sqlite+aiosqlite:///{db_path}")
     storage = DatabaseUsersStorage(settings=settings)
     await storage.start()
-    yield storage
+    try:
+        yield storage
+    finally:
+        await storage.stop()

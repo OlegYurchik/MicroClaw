@@ -1,7 +1,10 @@
+import uuid
+
 from .channels import BaseChannel
 from .cron import BaseCronTask
 from .resolver import DependencyResolver
 from .settings import MicroclawSettings
+from .webhooks import BaseWebhook
 import facet
 
 
@@ -10,10 +13,12 @@ class MicroclawService(facet.AsyncioServiceMixin):
         self._resolver = DependencyResolver(settings=settings)
         self._channels: dict[str, BaseChannel] | None = None
         self._crons: dict[str, BaseCronTask] | None = None
+        self._global_webhooks: dict[uuid.UUID, BaseWebhook] | None = None
 
     async def run(self) -> None:
         self._channels = await self._resolver.resolve_channels()
         self._crons = await self._resolver.resolve_crons()
+        self._global_webhooks = await self._resolver.resolve_global_webhooks()
         await super().run()
 
     @property

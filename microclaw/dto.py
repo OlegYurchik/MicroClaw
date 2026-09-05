@@ -4,7 +4,18 @@ import enum
 from typing import Any, Self
 import uuid
 
-from pydantic import BaseModel, Field, field_serializer, field_validator
+from .utils import utcnow
+from pydantic import AwareDatetime, BaseModel, Field, field_serializer, field_validator
+
+
+class AgentMessageRoleEnum(str, enum.Enum):
+    USER = "user"
+    ASSISTANT = "assistant"
+    SYSTEM = "system"
+    TOOL = "tool"
+    REQUEST_CONFIRMATION = "request_confirmation"
+    SUMMARY = "summary"
+    STT = "stt"
 
 
 class InterruptEntry(BaseModel):
@@ -90,7 +101,8 @@ class Spending(BaseModel):
 
 
 class AgentMessage(BaseModel):
-    role: str
+    id: uuid.UUID | None = None
+    role: AgentMessageRoleEnum
     text: str | None = None
     chunked_message_id: str | None = None
     spending: Spending | None = None
@@ -116,10 +128,20 @@ class AgentMessage(BaseModel):
 
 class SessionMetadata(BaseModel):
     id: uuid.UUID
-    created_at: datetime.datetime | None = None
-    updated_at: datetime.datetime | None = None
+    created_at: AwareDatetime | None = None
+    updated_at: AwareDatetime | None = None
     context_size: int = 0
     spending: Spending | None = None
+
+
+class Session(BaseModel):
+    id: uuid.UUID
+    channel_key: str
+    channel_internal_id: str
+    context_size: int = 0
+    spending: Spending | None = None
+    created_at: AwareDatetime | None = None
+    updated_at: AwareDatetime | None = None
 
 
 class UserRoleEnum(str, enum.Enum):
@@ -144,8 +166,37 @@ class CronTask(BaseModel):
     cron: str
     enabled: bool = True
     args: dict[str, Any] = Field(default_factory=dict)
+    user_id: uuid.UUID | None = None
 
 
-class TokenInfo(BaseModel):
+class Webhook(BaseModel):
+    id: uuid.UUID
+    user_id: uuid.UUID | None = None
+    path: str
+    enabled: bool = True
+    args: dict[str, Any] = Field(default_factory=dict)
+    agent: str | None = None
+    channel: str | None = None
+    channel_internal_id: str | None = None
+
+
+class Token(BaseModel):
     token: str
-    expires_at: datetime.datetime | None = None
+    expires_at: AwareDatetime | None = None
+    user_id: uuid.UUID | None = None
+
+    def is_valid(self) -> bool:
+        if self.expires_at is None:
+            return True
+        now = utcnow()
+        expires_at = self.expires_at
+        if expires_at.tzinfo is None:
+            expires_at = expires_at.replace(tzinfo=datetime.timezone.utc)
+        return expires_at > now
+
+
+class UserChannel(BaseModel):
+    user_id: uuid.UUID
+    channel_key: str
+    channel_internal_id: str
+    actual_session_id: uuid.UUID | None = None

@@ -1,7 +1,8 @@
 import asyncio
-from collections.abc import Iterable
+from collections.abc import Awaitable, Callable, Iterable
 import shlex
 import shutil
+from typing import Protocol
 
 from .dto import CommandResult
 from .settings import CommandToolKitSettings
@@ -14,6 +15,13 @@ from microclaw.toolkits.enums import PermissionModeEnum
 from microclaw.toolkits.exceptions import UserDeniedAction
 
 
+class _SubprocessProtocol(Protocol):
+    async def communicate(self) -> tuple[bytes, bytes]: ...
+    returncode: int | None
+    def kill(self) -> None: ...
+    async def wait(self) -> int: ...
+
+
 class CommandToolKit(BaseToolKit[CommandToolKitSettings]):
     """Tools for executing shell commands with a whitelist of allowed commands."""
 
@@ -21,13 +29,19 @@ class CommandToolKit(BaseToolKit[CommandToolKitSettings]):
     write_capabilities: list[ToolKitCapability] = []
     discovery_capabilities: list[DiscoveryCapability] = []
 
-    def __init__(self, key: str, settings: CommandToolKitSettings):
+    def __init__(
+        self,
+        key: str,
+        settings: CommandToolKitSettings,
+        subprocess_runner: Callable[..., Awaitable[_SubprocessProtocol]] | None = None,
+    ):
         super().__init__(key=key, settings=settings)
         self._allowed_commands_set = (
             set(self._arguments.allowed_commands)
             if self._arguments.allowed_commands
             else None
         )
+        self._subprocess_runner = subprocess_runner
 
     @tool
     async def execute_command(
@@ -60,12 +74,15 @@ class CommandToolKit(BaseToolKit[CommandToolKitSettings]):
         command_path = self._validate_command(command)
 
         try:
-            process = await asyncio.create_subprocess_exec(
-                command_path,
-                *args,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-            )
+            if self._subprocess_runner is not None:
+                process = await self._subprocess_runner(command_path, *args)
+            else:
+                process = await asyncio.create_subprocess_exec(
+                    command_path,
+                    *args,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                )
 
             stdout, stderr = await asyncio.wait_for(
                 process.communicate(),
@@ -83,7 +100,9 @@ class CommandToolKit(BaseToolKit[CommandToolKitSettings]):
                 await process.wait()
             raise RuntimeError(f"Command '{command}' timed out after {timeout} seconds")
         except Exception as e:
-            raise RuntimeError(f"Error executing command '{command}': {str(e)}")
+            raise RuntimeError(
+                f"Error executing command '{command}': {e}"
+            ) from e
 
     def _validate_command(self, command: str) -> str:
         base_command = shlex.split(command)[0] if command else ""

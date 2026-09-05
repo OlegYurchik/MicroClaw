@@ -24,6 +24,7 @@ class BaseToolKit(Generic[ArgumentsType]):
     discovery_capabilities: Sequence[DiscoveryCapability] = ()
 
     def __init__(self, key: str, settings: ToolKitSettings):
+        self._settings = settings
         self._prefix = key + "_"
         self._prompt = settings.prompt
         self._arguments = self.get_settings_class()(**settings.args)

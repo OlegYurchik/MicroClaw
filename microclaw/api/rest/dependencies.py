@@ -3,10 +3,18 @@ from .schemas import ListQueryParams
 import fastapi
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
+from microclaw.cron.interfaces import CronServiceInterface
 from microclaw.dto import User, UserRoleEnum
 from microclaw.resolver import DependencyResolver
 from microclaw.sessions_storages import SessionsStorageInterface
 from microclaw.users_storages import UsersStorageInterface
+from microclaw.users_storages.filters import TokenFilter, UserFilter
+
+
+async def cron_service(
+        request: fastapi.Request,
+) -> CronServiceInterface:
+    return request.app.state.cron_service
 
 
 async def users_storage(
@@ -41,7 +49,13 @@ async def user(
         token: str | None = fastapi.Depends(token),
 ) -> User | None:
     if token is not None:
-        return await users_storage.get_user_by_token(token=token)
+        token_info = await users_storage.get_token(
+            filter_=TokenFilter(token={token})
+        )
+        if token_info is not None and token_info.is_valid():
+            return await users_storage.get_user(
+                filter_=UserFilter(id={token_info.user_id})
+            )
 
 
 async def auth(

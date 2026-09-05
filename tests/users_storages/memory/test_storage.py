@@ -8,7 +8,7 @@ from microclaw.users_storages.dto import (
     UserCreate,
     UserUpdate,
 )
-from microclaw.users_storages.filters import UserChannelFilter
+from microclaw.users_storages.filters import UserChannelFilter, UserFilter
 from tests.users_storages.helpers import (
     assert_cron_crud,
     assert_delete_users_filter,
@@ -70,14 +70,14 @@ async def test_attach_session_to_user_sets_actual(memory_users_storage):
     ):
         pass
     actual = None
-    async for ch in memory_users_storage.get_user_channels(
+    async for channel in memory_users_storage.get_user_channels(
         filter_=UserChannelFilter(
             user_id={user.id},
             channel_key={"tui"},
             channel_internal_id={"tui"},
         )
     ):
-        actual = ch.actual_session_id
+        actual = channel.actual_session_id
         break
     assert actual == session_id
 
@@ -113,14 +113,14 @@ async def test_set_actual_session_updates_actual(memory_users_storage):
     ):
         pass
     actual = None
-    async for ch in memory_users_storage.get_user_channels(
+    async for channel in memory_users_storage.get_user_channels(
         filter_=UserChannelFilter(
             user_id={user.id},
             channel_key={"tui"},
             channel_internal_id={"tui"},
         )
     ):
-        actual = ch.actual_session_id
+        actual = channel.actual_session_id
         break
     assert actual == session2
 
@@ -128,13 +128,15 @@ async def test_set_actual_session_updates_actual(memory_users_storage):
 @pytest.mark.asyncio
 async def test_update_user_agent(memory_users_storage):
     user = await memory_users_storage.create_user(data=UserCreate())
-    updated = await memory_users_storage.update_user(
-        user_id=user.id,
+    updated = None
+    async for u in memory_users_storage.update_users(
+        filter_=UserFilter(id={user.id}),
         data=UserUpdate(agent={"model": "test_agent"}),
-    )
+    ):
+        updated = u
     assert updated is not None
     assert updated.agent == {"model": "test_agent"}
-    fetched = await memory_users_storage.get_user(user.id)
+    fetched = await memory_users_storage.get_user(filter_=UserFilter(id={user.id}))
     assert fetched.agent == {"model": "test_agent"}
 
 
@@ -169,13 +171,13 @@ async def test_multiple_sessions_only_one_actual(memory_users_storage):
     ):
         pass
     actual = None
-    async for ch in memory_users_storage.get_user_channels(
+    async for channel in memory_users_storage.get_user_channels(
         filter_=UserChannelFilter(
             user_id={user.id},
             channel_key={"tui"},
             channel_internal_id={"tui"},
         )
     ):
-        actual = ch.actual_session_id
+        actual = channel.actual_session_id
         break
     assert actual == s2

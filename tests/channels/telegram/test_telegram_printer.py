@@ -131,9 +131,8 @@ class TestAgentMessagePrinter:
             agent=agent,
             debug=True,
         )
-        with pytest.raises(ValueError, match="test error"):
-            async with printer:
-                raise ValueError("test error")
+        async with printer:
+            raise ValueError("test error")
         assert "Got exception" in bot.send_message.await_args.kwargs["text"]
 
     @pytest.mark.asyncio
@@ -146,7 +145,6 @@ class TestAgentMessagePrinter:
             agent=agent,
             debug=False,
         )
-        with pytest.raises(ValueError, match="test error"):
-            async with printer:
-                raise ValueError("test error")
+        async with printer:
+            raise ValueError("test error")
         assert "Internal error" in bot.send_message.await_args.kwargs["text"]

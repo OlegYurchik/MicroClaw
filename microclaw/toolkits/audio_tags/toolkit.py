@@ -1,6 +1,8 @@
 import base64
+from collections.abc import Callable
 import pathlib
-from typing import Any
+import re
+from typing import Any, Protocol
 
 from .dto import AudioFileInfo, AudioTags, CoverImage
 from .settings import AudioTagsToolKitSettings
@@ -16,6 +18,12 @@ from microclaw.toolkits.enums import PermissionModeEnum
 from microclaw.toolkits.exceptions import UserDeniedAction
 
 
+class _TagReaderProtocol(Protocol):
+    mime: list[str] | None
+    filename: str
+    info: Any
+
+
 class AudioTagsToolKit(BaseToolKit[AudioTagsToolKitSettings]):
     """Tools for managing audio file tags and metadata."""
 
@@ -23,12 +31,18 @@ class AudioTagsToolKit(BaseToolKit[AudioTagsToolKitSettings]):
     write_capabilities: list[ToolKitCapability] = []
     discovery_capabilities: list[DiscoveryCapability] = []
 
-    def __init__(self, key: str, settings: AudioTagsToolKitSettings):
+    def __init__(
+        self,
+        key: str,
+        settings: AudioTagsToolKitSettings,
+        tag_reader: Callable[[str], _TagReaderProtocol] | None = None,
+    ):
         super().__init__(key=key, settings=settings)
         self._allowed_paths = [
             pathlib.Path(directory).resolve()
             for directory in self._arguments.directories
         ]
+        self._tag_reader = tag_reader
 
     @tool
     async def get_audio_info(self, path: str) -> AudioFileInfo:
@@ -172,6 +186,14 @@ class AudioTagsToolKit(BaseToolKit[AudioTagsToolKitSettings]):
         if self._arguments.write_mode is PermissionModeEnum.DENY:
             raise PermissionError("Write data to files denied")
 
+        if image_data.startswith("data:"):
+            match = re.match(r"^data:image/[^;]+;base64,(.*)$", image_data)
+            if not match:
+                raise ValueError(
+                    "Invalid data URI format. Expected data:image/<type>;base64,<data>"
+                )
+            image_data = match.group(1)
+
         cover_bytes = base64.b64decode(image_data)
 
         id3 = ID3(path)
@@ -239,6 +261,8 @@ class AudioTagsToolKit(BaseToolKit[AudioTagsToolKitSettings]):
             raise ValueError(f"Path '{path}' is not a file")
         if path.suffix.lower() != ".mp3":
             raise NotImplementedError("Only MP3 files are currently supported")
+        if self._tag_reader is not None:
+            return self._tag_reader(path)
         return File(path)
 
     def _extract_tags(self, audio: File) -> AudioTags:

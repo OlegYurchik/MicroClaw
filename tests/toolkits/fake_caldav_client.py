@@ -1,16 +1,28 @@
 from unittest.mock import MagicMock
 
-from caldav.async_davclient import AsyncDAVClient
+from caldav.async_davclient import AsyncDAVClient as _AsyncDAVClient
 from caldav.collection import Calendar, Principal
 from caldav.davclient import URL, DAVResponse
+from caldav.protocol.xml_parsers import (  # type: ignore[reportPrivateUsage]  # internal API; pinned in pyproject.toml
+    _parse_calendar_query_response,
+    _parse_propfind_response,
+)
 
 
-class FakeAsyncDAVClient(AsyncDAVClient):
+class _AsyncDAVClientType(type(_AsyncDAVClient)):
+    @property
+    def __name__(cls):
+        return "AsyncDAVClient"
+
+
+class FakeAsyncDAVClient(_AsyncDAVClient, metaclass=_AsyncDAVClientType):
     """Test double for caldav AsyncDAVClient.
 
     Inherits from AsyncDAVClient so ``isinstance(client, AsyncDAVClient)``
     returns ``True``, which is required by caldav's dual-mode async logic.
     """
+
+
 
     def __init__(self, url: str = "http://test") -> None:
         # bypass httpx session creation in AsyncDAVClient.__init__
@@ -31,11 +43,17 @@ class FakeAsyncDAVClient(AsyncDAVClient):
     # ------------------------------------------------------------------
     @staticmethod
     def _resp(status: int, xml: bytes, parse: str | None = None) -> DAVResponse:
-        resp = DAVResponse.from_bytes(xml, status_code=status, huge_tree=False)
+        fake_response = MagicMock()
+        fake_response.status_code = status
+        fake_response.headers = {"Content-Type": "text/xml; charset=utf-8"}
+        fake_response.content = xml
+        fake_response.text = xml.decode("utf-8", errors="replace")
+        fake_response.reason = "OK"
+        resp = DAVResponse(response=fake_response, davclient=None)
         if parse == "propfind":
-            resp.results = resp.parse_propfind()
+            resp.results = _parse_propfind_response(xml, status, huge_tree=False)
         elif parse == "calendar_query":
-            resp.results = resp.parse_calendar_query()
+            resp.results = _parse_calendar_query_response(xml, status, huge_tree=False)
         return resp
 
     _PRINCIPAL_XML = b"""<?xml version="1.0"?>
@@ -183,6 +201,11 @@ END:VCALENDAR</cal:calendar-data>
         body: str = "",
         headers: dict[str, str] | None = None,
     ) -> DAVResponse:
+        fake_response = MagicMock()
+        fake_response.status_code = 200
+        fake_response.status = 200
+        fake_response.headers = {}
+        fake_response.reason = "OK"
         if "event2" in url:
             event_data = (
                 b"BEGIN:VCALENDAR\nVERSION:2.0\nBEGIN:VEVENT\nUID:event-2\n"
@@ -192,10 +215,16 @@ END:VCALENDAR</cal:calendar-data>
                 b"TRIGGER:-PT60M\nACTION:DISPLAY\nDESCRIPTION:Reminder\nEND:VALARM\n"
                 b"END:VEVENT\nEND:VCALENDAR"
             )
-            return self._resp(200, event_data)
-        if "event" in url:
-            return self._resp(200, self._EMPTY_EVENT_DATA)
-        return self._resp(200, self._EMPTY_CALENDAR_DATA)
+            fake_response.content = event_data
+            fake_response.text = event_data.decode("utf-8")
+        elif "event" in url:
+            fake_response.content = self._EMPTY_EVENT_DATA
+            fake_response.text = self._EMPTY_EVENT_DATA.decode("utf-8")
+        else:
+            fake_response.content = self._EMPTY_CALENDAR_DATA
+            fake_response.text = self._EMPTY_CALENDAR_DATA.decode("utf-8")
+        fake_response.raw = fake_response.content
+        return DAVResponse(response=fake_response, davclient=None)
 
     def _parse_icalendar_from_body(self, body: str) -> bytes:
         """Extract and return iCalendar data for events with reminders."""
@@ -249,9 +278,19 @@ END:VCALENDAR</cal:calendar-data>
         body: str,
         headers: dict[str, str] | None = None,
     ) -> DAVResponse:
+        fake_response = MagicMock()
+        fake_response.status_code = 201
+        fake_response.status = 201
+        fake_response.headers = {}
+        fake_response.reason = "Created"
         if "event" in url:
-            return self._resp(201, self._parse_icalendar_from_body(body))
-        return self._resp(201, b"")
+            content = self._parse_icalendar_from_body(body)
+        else:
+            content = b""
+        fake_response.content = content
+        fake_response.text = content.decode("utf-8") if content else ""
+        fake_response.raw = fake_response.content
+        return DAVResponse(response=fake_response, davclient=None)
 
     async def delete(
         self,

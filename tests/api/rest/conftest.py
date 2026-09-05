@@ -63,12 +63,14 @@ def app(users_storage, sessions_storage, resolver) -> fastapi.FastAPI:
     application.get("/health")(rest_handlers.health)
 
     # Override cron scheduler dependency to avoid actual scheduling in tests
-    from microclaw.api.rest.crons.handlers import CronService, get_cron_service
+    from microclaw.api.rest.dependencies import cron_service as cron_service_dep
+    from microclaw.cron.service import CronService
 
     mock_cron_service = CronService()
     mock_cron_service.schedule = AsyncMock()
     mock_cron_service.unschedule = AsyncMock()
-    application.dependency_overrides[get_cron_service] = lambda: mock_cron_service
+    application.state.cron_service = mock_cron_service
+    application.dependency_overrides[cron_service_dep] = lambda: mock_cron_service
     return application
 
 
@@ -76,8 +78,7 @@ def app(users_storage, sessions_storage, resolver) -> fastapi.FastAPI:
 def session_factory(sessions_storage, users_storage):
     async def _make(user, channel_key="rest", channel_internal_id=None):
         from microclaw.sessions_storages.dto import SessionCreate
-        from microclaw.users_storages.dto import UserChannelCreate, UserChannelUpdate
-        from microclaw.users_storages.filters import UserChannelFilter
+        from microclaw.users_storages.dto import UserChannelCreate
 
         channel_internal_id = channel_internal_id or str(user.id)
         session = await sessions_storage.create_session(
@@ -90,17 +91,9 @@ def session_factory(sessions_storage, users_storage):
                 user_id=user.id,
                 channel_key=channel_key,
                 channel_internal_id=channel_internal_id,
+                actual_session_id=session.id,
             )
         )
-        async for _ in users_storage.update_user_channels(
-            filter_=UserChannelFilter(
-                user_id={user.id},
-                channel_key={channel_key},
-                channel_internal_id={channel_internal_id},
-            ),
-            data=UserChannelUpdate(actual_session_id=session.id),
-        ):
-            pass
         return session.id
 
     return _make

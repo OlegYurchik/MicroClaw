@@ -30,7 +30,7 @@ async def toolkit_context(users_storage, sessions_storage):
         channel_internal_id="123",
         current_user_accessor=accessor,
         all_users_accessor=AllUsersAccessor(
-            storage=users_storage, sessions_storage=sessions_storage, writable=True
+            storage=users_storage, writable=True
         ),
     )
     token = TOOLKIT_CONTEXT.set(context)
@@ -188,8 +188,6 @@ def make_skills_manager_toolkit(tmp_path):
         return SkillsManagerToolKit(
             key="skills_manager",
             settings=settings,
-            skills_mp_client=skills_mp_client,
-            discover_func=discover_func,
         )
 
     return _make
@@ -222,7 +220,6 @@ def make_mcp_manager_toolkit():
         return MCPManagerToolKit(
             key="mcp_manager",
             settings=settings,
-            mcp_client_factory=mcp_client_factory,
         )
 
     return _make

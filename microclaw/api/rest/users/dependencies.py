@@ -6,13 +6,16 @@ from microclaw.api.rest.dependencies import auth, users_storage
 from microclaw.api.rest.exceptions import HTTPForbidden, HTTPNotFound
 from microclaw.dto import User, UserRoleEnum
 from microclaw.users_storages import UsersStorageInterface
+from microclaw.users_storages.filters import UserFilter
 
 
 async def user(
     users_storage: UsersStorageInterface = fastapi.Depends(users_storage),
     user_id: uuid.UUID = fastapi.Path(),
 ) -> User:
-    user = await users_storage.get_user(user_id=user_id)
+    user = await users_storage.get_user(
+        filter_=UserFilter(id={user_id})
+    )
     if user is None:
         raise HTTPNotFound()
     return user

@@ -56,9 +56,9 @@ class HomeAssistantToolKit(BaseToolKit[HomeAssistantSettings]):
         OSError,
     )
 
-    def __init__(self, key: str, settings: ToolKitSettings):
+    def __init__(self, key: str, settings: ToolKitSettings, client: Client | None = None):
         super().__init__(key=key, settings=settings)
-        self._client = None
+        self._client = client
 
     @tool
     async def get_services(self) -> list[Service]:

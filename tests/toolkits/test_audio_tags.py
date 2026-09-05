@@ -84,25 +84,25 @@ class TestAudioTagsToolKit:
 
     @pytest.mark.asyncio
     async def test_write_tags_success(self, toolkit, tmp_mp3, tmp_path):
-        toolkit._settings.write_mode = PermissionModeEnum.ALLOW
+        toolkit._arguments.write_mode = PermissionModeEnum.ALLOW
         await toolkit.set_tags(
             tmp_mp3, {"title": "Test Title", "artist": "Test Artist"}
         )
 
     @pytest.mark.asyncio
     async def test_write_tags_denied(self, toolkit, tmp_mp3):
-        toolkit._settings.write_mode = PermissionModeEnum.DENY
+        toolkit._arguments.write_mode = PermissionModeEnum.DENY
         with pytest.raises(PermissionError):
             await toolkit.set_tags(tmp_mp3, {"title": "Test"})
 
     @pytest.mark.asyncio
     async def test_write_tags_invalid_key_skipped(self, toolkit, tmp_mp3):
-        toolkit._settings.write_mode = PermissionModeEnum.ALLOW
+        toolkit._arguments.write_mode = PermissionModeEnum.ALLOW
         await toolkit.set_tags(tmp_mp3, {"unknown_key": "value", "title": None})
 
     @pytest.mark.asyncio
     async def test_write_tags_request_mode(self, toolkit, tmp_mp3):
-        toolkit._settings.write_mode = PermissionModeEnum.REQUEST
+        toolkit._arguments.write_mode = PermissionModeEnum.REQUEST
         with pytest.raises(Exception):
             await toolkit.set_tags(tmp_mp3, {"title": "Test"})
 
@@ -124,7 +124,7 @@ class TestAudioTagsToolKit:
 
     @pytest.mark.asyncio
     async def test_set_cover_success(self, toolkit, tmp_mp3):
-        toolkit._settings.write_mode = PermissionModeEnum.ALLOW
+        toolkit._arguments.write_mode = PermissionModeEnum.ALLOW
         await toolkit.set_cover(
             tmp_mp3,
             "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
@@ -132,7 +132,7 @@ class TestAudioTagsToolKit:
 
     @pytest.mark.asyncio
     async def test_set_cover_denied(self, toolkit, tmp_mp3):
-        toolkit._settings.write_mode = PermissionModeEnum.DENY
+        toolkit._arguments.write_mode = PermissionModeEnum.DENY
         with pytest.raises(PermissionError):
             await toolkit.set_cover(
                 tmp_mp3,
@@ -141,7 +141,7 @@ class TestAudioTagsToolKit:
 
     @pytest.mark.asyncio
     async def test_set_cover_request_mode(self, toolkit, tmp_mp3):
-        toolkit._settings.write_mode = PermissionModeEnum.REQUEST
+        toolkit._arguments.write_mode = PermissionModeEnum.REQUEST
         with pytest.raises(Exception):
             await toolkit.set_cover(
                 tmp_mp3,
@@ -150,22 +150,22 @@ class TestAudioTagsToolKit:
 
     @pytest.mark.asyncio
     async def test_remove_cover_success(self, toolkit, tmp_mp3_with_cover):
-        toolkit._settings.write_mode = PermissionModeEnum.ALLOW
+        toolkit._arguments.write_mode = PermissionModeEnum.ALLOW
         await toolkit.remove_cover(tmp_mp3_with_cover)
 
     @pytest.mark.asyncio
     async def test_remove_cover_no_cover(self, toolkit, tmp_mp3):
-        toolkit._settings.write_mode = PermissionModeEnum.ALLOW
+        toolkit._arguments.write_mode = PermissionModeEnum.ALLOW
         await toolkit.remove_cover(tmp_mp3)
 
     @pytest.mark.asyncio
     async def test_remove_cover_denied(self, toolkit, tmp_mp3_with_cover):
-        toolkit._settings.write_mode = PermissionModeEnum.DENY
+        toolkit._arguments.write_mode = PermissionModeEnum.DENY
         with pytest.raises(PermissionError):
             await toolkit.remove_cover(tmp_mp3_with_cover)
 
     @pytest.mark.asyncio
     async def test_remove_cover_request_mode(self, toolkit, tmp_mp3_with_cover):
-        toolkit._settings.write_mode = PermissionModeEnum.REQUEST
+        toolkit._arguments.write_mode = PermissionModeEnum.REQUEST
         with pytest.raises(Exception):
             await toolkit.remove_cover(tmp_mp3_with_cover)

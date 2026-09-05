@@ -94,11 +94,12 @@ class CardDAVToolKit(BaseToolKit[CardDAVSettings]):
         aiohttp.ServerDisconnectedError,
     )
 
-    def __init__(self, key: str, settings: ToolKitSettings):
+    def __init__(self, key: str, settings: ToolKitSettings, session: aiohttp.ClientSession | None = None):
         super().__init__(key=key, settings=settings)
 
         self._principal_url: str | None = None
         self._xml = XMLBuilder()
+        self._session = session
 
     @tool
     async def get_address_books(self) -> list[AddressBook]:
@@ -466,8 +467,15 @@ class CardDAVToolKit(BaseToolKit[CardDAVSettings]):
             before_sleep=before_sleep_log(logger, "warning"),
         ):
             with attempt:
-                session = self._create_session()
-                async with session as s:
+                if self._session is not None:
+                    response = await self._session.request(
+                        method=method,
+                        url=url,
+                        data=data,
+                        headers=headers or {},
+                    )
+                    return response
+                async with self._create_session() as s:
                     response = await s.request(
                         method=method,
                         url=url,
@@ -544,6 +552,8 @@ class CardDAVToolKit(BaseToolKit[CardDAVSettings]):
             self._update_vcard_field(vcard, "bday", birthday)
 
     def _create_session(self) -> aiohttp.ClientSession:
+        if self._session is not None:
+            return self._session
         return aiohttp.ClientSession(
             auth=(
                 aiohttp.BasicAuth(self.arguments.username, self.arguments.password)

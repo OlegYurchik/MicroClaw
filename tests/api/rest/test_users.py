@@ -3,8 +3,10 @@ import secrets
 import httpx
 import pytest
 
+from microclaw.sessions_storages.dto import SessionCreate
 from microclaw.users_storages.dto import TokenCreate
 from microclaw.users_storages.filters import TokenFilter
+from microclaw.users_storages.utils import attach_session_to_user
 from microclaw.utils import utcnow
 
 
@@ -127,10 +129,13 @@ async def test_delete_user_forbidden_for_regular(
 
 @pytest.mark.asyncio
 async def test_list_user_sessions(
-    client: httpx.AsyncClient, regular_user, session_factory
+    client: httpx.AsyncClient, regular_user, sessions_storage, users_storage
 ):
     user, token = regular_user
-    session_id = await session_factory(user)
+    session_id = (await sessions_storage.create_session(
+        data=SessionCreate(channel_key="rest", channel_internal_id=str(user.id))
+    )).id
+    await attach_session_to_user(users_storage, user.id, session_id, "rest", str(user.id))
     response = await client.get(
         f"/users/{user.id}/sessions",
         headers={"Authorization": f"Bearer {token}"},
@@ -186,4 +191,4 @@ async def test_delete_user_token_not_found(client: httpx.AsyncClient, regular_us
         f"/users/{user.id}/tokens/nonexistent",
         headers={"Authorization": f"Bearer {user_token}"},
     )
-    assert response.status_code == 403
+    assert response.status_code == 404

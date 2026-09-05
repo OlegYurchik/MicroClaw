@@ -1,5 +1,6 @@
 import asyncio
 from datetime import date, datetime
+from zoneinfo import ZoneInfo
 
 from .dto import Task, TaskList
 from .settings import TasksSettings
@@ -37,9 +38,9 @@ class TasksToolKit(BaseToolKit[TasksSettings]):
         OSError,
     )
 
-    def __init__(self, key: str, settings: ToolKitSettings):
+    def __init__(self, key: str, settings: ToolKitSettings, client: AsyncDAVClient | None = None):
         super().__init__(key=key, settings=settings)
-        self._client = AsyncDAVClient(
+        self._client = client or AsyncDAVClient(
             url=self.arguments.url,
             username=self.arguments.username,
             password=self.arguments.password,
@@ -453,6 +454,13 @@ class TasksToolKit(BaseToolKit[TasksSettings]):
         categories = getattr(vtodo, "categories", None)
         categories_list = list(categories.value) if categories else []
 
+        tz = ZoneInfo(self.arguments.fallback_timezone)
+
+        def _ensure_tz(value: datetime | None) -> datetime | None:
+            if value is None or value.tzinfo is not None:
+                return value
+            return value.replace(tzinfo=tz)
+
         return Task(
             uid=todo.id,
             url=str(todo.url),
@@ -463,9 +471,9 @@ class TasksToolKit(BaseToolKit[TasksSettings]):
             due=due_value,
             start=start_value,
             completed=completed_value is not None,
-            completed_at=completed_value,
-            created=created_value,
-            modified=modified_value,
+            completed_at=_ensure_tz(completed_value),
+            created=_ensure_tz(created_value),
+            modified=_ensure_tz(modified_value),
             percent_complete=percent_value,
             categories=categories_list,
         )

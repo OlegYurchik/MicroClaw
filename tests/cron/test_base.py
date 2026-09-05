@@ -41,12 +41,10 @@ def test_parse_cron_expression_invalid():
 
 @pytest.mark.asyncio
 async def test_execute_with_logging():
-    scheduler = MagicMock()
     task = ConcreteTask(
         key="test",
         settings=CronTaskSettings(cron="0 2 * * *"),
         resolver=MagicMock(),
-        scheduler=scheduler,
     )
     task.execute = AsyncMock()
     await task._execute_with_logging()
@@ -105,8 +103,8 @@ async def test_start_and_stop_with_mock_scheduler():
         key="test_task",
         settings=CronTaskSettings(cron="0 2 * * *"),
         resolver=MagicMock(),
-        scheduler=scheduler,
     )
+    task.get_scheduler = lambda: scheduler
 
     async with task:
         scheduler.add_job.assert_called_once()
@@ -118,24 +116,25 @@ async def test_start_and_stop_with_mock_scheduler():
 
 def test_get_scheduler_returns_existing():
     scheduler = MagicMock()
-    task = ConcreteTask(
-        key="test",
-        settings=CronTaskSettings(cron="0 2 * * *"),
-        resolver=MagicMock(),
-        scheduler=scheduler,
-    )
-    result = task.get_scheduler()
-    assert result is scheduler
+    BaseCronTask._scheduler = scheduler
+    try:
+        task = ConcreteTask(
+            key="test",
+            settings=CronTaskSettings(cron="0 2 * * *"),
+            resolver=MagicMock(),
+        )
+        result = task.get_scheduler()
+        assert result is scheduler
+    finally:
+        BaseCronTask._scheduler = None
 
 
 @pytest.mark.asyncio
 async def test_execute_with_logging_error():
-    scheduler = MagicMock()
     task = ConcreteTask(
         key="test",
         settings=CronTaskSettings(cron="0 2 * * *"),
         resolver=MagicMock(),
-        scheduler=scheduler,
     )
     task.execute = AsyncMock(side_effect=RuntimeError("boom"))
 
@@ -153,8 +152,8 @@ async def test_start_starts_scheduler():
         key="test_task",
         settings=CronTaskSettings(cron="0 2 * * *"),
         resolver=MagicMock(),
-        scheduler=scheduler,
     )
+    task.get_scheduler = lambda: scheduler
 
     try:
         await task.start()
@@ -174,8 +173,8 @@ async def test_start_replaces_existing_task():
         key="dup_task",
         settings=CronTaskSettings(cron="0 2 * * *"),
         resolver=MagicMock(),
-        scheduler=scheduler,
     )
+    task.get_scheduler = lambda: scheduler
 
     BaseCronTask._tasks["dup_task"] = task
 

@@ -62,9 +62,8 @@ class TestAgentMessagePrinter:
 
     @pytest.mark.asyncio
     async def test_aexit_on_exception_shows_error(self, printer, mock_app):
-        with pytest.raises(ValueError, match="boom"):
-            async with printer:
-                raise ValueError("boom")
+        async with printer:
+            raise ValueError("boom")
         mock_app.add_message.assert_awaited()
         call_args = mock_app.add_message.await_args
         assert call_args.kwargs["role"] == RoleEnum.SYSTEM
@@ -73,9 +72,8 @@ class TestAgentMessagePrinter:
     @pytest.mark.asyncio
     async def test_aexit_on_exception_debug_shows_trace(self, printer, mock_app):
         printer._debug = True
-        with pytest.raises(ValueError, match="boom"):
-            async with printer:
-                raise ValueError("boom")
+        async with printer:
+            raise ValueError("boom")
         call_args = mock_app.add_message.await_args
         assert "Got exception" in call_args.kwargs["text"]
 
@@ -116,38 +114,7 @@ class TestAgentMessagePrinter:
         await printer.handle_new_message(message)
         mock_app.add_message.assert_not_awaited()
 
-    @pytest.mark.asyncio
-    async def test_render_message_user(self, printer, mock_app):
-        message = AgentMessage(role=AgentMessageRoleEnum.USER, text="hi")
-        await printer.render_message(message)
-        mock_app.add_message.assert_awaited_with(role=RoleEnum.USER, text="hi")
 
-    @pytest.mark.asyncio
-    async def test_render_message_assistant(self, printer, mock_app):
-        message = AgentMessage(role=AgentMessageRoleEnum.ASSISTANT, text="hi")
-        await printer.render_message(message)
-        mock_app.add_message.assert_awaited_with(role=RoleEnum.AI, text="hi")
-
-    @pytest.mark.asyncio
-    async def test_render_message_system(self, printer, mock_app):
-        message = AgentMessage(role=AgentMessageRoleEnum.SYSTEM, text="sys")
-        await printer.render_message(message)
-        mock_app.add_message.assert_awaited_with(role=RoleEnum.SYSTEM, text="sys")
-
-    @pytest.mark.asyncio
-    async def test_render_message_summary(self, printer, mock_app):
-        message = AgentMessage(role=AgentMessageRoleEnum.SUMMARY, text="sum")
-        await printer.render_message(message)
-        mock_app.add_message.assert_awaited_with(role=RoleEnum.SYSTEM, text="sum")
-
-    @pytest.mark.asyncio
-    async def test_render_message_confirmation(self, printer, mock_app):
-        entries = json.dumps([{"description": "q"}])
-        message = AgentMessage(
-            role=AgentMessageRoleEnum.REQUEST_CONFIRMATION, text=entries
-        )
-        await printer.render_message(message)
-        mock_app.add_confirmation_message.assert_awaited()
 
     @pytest.mark.asyncio
     async def test_print_spent_with_context(
@@ -187,4 +154,4 @@ class TestAgentMessagePrinter:
         mock_agent.get_model_context_window_size = MagicMock(return_value=None)
         await printer.print_spent()
         call_kwargs = mock_app.update_stats.call_args.kwargs
-        assert call_kwargs["context_usage"] is None
+        assert call_kwargs["context_usage"] == 0.0

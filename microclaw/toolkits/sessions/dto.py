@@ -1,13 +1,12 @@
-from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel
+from pydantic import AwareDatetime, BaseModel
 
 
 class MessageInfo(BaseModel):
     role: str
     content: str | None
-    timestamp: datetime
+    timestamp: AwareDatetime
 
 
 class SessionInfo(BaseModel):
@@ -15,8 +14,8 @@ class SessionInfo(BaseModel):
     messages: list[MessageInfo] = []
     message_count: int = 0
     user_id: UUID | None = None
-    created_at: datetime | None = None
-    last_activity: datetime | None = None
+    created_at: AwareDatetime | None = None
+    last_activity: AwareDatetime | None = None
 
 
 class SearchResult(BaseModel):

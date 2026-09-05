@@ -1,5 +1,5 @@
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -48,6 +48,15 @@ def mock_stt_client() -> MagicMock:
     return client
 
 
+def _make_stt(stt_settings, stt_model_settings, stt_provider_settings, mock_stt_client):
+    with patch.object(STT, "_get_client", return_value=mock_stt_client):
+        return STT(
+            settings=stt_settings,
+            model_settings=stt_model_settings,
+            provider_settings=stt_provider_settings,
+        )
+
+
 @pytest.mark.asyncio
 async def test_transcribe_success(
     stt_settings, stt_model_settings, stt_provider_settings, mock_stt_client, tmp_path
@@ -55,12 +64,7 @@ async def test_transcribe_success(
     audio_path = tmp_path / "test.wav"
     audio_path.write_bytes(b"fake audio data")
 
-    stt = STT(
-        settings=stt_settings,
-        model_settings=stt_model_settings,
-        provider_settings=stt_provider_settings,
-        client=mock_stt_client,
-    )
+    stt = _make_stt(stt_settings, stt_model_settings, stt_provider_settings, mock_stt_client)
 
     result = await stt.transcribe(audio_path)
 
@@ -74,12 +78,7 @@ async def test_transcribe_success(
 async def test_transcribe_file_not_found(
     stt_settings, stt_model_settings, stt_provider_settings, mock_stt_client
 ):
-    stt = STT(
-        settings=stt_settings,
-        model_settings=stt_model_settings,
-        provider_settings=stt_provider_settings,
-        client=mock_stt_client,
-    )
+    stt = _make_stt(stt_settings, stt_model_settings, stt_provider_settings, mock_stt_client)
 
     with pytest.raises(FileNotFoundError):
         await stt.transcribe(Path("/nonexistent/file.wav"))
@@ -89,12 +88,7 @@ async def test_transcribe_file_not_found(
 async def test_transcribe_bytes_success(
     stt_settings, stt_model_settings, stt_provider_settings, mock_stt_client
 ):
-    stt = STT(
-        settings=stt_settings,
-        model_settings=stt_model_settings,
-        provider_settings=stt_provider_settings,
-        client=mock_stt_client,
-    )
+    stt = _make_stt(stt_settings, stt_model_settings, stt_provider_settings, mock_stt_client)
 
     result = await stt.transcribe_bytes(b"fake audio data", format="wav")
 
@@ -117,12 +111,7 @@ async def test_transcribe_spending_with_costs(
         return_value=MagicMock(text="hi", usage=usage)
     )
 
-    stt = STT(
-        settings=stt_settings,
-        model_settings=stt_model_settings,
-        provider_settings=stt_provider_settings,
-        client=mock_stt_client,
-    )
+    stt = _make_stt(stt_settings, stt_model_settings, stt_provider_settings, mock_stt_client)
 
     result = await stt.transcribe(audio_path)
     assert result.spending.audio_input_seconds == 120
@@ -142,12 +131,7 @@ async def test_transcribe_spending_without_costs(
         api_type=APITypeEnum.OPENAI,
     )
 
-    stt = STT(
-        settings=stt_settings,
-        model_settings=model_settings,
-        provider_settings=stt_provider_settings,
-        client=mock_stt_client,
-    )
+    stt = _make_stt(stt_settings, model_settings, stt_provider_settings, mock_stt_client)
 
     result = await stt.transcribe(audio_path)
     assert result.spending.currency == "$"
@@ -157,12 +141,7 @@ async def test_transcribe_spending_without_costs(
 async def test_aenter_aexit_closes_client(
     stt_settings, stt_model_settings, stt_provider_settings, mock_stt_client
 ):
-    stt = STT(
-        settings=stt_settings,
-        model_settings=stt_model_settings,
-        provider_settings=stt_provider_settings,
-        client=mock_stt_client,
-    )
+    stt = _make_stt(stt_settings, stt_model_settings, stt_provider_settings, mock_stt_client)
 
     async with stt:
         pass

@@ -1,5 +1,4 @@
 from .dto import SessionData
-from .filters import MessageFilter, SessionFilter
 from .repository import MessagesRepository, SessionsRepository
 from .settings import DatabaseSessionsStorageSettings
 from .storage import DatabaseSessionsStorage
@@ -7,19 +6,16 @@ from .tables import MessageTable, SessionTable
 
 
 __all__ = (
-    # dto
+    # DTO
     "SessionData",
-    # filters
-    "MessageFilter",
-    "SessionFilter",
-    # repository
-    "MessagesRepository",
-    "SessionsRepository",
-    # settings
+    # Settings
     "DatabaseSessionsStorageSettings",
-    # storage
+    # Storage
     "DatabaseSessionsStorage",
-    # tables
-    "MessageTable",
+    # Repositories
+    "SessionsRepository",
+    "MessagesRepository",
+    # Tables
     "SessionTable",
+    "MessageTable",
 )

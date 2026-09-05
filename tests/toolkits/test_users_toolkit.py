@@ -168,6 +168,7 @@ class TestGetUserBySession:
                 user_id=user.id,
                 channel_key="test",
                 channel_internal_id="123",
+                actual_session_id=session.id,
             )
         )
         result = await users_toolkit.get_user_by_session(str(session.id))
